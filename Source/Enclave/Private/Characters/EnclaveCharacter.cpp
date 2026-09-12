@@ -6,7 +6,12 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 
+#include "Input/Components/EnclaveInputRouterComponent.h"
+#include "Input/Core/EnclaveInputConfig.h"
+
 //#include "GameFramework/CharacterMovementComponent.h"
+
+#include "Engine/Engine.h"
 
 AEnclaveCharacter::AEnclaveCharacter()
 {
@@ -42,6 +47,8 @@ AEnclaveCharacter::AEnclaveCharacter()
 	GetMesh()->SetOwnerNoSee(true);
 	GetMesh()->SetReceivesDecals(false);
 
+	InputRouter = CreateDefaultSubobject<UEnclaveInputRouterComponent>(TEXT("InputRouterComp"));
+
 }
 
 // Called when the game starts or when spawned
@@ -65,3 +72,24 @@ void AEnclaveCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 }
 
+void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
+{
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(
+			-1,
+			2.0f,
+			FColor::Green,
+			FString::Printf(TEXT("ProcessInput: %s"), *InputEvent.InputTag.ToString()));
+	}
+
+	if (InputRouter)
+	{
+		InputRouter->RouteInput(InputEvent);
+	}
+}
+
+const UEnclaveInputConfig* AEnclaveCharacter::GetInputConfig() const
+{
+	return InputConfig;
+}
