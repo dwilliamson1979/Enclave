@@ -14,6 +14,8 @@ void UEnclaveViewComponent::InitializeComponent()
 {
 	Super::InitializeComponent();
 
+	CharacterOwner = Cast<ACharacter>(GetOwner());
+
 	RebuildInputFilters();
 }
 
@@ -44,20 +46,20 @@ void UEnclaveViewComponent::RebuildInputFilters()
 
 bool UEnclaveViewComponent::HandleLookInput(const FEnclaveInputEvent& InputEvent)
 {
-	ACharacter* Character = Cast<ACharacter>(GetOwner());
-	if (!Character)
-	{
-		return false;
-	}
-
 	const FVector2D LookValue = InputEvent.Value.Get<FVector2D>();
+
 	if (LookValue.IsNearlyZero())
 	{
 		return true;
 	}
 
-	Character->AddControllerYawInput(LookValue.X);
-	Character->AddControllerPitchInput(LookValue.Y);
+	if (!IsValid(CharacterOwner))
+	{
+		return false;
+	}
+
+	CharacterOwner->AddControllerYawInput(LookValue.X);
+	CharacterOwner->AddControllerPitchInput(LookValue.Y);
 
 	return true;
 }

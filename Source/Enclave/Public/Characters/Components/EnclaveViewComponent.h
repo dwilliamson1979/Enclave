@@ -7,6 +7,8 @@
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
 #include "EnclaveViewComponent.generated.h"
 
+class ACharacter;
+
 /**
  * Handles player view input for an Enclave character.
  *
@@ -31,6 +33,10 @@ public:
 	virtual bool HandleInput(const FEnclaveInputEvent& InputEvent) override;
 
 private:
+
+	UPROPERTY(Transient)
+	TObjectPtr<ACharacter> CharacterOwner;
+
 	void RebuildInputFilters();
 	bool HandleLookInput(const FEnclaveInputEvent& InputEvent);
 
