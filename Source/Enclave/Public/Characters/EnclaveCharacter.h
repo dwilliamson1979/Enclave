@@ -14,6 +14,7 @@ class USpringArmComponent;
 class UEnclaveInputConfig;
 class UEnclaveInputRouterComponent;
 class UEnclaveCharacterMovementComponent;
+class UEnclaveViewComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface
@@ -57,6 +58,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInputRouterComponent> InputRouter = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "View", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveViewComponent> ViewComponent = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInputConfig> InputConfig = nullptr;

@@ -9,6 +9,7 @@
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
+#include "Characters/Components/EnclaveViewComponent.h"
 
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -50,6 +51,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	GetMesh()->SetReceivesDecals(false);
 
 	InputRouter = CreateDefaultSubobject<UEnclaveInputRouterComponent>(TEXT("InputRouterComp"));
+	ViewComponent = CreateDefaultSubobject<UEnclaveViewComponent>(TEXT("ViewComponent"));
 
 }
 
@@ -61,6 +63,7 @@ void AEnclaveCharacter::BeginPlay()
 	if (InputRouter)
 	{
 		InputRouter->RegisterInputHandler(GetEnclaveCharacterMovement());
+		InputRouter->RegisterInputHandler(ViewComponent);
 	}
 }
 
