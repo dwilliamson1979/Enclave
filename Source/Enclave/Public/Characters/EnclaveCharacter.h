@@ -13,6 +13,7 @@ class USpringArmComponent;
 //class USceneComponent;
 class UEnclaveInputConfig;
 class UEnclaveInputRouterComponent;
+class UEnclaveCharacterMovementComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface
@@ -20,7 +21,7 @@ class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputRec
 	GENERATED_BODY()
 
 public:
-	AEnclaveCharacter();
+	AEnclaveCharacter(const FObjectInitializer& ObjectInitializer);
 
 	virtual void Tick(float DeltaTime) override;
 
@@ -35,6 +36,8 @@ public:
 
 	//IEnclaveInputConfigProviderInterface
 	virtual const UEnclaveInputConfig* GetInputConfig() const override;
+
+	UEnclaveCharacterMovementComponent* GetEnclaveCharacterMovement() const;
 
 protected:
 	// Called when the game starts or when spawned

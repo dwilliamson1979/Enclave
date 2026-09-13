@@ -8,12 +8,14 @@
 
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
+#include "Characters/Components/EnclaveCharacterMovementComponent.h"
 
-//#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 #include "Engine/Engine.h"
 
-AEnclaveCharacter::AEnclaveCharacter()
+AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UEnclaveCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -55,7 +57,11 @@ AEnclaveCharacter::AEnclaveCharacter()
 void AEnclaveCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	if (InputRouter)
+	{
+		InputRouter->RegisterInputHandler(GetEnclaveCharacterMovement());
+	}
 }
 
 // Called every frame
@@ -92,4 +98,9 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 const UEnclaveInputConfig* AEnclaveCharacter::GetInputConfig() const
 {
 	return InputConfig;
+}
+
+UEnclaveCharacterMovementComponent* AEnclaveCharacter::GetEnclaveCharacterMovement() const
+{
+	return Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement());
 }

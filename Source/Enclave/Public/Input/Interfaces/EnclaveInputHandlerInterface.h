@@ -43,11 +43,11 @@ public:
 	 * - Input.Action.Item.Secondary
 	 * - Input.Action.Item.Reload
 	 *
-	 * The input router may cache these filters during registration, so this
-	 * function should describe relatively stable handler capabilities rather
-	 * than transient gameplay state.
+	 * The input router may cache these filters during registration, so the
+	 * returned container should represent relatively stable handler capabilities
+	 * rather than transient gameplay state.
 	 */
-	virtual void GetInputFilters(FGameplayTagContainer& OutInputFilters) const = 0;
+	virtual const FGameplayTagContainer& GetInputFilters() const = 0;
 
 	/**
 	 * Handles a semantic input event.

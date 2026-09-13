@@ -45,13 +45,10 @@ void UEnclaveInputRouterComponent::RegisterInputHandler(UObject* Handler, int32 
 		return;
 	}
 
-	FGameplayTagContainer InputFilters;
-	HandlerInterface->GetInputFilters(InputFilters);
-
 	RegisterInputHandler(
 		Handler,
 		Priority,
-		InputFilters);
+		HandlerInterface->GetInputFilters());
 }
 
 void UEnclaveInputRouterComponent::RegisterInputHandler(UObject* Handler, int32 Priority, const FGameplayTag& InputFilter)
@@ -126,14 +123,11 @@ void UEnclaveInputRouterComponent::RefreshInputHandlerFilters(UObject* Handler)
 		return;
 	}
 
-	FGameplayTagContainer RefreshedFilters;
-	HandlerInterface->GetInputFilters(RefreshedFilters);
-
 	for (FEnclaveInputHandlerEntry& Entry : Handlers)
 	{
 		if (Entry.HandlerObject.Get() == Handler)
 		{
-			Entry.InputFilters = RefreshedFilters;
+			Entry.InputFilters = HandlerInterface->GetInputFilters();
 			return;
 		}
 	}
