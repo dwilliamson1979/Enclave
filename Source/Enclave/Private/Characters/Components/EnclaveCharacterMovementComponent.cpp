@@ -65,16 +65,16 @@ void UEnclaveCharacterMovementComponent::RebuildInputFilters()
 
 bool UEnclaveCharacterMovementComponent::HandleMoveInput(const FEnclaveInputEvent& InputEvent)
 {
-	ACharacter* Character = GetCharacterOwner();
-	if (!Character)
-	{
-		return false;
-	}
-
 	const FVector2D MoveValue = InputEvent.Value.Get<FVector2D>();
 	if (MoveValue.IsNearlyZero())
 	{
 		return true;
+	}
+
+	ACharacter* Character = GetCharacterOwner();
+	if (!Character)
+	{
+		return false;
 	}
 
 	const AController* Controller = Character->GetController();
