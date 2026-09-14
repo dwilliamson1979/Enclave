@@ -30,6 +30,26 @@ namespace EnclaveGameplayTags
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Avatar_Jump);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Avatar_Crouch);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Avatar_Sprint);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Avatar_Aim);
+
+	// ---------------------------------------------------------------------
+	// Input - Item Actions
+	// ---------------------------------------------------------------------
+
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item);
+
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Primary);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Secondary);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Tertiary);
+
+	// ---------------------------------------------------------------------
+	// Equipment - Equipment Actions
+	// ---------------------------------------------------------------------
+
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment);
+
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Next);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Previous);
 
 	//// ---------------------------------------------------------------------
 	//// Input - Gameplay Actions

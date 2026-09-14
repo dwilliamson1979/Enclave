@@ -16,6 +16,7 @@ class UEnclaveInputRouterComponent;
 class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
 class UEnclaveCombatComponent;
+class UEnclaveEquipmentComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface
@@ -71,5 +72,8 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveCombatComponent> CombatComp = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;
 
 };

@@ -11,6 +11,18 @@ namespace EnclaveGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Jump, "Input.Avatar.Jump", "Jump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Crouch, "Input.Avatar.Crouch", "Crouch input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Sprint, "Input.Avatar.Sprint", "Sprint input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Aim, "Input.Avatar.Aim", "Aim input.");
+
+	// Input ItemActions
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item, "Input.Item", "Root tag for currently equipped item input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Primary, "Input.Item.Primary", "Primary action for the currently equipped item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Secondary, "Input.Item.Secondary", "Secondary action for the currently equipped item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Tertiary, "Input.Item.Tertiary", "Tertiary action for the currently equipped item.");
+
+	// Equipment EquipmentActions
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment, "Input.Equipment", "Root tag for equipment-selection input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Next, "Input.Equipment.Next", "Select the next available equipment item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Previous, "Input.Equipment.Previous", "Select the previous available equipment item.");
 
 	// Input - Gameplay / Item / Interaction Actions
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action, "Input.Action", "Root tag for gameplay action input.");

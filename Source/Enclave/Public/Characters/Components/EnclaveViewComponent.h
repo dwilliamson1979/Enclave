@@ -32,17 +32,27 @@ public:
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
 	virtual bool HandleInput(const FEnclaveInputEvent& InputEvent) override;
 
+protected:
+
+	void StartAiming();
+	void StopAiming();
+
 private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ACharacter> CharacterOwner;
 
 	void RebuildInputFilters();
+
 	bool HandleLookInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleAimInput(const FEnclaveInputEvent& InputEvent);
 
 	/** Semantic input tag that this component interprets as view/look input. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input"))
 	FGameplayTag LookInputTag;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input"))
+	FGameplayTag AimInputTag;
 
 	/** Cached routing filters derived from the configured role tags. */
 	FGameplayTagContainer InputFilters;

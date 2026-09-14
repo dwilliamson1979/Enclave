@@ -31,6 +31,11 @@ bool UEnclaveViewComponent::HandleInput(const FEnclaveInputEvent& InputEvent)
 		return HandleLookInput(InputEvent);
 	}
 
+	if (AimInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(AimInputTag))
+	{
+		return HandleAimInput(InputEvent);
+	}
+
 	return false;
 }
 
@@ -41,6 +46,11 @@ void UEnclaveViewComponent::RebuildInputFilters()
 	if (LookInputTag.IsValid())
 	{
 		InputFilters.AddTag(LookInputTag);
+	}
+
+	if (AimInputTag.IsValid())
+	{
+		InputFilters.AddTag(AimInputTag);
 	}
 }
 
@@ -62,4 +72,35 @@ bool UEnclaveViewComponent::HandleLookInput(const FEnclaveInputEvent& InputEvent
 	CharacterOwner->AddControllerPitchInput(LookValue.Y);
 
 	return true;
+}
+
+bool UEnclaveViewComponent::HandleAimInput(const FEnclaveInputEvent& InputEvent)
+{
+	if (!IsValid(CharacterOwner))
+	{
+		return false;
+	}
+
+	switch (InputEvent.TriggerEvent)
+	{
+	case ETriggerEvent::Started:
+		StartAiming();
+		return true;
+
+	case ETriggerEvent::Completed:
+	case ETriggerEvent::Canceled:
+		StopAiming();
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+void UEnclaveViewComponent::StartAiming	()
+{
+}
+
+void UEnclaveViewComponent::StopAiming()
+{
 }

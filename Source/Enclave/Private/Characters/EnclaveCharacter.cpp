@@ -13,6 +13,7 @@
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
+#include "Characters/Components/EnclaveEquipmentComponent.h"
 
 #include "Combat/EnclaveCombatComponent.h"
 
@@ -57,6 +58,9 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 
 	CombatComp = CreateDefaultSubobject<UEnclaveCombatComponent>(TEXT("CombatComp"));
 	CombatComp->SetIsReplicated(true);
+
+	EquipmentComp = CreateDefaultSubobject<UEnclaveEquipmentComponent>(TEXT("EquipmentComp"));
+	EquipmentComp->SetIsReplicated(true);
 }
 
 // Called when the game starts or when spawned
@@ -68,6 +72,7 @@ void AEnclaveCharacter::BeginPlay()
 	{
 		InputRouterComp->RegisterInputHandler(GetEnclaveCharacterMovement());
 		InputRouterComp->RegisterInputHandler(ViewComp);
+		InputRouterComp->RegisterInputHandler(EquipmentComp);
 	}
 }
 
@@ -93,7 +98,7 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 			-1,
 			2.0f,
 			FColor::Green,
-			FString::Printf(TEXT("ProcessInput: %s"), *InputEvent.InputTag.ToString()));
+			FString::Printf(TEXT("AEnclaveCharacter::ProcessInput: %s"), *InputEvent.InputTag.ToString()));
 	}
 
 	if (InputRouterComp)

@@ -18,6 +18,16 @@ public:
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+	void Initiate_CycleWeapon();
+
+	void Initiate_FireWeapon_Pressed();
+	void Initiate_FireWeapon_Released();
+
+	void Initiate_ReloadWeapon();
+
+	//void Innitiate_AimPressed();
+	//void Innitiate_AimReleased();
+
 protected:
 
 	//virtual void BeginPlay() override;
