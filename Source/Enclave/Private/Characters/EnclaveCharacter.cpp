@@ -4,14 +4,17 @@
 #include "Characters/EnclaveCharacter.h"
 
 #include "Camera/CameraComponent.h"
+
 #include "GameFramework/SpringArmComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
+
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
 
-#include "GameFramework/CharacterMovementComponent.h"
+#include "Combat/EnclaveCombatComponent.h"
 
 #include "Engine/Engine.h"
 
@@ -20,7 +23,6 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-
 
 	// Camera boom
 	SpringArmComp = CreateDefaultSubobject<USpringArmComponent>("SpringArmComp");
@@ -50,9 +52,11 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	GetMesh()->SetOwnerNoSee(true);
 	GetMesh()->SetReceivesDecals(false);
 
-	InputRouter = CreateDefaultSubobject<UEnclaveInputRouterComponent>(TEXT("InputRouterComp"));
-	ViewComponent = CreateDefaultSubobject<UEnclaveViewComponent>(TEXT("ViewComponent"));
+	InputRouterComp = CreateDefaultSubobject<UEnclaveInputRouterComponent>(TEXT("InputRouterComp"));
+	ViewComp = CreateDefaultSubobject<UEnclaveViewComponent>(TEXT("ViewComp"));
 
+	CombatComp = CreateDefaultSubobject<UEnclaveCombatComponent>(TEXT("CombatComp"));
+	CombatComp->SetIsReplicated(true);
 }
 
 // Called when the game starts or when spawned
@@ -60,10 +64,10 @@ void AEnclaveCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (InputRouter)
+	if (InputRouterComp)
 	{
-		InputRouter->RegisterInputHandler(GetEnclaveCharacterMovement());
-		InputRouter->RegisterInputHandler(ViewComponent);
+		InputRouterComp->RegisterInputHandler(GetEnclaveCharacterMovement());
+		InputRouterComp->RegisterInputHandler(ViewComp);
 	}
 }
 
@@ -92,9 +96,9 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 			FString::Printf(TEXT("ProcessInput: %s"), *InputEvent.InputTag.ToString()));
 	}
 
-	if (InputRouter)
+	if (InputRouterComp)
 	{
-		InputRouter->RouteInput(InputEvent);
+		InputRouterComp->RouteInput(InputEvent);
 	}
 }
 

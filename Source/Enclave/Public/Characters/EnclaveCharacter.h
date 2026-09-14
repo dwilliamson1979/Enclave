@@ -15,6 +15,7 @@ class UEnclaveInputConfig;
 class UEnclaveInputRouterComponent;
 class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
+class UEnclaveCombatComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface
@@ -49,6 +50,7 @@ private:
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh;
 
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> SpringArmComp = nullptr;
 
@@ -56,13 +58,18 @@ private:
 	TObjectPtr<UCameraComponent> CameraComp = nullptr;
 
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveInputRouterComponent> InputRouter = nullptr;
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "View", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveViewComponent> ViewComponent = nullptr;
+	TObjectPtr<UEnclaveViewComponent> ViewComp = nullptr;
+	
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveInputRouterComponent> InputRouterComp = nullptr;	
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInputConfig> InputConfig = nullptr;
+
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveCombatComponent> CombatComp = nullptr;
 
 };
