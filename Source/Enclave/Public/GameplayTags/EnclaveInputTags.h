@@ -3,15 +3,8 @@
 #include "CoreMinimal.h"
 #include "NativeGameplayTags.h"
 
-/**
- * Native Gameplay Tags used as stable input contracts by Enclave.
- *
- * Policy:
- * - Declare tags here when C++ routes, branches on, or otherwise depends on them.
- * - Keep content-only/detail tags in configuration unless C++ requires stable access.
- * - Tags describe semantic player intent, not physical keys or buttons.
- */
-namespace EnclaveGameplayTags
+
+namespace EnclaveInputTags
 {
 	// ---------------------------------------------------------------------
 	// Input - Root

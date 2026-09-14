@@ -1,8 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "Input/Tags/EnclaveGameplayTags.h"
+#include "GameplayTags/EnclaveInputTags.h"
 
-namespace EnclaveGameplayTags
+namespace EnclaveInputTags
 {
 	// Input - Avatar / Body Actions
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar, "Input.Avatar", "Root tag for avatar/body input.");

@@ -58,4 +58,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<USkeletalMeshComponent> ThirdPersonMesh;
+
+private:
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Tags", meta = (Categories = "Weapon"))
+	FGameplayTag WeaponTypeTag;
 };
