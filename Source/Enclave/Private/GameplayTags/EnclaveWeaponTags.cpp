@@ -1,7 +1,7 @@
 #include "GameplayTags/EnclaveWeaponTags.h"
 
 
-namespace EnclaveWeaponTags
+namespace EnclaveGameplayTags
 {
 	UE_DEFINE_GAMEPLAY_TAG(Weapon_Type_Firearm, "Weapon.Type.Firearm");
 	UE_DEFINE_GAMEPLAY_TAG(Weapon_Type_Firearm_Rifle, "Weapon.Type.Firearm.Rifle");

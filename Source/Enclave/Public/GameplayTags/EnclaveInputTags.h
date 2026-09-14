@@ -4,7 +4,7 @@
 #include "NativeGameplayTags.h"
 
 
-namespace EnclaveInputTags
+namespace EnclaveGameplayTags
 {
 	// ---------------------------------------------------------------------
 	// Input - Root

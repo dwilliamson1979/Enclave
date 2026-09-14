@@ -2,8 +2,11 @@
 
 #include "GameplayTags/EnclaveInputTags.h"
 
-namespace EnclaveInputTags
+namespace EnclaveGameplayTags
 {
+	// Input Root
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input, "Input", "Root tag for Enclave input.");
+
 	// Input - Avatar / Body Actions
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar, "Input.Avatar", "Root tag for avatar/body input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Move, "Input.Avatar.Move", "Movement input.");

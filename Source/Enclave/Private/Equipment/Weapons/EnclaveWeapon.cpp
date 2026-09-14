@@ -4,6 +4,8 @@
 
 #include "Components/SkeletalMeshComponent.h"
 
+#include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
+
 AEnclaveWeapon::AEnclaveWeapon()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -24,6 +26,24 @@ AEnclaveWeapon::AEnclaveWeapon()
 	ThirdPersonMesh->SetReceivesDecals(false);
 	ThirdPersonMesh->SetCastShadow(true);
 	ThirdPersonMesh->SetHiddenInGame(true);
+}
+
+void AEnclaveWeapon::BeginPlay()
+{
+	Super::BeginPlay();
+
+	ApplyWeaponDefinition();
+}
+
+void AEnclaveWeapon::ApplyWeaponDefinition()
+{
+	if (!IsValid(WeaponDefinition))
+	{
+		return;
+	}
+
+	FirstPersonMesh->SetSkeletalMesh(WeaponDefinition->GetFirstPersonMesh());
+	ThirdPersonMesh->SetSkeletalMesh(WeaponDefinition->GetThirdPersonMesh());
 }
 
 bool AEnclaveWeapon::HandlePrimaryAction_Implementation(const FEnclaveInputEvent& InputEvent)

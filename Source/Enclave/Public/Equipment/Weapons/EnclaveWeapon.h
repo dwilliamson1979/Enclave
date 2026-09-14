@@ -8,6 +8,7 @@
 #include "EnclaveWeapon.generated.h"
 
 class USkeletalMeshComponent;
+class UEnclaveWeaponDefinition;
 
 /**
  * Base class for wieldable weapons.
@@ -24,6 +25,7 @@ class ENCLAVE_API AEnclaveWeapon : public AActor, public IEnclaveWieldableInterf
 	GENERATED_BODY()
 
 public:
+
 	AEnclaveWeapon();
 
 	// IEnclaveWieldableInterface
@@ -34,23 +36,14 @@ public:
 	USkeletalMeshComponent* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMeshComponent* GetThirdPersonMesh() const { return ThirdPersonMesh; }
 
+	const UEnclaveWeaponDefinition* GetWeaponDefinition() const { return WeaponDefinition; }
+
 protected:
-	/**
-	 * Attempts to perform the weapon's primary action.
-	 *
-	 * For a firearm this will normally mean firing, but derived weapon types
-	 * remain free to interpret the action differently.
-	 */
+
+	virtual void BeginPlay() override;
+
 	virtual bool TryPrimaryAction(const FEnclaveInputEvent& InputEvent);
-
-	/**
-	 * Attempts to perform the weapon's secondary action.
-	 */
 	virtual bool TrySecondaryAction(const FEnclaveInputEvent& InputEvent);
-
-	/**
-	 * Attempts to perform the weapon's tertiary action.
-	 */
 	virtual bool TryTertiaryAction(const FEnclaveInputEvent& InputEvent);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
@@ -61,6 +54,9 @@ protected:
 
 private:
 
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Tags", meta = (Categories = "Weapon"))
-	FGameplayTag WeaponTypeTag;
+	void ApplyWeaponDefinition();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveWeaponDefinition> WeaponDefinition;
+
 };

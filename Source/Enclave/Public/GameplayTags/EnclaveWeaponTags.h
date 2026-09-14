@@ -4,7 +4,7 @@
 #include "NativeGameplayTags.h"
 
 
-namespace EnclaveWeaponTags
+namespace EnclaveGameplayTags
 {
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Firearm);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Firearm_Rifle);
