@@ -6,19 +6,7 @@
 UEnclaveCombatComponent::UEnclaveCombatComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-
-	// ...
 }
-
-
-//void UEnclaveCombatComponent::BeginPlay()
-//{
-//	Super::BeginPlay();
-//
-//	// ...
-//	
-//}
-
 
 void UEnclaveCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {

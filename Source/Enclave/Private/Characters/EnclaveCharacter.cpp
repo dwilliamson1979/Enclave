@@ -13,7 +13,7 @@
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
-#include "Characters/Components/EnclaveEquipmentComponent.h"
+#include "Equipment/Components/EnclaveEquipmentComponent.h"
 
 #include "Combat/EnclaveCombatComponent.h"
 

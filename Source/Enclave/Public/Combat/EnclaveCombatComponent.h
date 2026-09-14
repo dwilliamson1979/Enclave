@@ -24,15 +24,5 @@ public:
 	void Initiate_FireWeapon_Released();
 
 	void Initiate_ReloadWeapon();
-
-	//void Innitiate_AimPressed();
-	//void Innitiate_AimReleased();
-
-protected:
-
-	//virtual void BeginPlay() override;
-
-private:
-
 		
 };

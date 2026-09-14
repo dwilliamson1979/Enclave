@@ -1,6 +1,6 @@
 // Copyright Lightcarrier Studios
 
-#include "Characters/Components/EnclaveEquipmentComponent.h"
+#include "Equipment/Components/EnclaveEquipmentComponent.h"
 
 #include "InputCoreTypes.h"
 
