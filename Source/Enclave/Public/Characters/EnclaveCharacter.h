@@ -17,6 +17,7 @@ class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
 class UEnclaveCombatComponent;
 class UEnclaveEquipmentComponent;
+class UEnclaveItemAttachmentDefinition;
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface
@@ -41,6 +42,8 @@ public:
 	virtual const UEnclaveInputConfig* GetInputConfig() const override;
 
 	UEnclaveCharacterMovementComponent* GetEnclaveCharacterMovement() const;
+	
+	const UEnclaveItemAttachmentDefinition* GetItemAttachmentDefinition() const;
 
 protected:
 	// Called when the game starts or when spawned
@@ -73,7 +76,10 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveCombatComponent> CombatComp = nullptr;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveItemAttachmentDefinition> ItemAttachmentDefinition = nullptr;
 
 };

@@ -15,8 +15,9 @@ class ENCLAVE_API UEnclaveWeaponDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+
 	const FGameplayTagContainer& GetWeaponTags() const { return WeaponTags; }
-	FGameplayTag GetWieldedAttachPoint() const { return WieldedAttachPoint; }
+	const FGameplayTag& GetWeaponType() const { return WeaponType; }
 
 	USkeletalMesh* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMesh* GetThirdPersonMesh() const { return ThirdPersonMesh; }
@@ -25,8 +26,8 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon"))
 	FGameplayTagContainer WeaponTags;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation", meta = (AllowPrivateAccess = "true", Categories = "Item.AttachPoint.Wielded"))
-	FGameplayTag WieldedAttachPoint;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon.Type"))
+	FGameplayTag WeaponType;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USkeletalMesh> FirstPersonMesh;

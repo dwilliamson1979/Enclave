@@ -4,6 +4,7 @@
 
 namespace EnclaveGameplayTags
 {
+	/*
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		Item_AttachPoint,
 		"Item.AttachPoint",
@@ -27,4 +28,5 @@ namespace EnclaveGameplayTags
 		"Item.AttachPoint.Wielded.RifleSocket",
 		"Standard wielded attachment socket for rifle-style items."
 	);
+	*/
 }

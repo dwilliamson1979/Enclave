@@ -17,6 +17,8 @@
 
 #include "Combat/EnclaveCombatComponent.h"
 
+#include "Equipment/Data/EnclaveItemAttachmentDefinition.h"
+
 #include "Engine/Engine.h"
 
 AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer)
@@ -115,4 +117,9 @@ const UEnclaveInputConfig* AEnclaveCharacter::GetInputConfig() const
 UEnclaveCharacterMovementComponent* AEnclaveCharacter::GetEnclaveCharacterMovement() const
 {
 	return Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement());
+}
+
+const UEnclaveItemAttachmentDefinition* AEnclaveCharacter::GetItemAttachmentDefinition() const
+{
+	return ItemAttachmentDefinition;
 }
