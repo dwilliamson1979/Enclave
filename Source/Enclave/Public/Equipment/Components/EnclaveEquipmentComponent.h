@@ -7,6 +7,8 @@
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
 #include "EnclaveEquipmentComponent.generated.h"
 
+class AEnclaveWeapon;
+
 /**
  * Manages the character's active equipment and item-action input.
  *
@@ -29,45 +31,22 @@ public:
 	// UActorComponent
 	virtual void InitializeComponent() override;
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	AEnclaveWeapon* SpawnDefaultWeapon(TSubclassOf<AEnclaveWeapon> WeaponClass);
+
+	AActor* GetCurrentEquippedItem() const { return CurrentEquippedItem; }
+
 	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
 	virtual bool HandleInput(const FEnclaveInputEvent& InputEvent) override;
 
-	/**
-	 * Attempts to select the next available equipment slot.
-	 *
-	 * Returns true if the request was accepted.
-	 */
 	bool TryEquipNext();
-
-	/**
-	 * Attempts to select the previous available equipment slot.
-	 *
-	 * Returns true if the request was accepted.
-	 */
 	bool TryEquipPrevious();
-
-	/**
-	 * Returns whether equipment cycling is currently allowed.
-	 */
 	bool CanCycleEquipment() const;
 
-	/**
-	 * Attempts to perform the currently equipped item's primary action.
-	 *
-	 * The complete input event is preserved so the equipped item can respond
-	 * to the input phases appropriate for its behavior.
-	 */
 	bool TryPerformPrimaryAction(const FEnclaveInputEvent& InputEvent);
-
-	/**
-	 * Attempts to perform the currently equipped item's secondary action.
-	 */
 	bool TryPerformSecondaryAction(const FEnclaveInputEvent& InputEvent);
-
-	/**
-	 * Attempts to perform the currently equipped item's tertiary action.
-	 */
 	bool TryPerformTertiaryAction(const FEnclaveInputEvent& InputEvent);
 
 private:
@@ -102,4 +81,13 @@ private:
 
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;
+
+
+	bool AttachWeaponToOwner(AEnclaveWeapon* Weapon);
+
+	UFUNCTION()
+	void OnRep_CurrentEquippedItem();
+
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentEquippedItem)
+	TObjectPtr<AActor> CurrentEquippedItem = nullptr;
 };

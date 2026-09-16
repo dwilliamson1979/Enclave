@@ -17,6 +17,7 @@
 
 #include "Combat/EnclaveCombatComponent.h"
 
+#include "Equipment/Weapons/EnclaveWeapon.h"
 #include "Equipment/Data/EnclaveItemAttachmentDefinition.h"
 
 #include "Engine/Engine.h"
@@ -65,7 +66,16 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	EquipmentComp->SetIsReplicated(true);
 }
 
-// Called when the game starts or when spawned
+void AEnclaveCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	if (EquipmentComp && DefaultWeaponClass)
+	{
+		EquipmentComp->SpawnDefaultWeapon(DefaultWeaponClass);
+	}
+}
+
 void AEnclaveCharacter::BeginPlay()
 {
 	Super::BeginPlay();

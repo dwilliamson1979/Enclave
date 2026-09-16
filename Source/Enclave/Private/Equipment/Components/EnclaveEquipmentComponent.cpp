@@ -2,6 +2,18 @@
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 
+#include "Components/SkeletalMeshComponent.h"
+
+#include "Characters/EnclaveCharacter.h"
+
+#include "Equipment/Data/EnclaveItemAttachmentDefinition.h"
+#include "Equipment/Interfaces/EnclaveWieldableInterface.h"
+#include "Equipment/Weapons/EnclaveWeapon.h"
+#include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
+
+#include "GameFramework/Pawn.h"
+
+#include "Net/UnrealNetwork.h"
 #include "InputCoreTypes.h"
 
 UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
@@ -15,6 +27,13 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 	Super::InitializeComponent();
 
 	RebuildInputFilters();
+}
+
+void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentEquippedItem);
 }
 
 const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
@@ -95,28 +114,32 @@ bool UEnclaveEquipmentComponent::CanCycleEquipment() const
 
 bool UEnclaveEquipmentComponent::TryPerformPrimaryAction(const FEnclaveInputEvent& InputEvent)
 {
-	// TODO: Forward the complete input event to the currently equipped item.
-	//
-	// Example:
-	// return CurrentEquippedItem
-	//     ? CurrentEquippedItem->HandlePrimaryAction(InputEvent)
-	//     : false;
+	if (!IsValid(CurrentEquippedItem) || !CurrentEquippedItem->Implements<UEnclaveWieldableInterface>())
+	{
+		return false;
+	}
 
-	return false;
+	return IEnclaveWieldableInterface::Execute_HandlePrimaryAction(CurrentEquippedItem, InputEvent);
 }
 
 bool UEnclaveEquipmentComponent::TryPerformSecondaryAction(const FEnclaveInputEvent& InputEvent)
 {
-	// TODO: Forward the complete input event to the currently equipped item.
+	if (!IsValid(CurrentEquippedItem) || !CurrentEquippedItem->Implements<UEnclaveWieldableInterface>())
+	{
+		return false;
+	}
 
-	return false;
+	return IEnclaveWieldableInterface::Execute_HandleSecondaryAction(CurrentEquippedItem, InputEvent);
 }
 
 bool UEnclaveEquipmentComponent::TryPerformTertiaryAction(const FEnclaveInputEvent& InputEvent)
 {
-	// TODO: Forward the complete input event to the currently equipped item.
+	if (!IsValid(CurrentEquippedItem) || !CurrentEquippedItem->Implements<UEnclaveWieldableInterface>())
+	{
+		return false;
+	}
 
-	return false;
+	return IEnclaveWieldableInterface::Execute_HandleTertiaryAction(CurrentEquippedItem, InputEvent);
 }
 
 void UEnclaveEquipmentComponent::RebuildInputFilters()
@@ -182,4 +205,112 @@ bool UEnclaveEquipmentComponent::HandleSecondaryItemInput(const FEnclaveInputEve
 bool UEnclaveEquipmentComponent::HandleTertiaryItemInput(const FEnclaveInputEvent& InputEvent)
 {
 	return TryPerformTertiaryAction(InputEvent);
+}
+
+AEnclaveWeapon* UEnclaveEquipmentComponent::SpawnDefaultWeapon(TSubclassOf<AEnclaveWeapon> WeaponClass)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !WeaponClass)
+	{
+		return nullptr;
+	}
+
+	if (IsValid(CurrentEquippedItem))
+	{
+		return Cast<AEnclaveWeapon>(CurrentEquippedItem);
+	}
+
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World))
+	{
+		return nullptr;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = OwnerActor;
+	SpawnParameters.Instigator = Cast<APawn>(OwnerActor);
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	AEnclaveWeapon* Weapon = World->SpawnActor<AEnclaveWeapon>(WeaponClass, OwnerActor->GetActorTransform(), SpawnParameters);
+
+	if (!IsValid(Weapon))
+	{
+		return nullptr;
+	}
+
+	CurrentEquippedItem = Weapon;
+
+	AttachWeaponToOwner(Weapon);
+
+	return Weapon;
+}
+
+bool UEnclaveEquipmentComponent::AttachWeaponToOwner(AEnclaveWeapon* Weapon)
+{
+	if (!IsValid(Weapon))
+	{
+		return false;
+	}
+
+	AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
+
+	if (!IsValid(Character))
+	{
+		return false;
+	}
+
+	const UEnclaveWeaponDefinition* WeaponDefinition = Weapon->GetWeaponDefinition();
+
+	if (!IsValid(WeaponDefinition))
+	{
+		return false;
+	}
+
+	const UEnclaveItemAttachmentDefinition* AttachmentDefinition = Character->GetItemAttachmentDefinition();
+
+	if (!IsValid(AttachmentDefinition))
+	{
+		return false;
+	}
+
+	const FEnclaveItemAttachmentMapping* AttachmentMapping = AttachmentDefinition->FindAttachmentMapping(WeaponDefinition->GetWeaponType());
+
+	if (!AttachmentMapping)
+	{
+		return false;
+	}
+
+	USkeletalMeshComponent* FirstPersonCharacterMesh = Character->GetFirstPersonMesh();
+	USkeletalMeshComponent* ThirdPersonCharacterMesh = Character->GetMesh();
+
+	if (!IsValid(FirstPersonCharacterMesh) || !IsValid(ThirdPersonCharacterMesh))
+	{
+		return false;
+	}
+
+	Weapon->AttachToActor(Character, FAttachmentTransformRules::KeepWorldTransform);
+
+	const bool bFirstPersonAttached = Weapon->GetFirstPersonMesh()->AttachToComponent(
+		FirstPersonCharacterMesh,
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		AttachmentMapping->WieldedSocket);
+
+	const bool bThirdPersonAttached = Weapon->GetThirdPersonMesh()->AttachToComponent(
+		ThirdPersonCharacterMesh,
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		AttachmentMapping->WieldedSocket);
+
+	return bFirstPersonAttached && bThirdPersonAttached;
+}
+
+void UEnclaveEquipmentComponent::OnRep_CurrentEquippedItem()
+{
+	AEnclaveWeapon* Weapon = Cast<AEnclaveWeapon>(CurrentEquippedItem);
+
+	if (IsValid(Weapon))
+	{
+		AttachWeaponToOwner(Weapon);
+	}
 }

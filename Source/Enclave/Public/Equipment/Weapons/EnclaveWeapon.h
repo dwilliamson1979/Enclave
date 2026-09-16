@@ -9,6 +9,7 @@
 
 class USkeletalMeshComponent;
 class UEnclaveWeaponDefinition;
+class USceneComponent;
 
 /**
  * Base class for wieldable weapons.
@@ -45,6 +46,9 @@ protected:
 	virtual bool TryPrimaryAction(const FEnclaveInputEvent& InputEvent);
 	virtual bool TrySecondaryAction(const FEnclaveInputEvent& InputEvent);
 	virtual bool TryTertiaryAction(const FEnclaveInputEvent& InputEvent);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<USceneComponent> SceneRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh;

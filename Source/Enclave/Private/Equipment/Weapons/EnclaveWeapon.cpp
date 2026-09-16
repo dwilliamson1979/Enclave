@@ -2,6 +2,7 @@
 
 #include "Equipment/Weapons/EnclaveWeapon.h"
 
+#include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 
 #include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
@@ -13,19 +14,28 @@ AEnclaveWeapon::AEnclaveWeapon()
 	bReplicates = true;
 	bNetUseOwnerRelevancy = true;
 
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	SetRootComponent(SceneRoot);
+
 	FirstPersonMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonMesh"));
-	SetRootComponent(FirstPersonMesh);
+	FirstPersonMesh->SetupAttachment(SceneRoot);
+	//SetRootComponent(FirstPersonMesh);
 	FirstPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 	FirstPersonMesh->SetReceivesDecals(false);
 	FirstPersonMesh->SetCastShadow(false);
-	FirstPersonMesh->SetHiddenInGame(true);
+	FirstPersonMesh->SetOnlyOwnerSee(true);
+	FirstPersonMesh->SetOwnerNoSee(false);
+	FirstPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	ThirdPersonMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("ThirdPersonMesh"));
-	ThirdPersonMesh->SetupAttachment(RootComponent);
+	ThirdPersonMesh->SetupAttachment(SceneRoot);
+	//ThirdPersonMesh->SetupAttachment(RootComponent);
 	ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 	ThirdPersonMesh->SetReceivesDecals(false);
 	ThirdPersonMesh->SetCastShadow(true);
-	ThirdPersonMesh->SetHiddenInGame(true);
+	ThirdPersonMesh->SetOnlyOwnerSee(false);
+	ThirdPersonMesh->SetOwnerNoSee(true);
+	ThirdPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AEnclaveWeapon::BeginPlay()

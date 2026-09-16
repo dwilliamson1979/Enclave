@@ -18,6 +18,7 @@ class UEnclaveViewComponent;
 class UEnclaveCombatComponent;
 class UEnclaveEquipmentComponent;
 class UEnclaveItemAttachmentDefinition;
+class AEnclaveWeapon;
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface
@@ -28,10 +29,8 @@ public:
 	AEnclaveCharacter(const FObjectInitializer& ObjectInitializer);
 
 	virtual void Tick(float DeltaTime) override;
-
-	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-
+	virtual void PossessedBy(AController* NewController) override;
 
 	// Interface implementations
 
@@ -42,7 +41,9 @@ public:
 	virtual const UEnclaveInputConfig* GetInputConfig() const override;
 
 	UEnclaveCharacterMovementComponent* GetEnclaveCharacterMovement() const;
-	
+
+	USkeletalMeshComponent* GetFirstPersonMesh() const { return FirstPersonMesh; }
+
 	const UEnclaveItemAttachmentDefinition* GetItemAttachmentDefinition() const;
 
 protected:
@@ -81,5 +82,8 @@ private:
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveItemAttachmentDefinition> ItemAttachmentDefinition = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<AEnclaveWeapon> DefaultWeaponClass;
 
 };
