@@ -2,40 +2,13 @@
 
 #include "Equipment/Weapons/EnclaveWeapon.h"
 
-#include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 
 #include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
 
 AEnclaveWeapon::AEnclaveWeapon()
 {
-	PrimaryActorTick.bCanEverTick = false;
-
-	bReplicates = true;
-	bNetUseOwnerRelevancy = true;
-
-	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
-	SetRootComponent(SceneRoot);
-
-	FirstPersonMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FirstPersonMesh"));
-	FirstPersonMesh->SetupAttachment(SceneRoot);
-	//SetRootComponent(FirstPersonMesh);
-	FirstPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
-	FirstPersonMesh->SetReceivesDecals(false);
-	FirstPersonMesh->SetCastShadow(false);
-	FirstPersonMesh->SetOnlyOwnerSee(true);
-	FirstPersonMesh->SetOwnerNoSee(false);
-	FirstPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	ThirdPersonMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("ThirdPersonMesh"));
-	ThirdPersonMesh->SetupAttachment(SceneRoot);
-	//ThirdPersonMesh->SetupAttachment(RootComponent);
-	ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
-	ThirdPersonMesh->SetReceivesDecals(false);
-	ThirdPersonMesh->SetCastShadow(true);
-	ThirdPersonMesh->SetOnlyOwnerSee(false);
-	ThirdPersonMesh->SetOwnerNoSee(true);
-	ThirdPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	
 }
 
 void AEnclaveWeapon::BeginPlay()
@@ -43,6 +16,16 @@ void AEnclaveWeapon::BeginPlay()
 	Super::BeginPlay();
 
 	ApplyWeaponDefinition();
+}
+
+FGameplayTag AEnclaveWeapon::GetItemType() const
+{
+	if (!IsValid(WeaponDefinition))
+	{
+		return FGameplayTag();
+	}
+
+	return WeaponDefinition->GetWeaponType();
 }
 
 void AEnclaveWeapon::ApplyWeaponDefinition()
@@ -85,3 +68,10 @@ bool AEnclaveWeapon::TryTertiaryAction(const FEnclaveInputEvent& InputEvent)
 {
 	return false;
 }
+
+//Adding this because I may reference it in the future. S2L14
+//void AWeapon::OnRep_Instigator()
+//{
+//	Super::OnRep_Instigator();
+//	AttachToOwningPawn();
+//}

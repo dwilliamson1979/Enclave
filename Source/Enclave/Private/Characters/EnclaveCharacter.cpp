@@ -17,7 +17,7 @@
 
 #include "Combat/EnclaveCombatComponent.h"
 
-#include "Equipment/Weapons/EnclaveWeapon.h"
+#include "Equipment/Items/EnclaveItem.h"
 #include "Equipment/Data/EnclaveItemAttachmentDefinition.h"
 
 #include "Engine/Engine.h"
@@ -70,9 +70,9 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
-	if (EquipmentComp && DefaultWeaponClass)
+	if (EquipmentComp && DefaultItemClass)
 	{
-		EquipmentComp->SpawnDefaultWeapon(DefaultWeaponClass);
+		EquipmentComp->SpawnDefaultItem(DefaultItemClass);
 	}
 }
 
@@ -129,7 +129,30 @@ UEnclaveCharacterMovementComponent* AEnclaveCharacter::GetEnclaveCharacterMoveme
 	return Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement());
 }
 
-const UEnclaveItemAttachmentDefinition* AEnclaveCharacter::GetItemAttachmentDefinition() const
+bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const
 {
-	return ItemAttachmentDefinition;
+	if (!ItemType.IsValid() || !IsValid(ItemAttachmentDefinition))
+	{
+		return false;
+	}
+
+	const FEnclaveItemAttachmentMapping* AttachmentMapping = ItemAttachmentDefinition->FindAttachmentMapping(ItemType);
+
+	if (!AttachmentMapping || AttachmentMapping->WieldedSocket.IsNone())
+	{
+		return false;
+	}
+
+	if (!IsValid(FirstPersonMesh) || !IsValid(GetMesh()))
+	{
+		return false;
+	}
+
+	OutTargets.FirstPerson.ParentComponent = FirstPersonMesh;
+	OutTargets.FirstPerson.SocketName = AttachmentMapping->WieldedSocket;
+
+	OutTargets.ThirdPerson.ParentComponent = GetMesh();
+	OutTargets.ThirdPerson.SocketName = AttachmentMapping->WieldedSocket;
+
+	return true;
 }

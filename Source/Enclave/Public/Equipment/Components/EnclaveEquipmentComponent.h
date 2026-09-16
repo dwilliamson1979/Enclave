@@ -7,7 +7,7 @@
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
 #include "EnclaveEquipmentComponent.generated.h"
 
-class AEnclaveWeapon;
+class AEnclaveItem;
 
 /**
  * Manages the character's active equipment and item-action input.
@@ -33,9 +33,9 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	AEnclaveWeapon* SpawnDefaultWeapon(TSubclassOf<AEnclaveWeapon> WeaponClass);
+	AEnclaveItem* SpawnDefaultItem(TSubclassOf<AEnclaveItem> ItemClass);
 
-	AActor* GetCurrentEquippedItem() const { return CurrentEquippedItem; }
+	AEnclaveItem* GetCurrentEquippedItem() const { return CurrentEquippedItem; }
 
 	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
@@ -83,11 +83,11 @@ private:
 	FGameplayTagContainer InputFilters;
 
 
-	bool AttachWeaponToOwner(AEnclaveWeapon* Weapon);
+	bool AttachItemToOwner(AEnclaveItem* Item);
 
 	UFUNCTION()
 	void OnRep_CurrentEquippedItem();
 
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentEquippedItem)
-	TObjectPtr<AActor> CurrentEquippedItem = nullptr;
+	TObjectPtr<AEnclaveItem> CurrentEquippedItem = nullptr;
 };

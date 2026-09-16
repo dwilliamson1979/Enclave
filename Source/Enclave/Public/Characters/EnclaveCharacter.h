@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
+#include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
 #include "EnclaveCharacter.generated.h"
 
@@ -18,10 +19,10 @@ class UEnclaveViewComponent;
 class UEnclaveCombatComponent;
 class UEnclaveEquipmentComponent;
 class UEnclaveItemAttachmentDefinition;
-class AEnclaveWeapon;
+class AEnclaveItem;
 
 UCLASS()
-class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface
+class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveItemWielderInterface
 {
 	GENERATED_BODY()
 
@@ -40,11 +41,10 @@ public:
 	//IEnclaveInputConfigProviderInterface
 	virtual const UEnclaveInputConfig* GetInputConfig() const override;
 
+	// IEnclaveItemWielderInterface
+	virtual bool ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const override;
+
 	UEnclaveCharacterMovementComponent* GetEnclaveCharacterMovement() const;
-
-	USkeletalMeshComponent* GetFirstPersonMesh() const { return FirstPersonMesh; }
-
-	const UEnclaveItemAttachmentDefinition* GetItemAttachmentDefinition() const;
 
 protected:
 	// Called when the game starts or when spawned
@@ -84,6 +84,6 @@ private:
 	TObjectPtr<UEnclaveItemAttachmentDefinition> ItemAttachmentDefinition = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<AEnclaveWeapon> DefaultWeaponClass;
+	TSubclassOf<AEnclaveItem> DefaultItemClass;
 
 };

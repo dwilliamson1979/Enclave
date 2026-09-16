@@ -6,10 +6,9 @@
 
 #include "Characters/EnclaveCharacter.h"
 
-#include "Equipment/Data/EnclaveItemAttachmentDefinition.h"
+#include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
-#include "Equipment/Weapons/EnclaveWeapon.h"
-#include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
+#include "Equipment/Items/EnclaveItem.h"
 
 #include "GameFramework/Pawn.h"
 
@@ -207,18 +206,18 @@ bool UEnclaveEquipmentComponent::HandleTertiaryItemInput(const FEnclaveInputEven
 	return TryPerformTertiaryAction(InputEvent);
 }
 
-AEnclaveWeapon* UEnclaveEquipmentComponent::SpawnDefaultWeapon(TSubclassOf<AEnclaveWeapon> WeaponClass)
+AEnclaveItem* UEnclaveEquipmentComponent::SpawnDefaultItem(TSubclassOf<AEnclaveItem> ItemClass)
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !WeaponClass)
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !ItemClass)
 	{
 		return nullptr;
 	}
 
 	if (IsValid(CurrentEquippedItem))
 	{
-		return Cast<AEnclaveWeapon>(CurrentEquippedItem);
+		return CurrentEquippedItem;
 	}
 
 	UWorld* World = GetWorld();
@@ -233,84 +232,80 @@ AEnclaveWeapon* UEnclaveEquipmentComponent::SpawnDefaultWeapon(TSubclassOf<AEncl
 	SpawnParameters.Instigator = Cast<APawn>(OwnerActor);
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	AEnclaveWeapon* Weapon = World->SpawnActor<AEnclaveWeapon>(WeaponClass, OwnerActor->GetActorTransform(), SpawnParameters);
+	AEnclaveItem* Item = World->SpawnActor<AEnclaveItem>(ItemClass, OwnerActor->GetActorTransform(), SpawnParameters);
 
-	if (!IsValid(Weapon))
+	if (!IsValid(Item))
 	{
 		return nullptr;
 	}
 
-	CurrentEquippedItem = Weapon;
+	CurrentEquippedItem = Item;
 
-	AttachWeaponToOwner(Weapon);
+	AttachItemToOwner(Item);
 
-	return Weapon;
+	return Item;
 }
 
-bool UEnclaveEquipmentComponent::AttachWeaponToOwner(AEnclaveWeapon* Weapon)
+bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)
 {
-	if (!IsValid(Weapon))
+	if (!IsValid(Item))
 	{
 		return false;
 	}
 
-	AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
+	AActor* OwnerActor = GetOwner();
 
-	if (!IsValid(Character))
+	if (!IsValid(OwnerActor))
 	{
 		return false;
 	}
 
-	const UEnclaveWeaponDefinition* WeaponDefinition = Weapon->GetWeaponDefinition();
+	IEnclaveItemWielderInterface* Wielder = Cast<IEnclaveItemWielderInterface>(OwnerActor);
 
-	if (!IsValid(WeaponDefinition))
+	if (!Wielder)
 	{
 		return false;
 	}
 
-	const UEnclaveItemAttachmentDefinition* AttachmentDefinition = Character->GetItemAttachmentDefinition();
+	const FGameplayTag ItemType = Item->GetItemType();
 
-	if (!IsValid(AttachmentDefinition))
+	if (!ItemType.IsValid())
 	{
 		return false;
 	}
 
-	const FEnclaveItemAttachmentMapping* AttachmentMapping = AttachmentDefinition->FindAttachmentMapping(WeaponDefinition->GetWeaponType());
+	FEnclaveWieldedItemAttachmentTargets AttachmentTargets;
 
-	if (!AttachmentMapping)
+	if (!Wielder->ResolveWieldedItemAttachmentTargets(ItemType, AttachmentTargets))
 	{
 		return false;
 	}
 
-	USkeletalMeshComponent* FirstPersonCharacterMesh = Character->GetFirstPersonMesh();
-	USkeletalMeshComponent* ThirdPersonCharacterMesh = Character->GetMesh();
-
-	if (!IsValid(FirstPersonCharacterMesh) || !IsValid(ThirdPersonCharacterMesh))
+	if (!IsValid(AttachmentTargets.FirstPerson.ParentComponent) ||
+		!IsValid(AttachmentTargets.ThirdPerson.ParentComponent))
 	{
 		return false;
 	}
 
-	Weapon->AttachToActor(Character, FAttachmentTransformRules::KeepWorldTransform);
+	Item->AttachToActor(OwnerActor, FAttachmentTransformRules::KeepWorldTransform);
 
-	const bool bFirstPersonAttached = Weapon->GetFirstPersonMesh()->AttachToComponent(
-		FirstPersonCharacterMesh,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		AttachmentMapping->WieldedSocket);
+	const bool bFirstPersonAttached = Item->GetFirstPersonMesh()->AttachToComponent(
+		AttachmentTargets.FirstPerson.ParentComponent,
+		FAttachmentTransformRules::KeepRelativeTransform,// SnapToTargetNotIncludingScale,
+		AttachmentTargets.FirstPerson.SocketName);
 
-	const bool bThirdPersonAttached = Weapon->GetThirdPersonMesh()->AttachToComponent(
-		ThirdPersonCharacterMesh,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		AttachmentMapping->WieldedSocket);
+	const bool bThirdPersonAttached = Item->GetThirdPersonMesh()->AttachToComponent(
+		AttachmentTargets.ThirdPerson.ParentComponent,
+		FAttachmentTransformRules::KeepRelativeTransform,// SnapToTargetNotIncludingScale,
+		AttachmentTargets.ThirdPerson.SocketName);
 
 	return bFirstPersonAttached && bThirdPersonAttached;
 }
 
 void UEnclaveEquipmentComponent::OnRep_CurrentEquippedItem()
 {
-	AEnclaveWeapon* Weapon = Cast<AEnclaveWeapon>(CurrentEquippedItem);
-
-	if (IsValid(Weapon))
+	if (IsValid(CurrentEquippedItem))
 	{
-		AttachWeaponToOwner(Weapon);
+		AttachItemToOwner(CurrentEquippedItem);
 	}
 }
