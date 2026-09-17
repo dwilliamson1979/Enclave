@@ -76,27 +76,27 @@ bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEven
 
 	if (NextEquipmentInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextEquipmentInputTag))
 	{
-		return HandleNextEquipmentInput(InputEvent);
+		return HandleNextWieldableInput(InputEvent);
 	}
 
 	if (PreviousEquipmentInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousEquipmentInputTag))
 	{
-		return HandlePreviousEquipmentInput(InputEvent);
+		return HandlePreviousWieldableInput(InputEvent);
 	}
 
-	if (PrimaryItemInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PrimaryItemInputTag))
+	if (ItemActionPrimaryInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemActionPrimaryInputTag))
 	{
-		return HandlePrimaryItemInput(InputEvent);
+		return HandleItemPrimaryActionInput(InputEvent);
 	}
 
-	if (SecondaryItemInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(SecondaryItemInputTag))
+	if (ItemActionSecondaryInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemActionSecondaryInputTag))
 	{
-		return HandleSecondaryItemInput(InputEvent);
+		return HandleItemSecondaryActionInput(InputEvent);
 	}
 
-	if (TertiaryItemInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(TertiaryItemInputTag))
+	if (ItemActionTertiaryInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemActionTertiaryInputTag))
 	{
-		return HandleTertiaryItemInput(InputEvent);
+		return HandleItemTertiaryActionInput(InputEvent);
 	}
 
 	return false;
@@ -178,23 +178,23 @@ void UEnclaveEquipmentComponent::RebuildInputFilters()
 		InputFilters.AddTag(PreviousEquipmentInputTag);
 	}
 
-	if (PrimaryItemInputTag.IsValid())
+	if (ItemActionPrimaryInputTag.IsValid())
 	{
-		InputFilters.AddTag(PrimaryItemInputTag);
+		InputFilters.AddTag(ItemActionPrimaryInputTag);
 	}
 
-	if (SecondaryItemInputTag.IsValid())
+	if (ItemActionSecondaryInputTag.IsValid())
 	{
-		InputFilters.AddTag(SecondaryItemInputTag);
+		InputFilters.AddTag(ItemActionSecondaryInputTag);
 	}
 
-	if (TertiaryItemInputTag.IsValid())
+	if (ItemActionTertiaryInputTag.IsValid())
 	{
-		InputFilters.AddTag(TertiaryItemInputTag);
+		InputFilters.AddTag(ItemActionTertiaryInputTag);
 	}
 }
 
-bool UEnclaveEquipmentComponent::HandleNextEquipmentInput(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent)
 {
 	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
 	{
@@ -204,7 +204,7 @@ bool UEnclaveEquipmentComponent::HandleNextEquipmentInput(const FEnclaveInputEve
 	return TryEquipNext();
 }
 
-bool UEnclaveEquipmentComponent::HandlePreviousEquipmentInput(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent)
 {
 	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
 	{
@@ -214,17 +214,17 @@ bool UEnclaveEquipmentComponent::HandlePreviousEquipmentInput(const FEnclaveInpu
 	return TryEquipPrevious();
 }
 
-bool UEnclaveEquipmentComponent::HandlePrimaryItemInput(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleItemPrimaryActionInput(const FEnclaveInputEvent& InputEvent)
 {
 	return TryPerformPrimaryAction(InputEvent);
 }
 
-bool UEnclaveEquipmentComponent::HandleSecondaryItemInput(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleItemSecondaryActionInput(const FEnclaveInputEvent& InputEvent)
 {
 	return TryPerformSecondaryAction(InputEvent);
 }
 
-bool UEnclaveEquipmentComponent::HandleTertiaryItemInput(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleItemTertiaryActionInput(const FEnclaveInputEvent& InputEvent)
 {
 	return TryPerformTertiaryAction(InputEvent);
 }

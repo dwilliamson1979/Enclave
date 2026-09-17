@@ -18,14 +18,14 @@ namespace EnclaveGameplayTags
 
 	// Input ItemActions
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item, "Input.Item", "Root tag for currently equipped item input.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Primary, "Input.Item.Primary", "Primary action for the currently equipped item.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Secondary, "Input.Item.Secondary", "Secondary action for the currently equipped item.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Tertiary, "Input.Item.Tertiary", "Tertiary action for the currently equipped item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Primary, "Input.Item.Action.Primary", "Primary action for the currently equipped item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Secondary, "Input.Item.Action.Secondary", "Secondary action for the currently equipped item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Tertiary, "Input.Item.Action.Tertiary", "Tertiary action for the currently equipped item.");
 
 	// Equipment EquipmentActions
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment, "Input.Equipment", "Root tag for equipment-selection input.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Next, "Input.Equipment.Next", "Select the next available equipment item.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Previous, "Input.Equipment.Previous", "Select the previous available equipment item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_NextWieldable, "Input.Equipment.NextWieldable", "Select the next available equipment item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_PreviousWieldable, "Input.Equipment.PreviousWieldable", "Select the previous available equipment item.");
 
 	// Input - Gameplay / Item / Interaction Actions
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action, "Input.Action", "Root tag for gameplay action input.");

@@ -31,9 +31,9 @@ namespace EnclaveGameplayTags
 
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item);
 
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Primary);
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Secondary);
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Tertiary);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Primary);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Secondary);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Tertiary);
 
 	// ---------------------------------------------------------------------
 	// Equipment - Equipment Actions
@@ -41,8 +41,8 @@ namespace EnclaveGameplayTags
 
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment);
 
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Next);
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Previous);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_NextWieldable);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_PreviousWieldable);
 
 	//// ---------------------------------------------------------------------
 	//// Input - Gameplay Actions

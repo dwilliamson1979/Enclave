@@ -50,12 +50,12 @@ public:
 private:
 	void RebuildInputFilters();
 
-	bool HandleNextEquipmentInput(const FEnclaveInputEvent& InputEvent);
-	bool HandlePreviousEquipmentInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent);
+	bool HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent);
 
-	bool HandlePrimaryItemInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleSecondaryItemInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleTertiaryItemInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemPrimaryActionInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemSecondaryActionInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemTertiaryActionInput(const FEnclaveInputEvent& InputEvent);
 
 	/** Semantic input tag used to request the next active equipment item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
@@ -67,15 +67,15 @@ private:
 
 	/** Semantic input tag used for the currently equipped item's primary action. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag PrimaryItemInputTag;
+	FGameplayTag ItemActionPrimaryInputTag;
 
 	/** Semantic input tag used for the currently equipped item's secondary action. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag SecondaryItemInputTag;
+	FGameplayTag ItemActionSecondaryInputTag;
 
 	/** Semantic input tag used for the currently equipped item's tertiary action. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag TertiaryItemInputTag;
+	FGameplayTag ItemActionTertiaryInputTag;
 
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;
