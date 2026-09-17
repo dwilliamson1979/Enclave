@@ -26,10 +26,10 @@ void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentEquippedItem);
+	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentWieldedItem);
 }
 
-bool UEnclaveEquipmentComponent::EquipItem(AEnclaveItem* Item)
+bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 {
 	AActor* OwnerActor = GetOwner();
 
@@ -38,12 +38,12 @@ bool UEnclaveEquipmentComponent::EquipItem(AEnclaveItem* Item)
 		return false;
 	}
 
-	if (CurrentEquippedItem == Item)
+	if (CurrentWieldedItem == Item)
 	{
 		return true;
 	}
 
-	if (IsValid(CurrentEquippedItem))
+	if (IsValid(CurrentWieldedItem))
 	{
 		return false;
 	}
@@ -53,7 +53,7 @@ bool UEnclaveEquipmentComponent::EquipItem(AEnclaveItem* Item)
 		return false;
 	}
 
-	CurrentEquippedItem = Item;
+	CurrentWieldedItem = Item;
 
 	return true;
 }
@@ -74,37 +74,37 @@ bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEven
 			FString::Printf(TEXT("UEnclaveEquipmentComponent::HandleInput: %s"), *InputEvent.InputTag.ToString()));
 	}
 
-	if (NextEquipmentInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextEquipmentInputTag))
+	if (NextWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextWieldableInputTag))
 	{
 		return HandleNextWieldableInput(InputEvent);
 	}
 
-	if (PreviousEquipmentInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousEquipmentInputTag))
+	if (PreviousWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousWieldableInputTag))
 	{
 		return HandlePreviousWieldableInput(InputEvent);
 	}
 
-	if (ItemActionPrimaryInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemActionPrimaryInputTag))
+	if (ItemPrimaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemPrimaryActionInputTag))
 	{
-		return HandleItemPrimaryActionInput(InputEvent);
+		return HandleItemPrimaryInput(InputEvent);
 	}
 
-	if (ItemActionSecondaryInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemActionSecondaryInputTag))
+	if (ItemSecondaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemSecondaryActionInputTag))
 	{
-		return HandleItemSecondaryActionInput(InputEvent);
+		return HandleItemSecondaryInput(InputEvent);
 	}
 
-	if (ItemActionTertiaryInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemActionTertiaryInputTag))
+	if (ItemTertiaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemTertiaryActionInputTag))
 	{
-		return HandleItemTertiaryActionInput(InputEvent);
+		return HandleItemTertiaryInput(InputEvent);
 	}
 
 	return false;
 }
 
-bool UEnclaveEquipmentComponent::TryEquipNext()
+bool UEnclaveEquipmentComponent::TryWieldNext()
 {
-	if (!CanCycleEquipment())
+	if (!CanCycleWieldables())
 	{
 		return false;
 	}
@@ -114,9 +114,9 @@ bool UEnclaveEquipmentComponent::TryEquipNext()
 	return true;
 }
 
-bool UEnclaveEquipmentComponent::TryEquipPrevious()
+bool UEnclaveEquipmentComponent::TryWieldPrevious()
 {
-	if (!CanCycleEquipment())
+	if (!CanCycleWieldables())
 	{
 		return false;
 	}
@@ -126,7 +126,7 @@ bool UEnclaveEquipmentComponent::TryEquipPrevious()
 	return true;
 }
 
-bool UEnclaveEquipmentComponent::CanCycleEquipment() const
+bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 {
 	// TODO: Add equipment-state validation once active slots and
 	// equipment transitions are implemented.
@@ -134,63 +134,63 @@ bool UEnclaveEquipmentComponent::CanCycleEquipment() const
 	return true;
 }
 
-bool UEnclaveEquipmentComponent::TryPerformPrimaryAction(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent)
 {
-	if (!IsValid(CurrentEquippedItem) || !CurrentEquippedItem->Implements<UEnclaveWieldableInterface>())
+	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
 	{
 		return false;
 	}
 
-	return IEnclaveWieldableInterface::Execute_HandlePrimaryAction(CurrentEquippedItem, InputEvent);
+	return IEnclaveWieldableInterface::Execute_HandlePrimaryAction(CurrentWieldedItem, InputEvent);
 }
 
-bool UEnclaveEquipmentComponent::TryPerformSecondaryAction(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent)
 {
-	if (!IsValid(CurrentEquippedItem) || !CurrentEquippedItem->Implements<UEnclaveWieldableInterface>())
+	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
 	{
 		return false;
 	}
 
-	return IEnclaveWieldableInterface::Execute_HandleSecondaryAction(CurrentEquippedItem, InputEvent);
+	return IEnclaveWieldableInterface::Execute_HandleSecondaryAction(CurrentWieldedItem, InputEvent);
 }
 
-bool UEnclaveEquipmentComponent::TryPerformTertiaryAction(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::TryPerformItemTertiary(const FEnclaveInputEvent& InputEvent)
 {
-	if (!IsValid(CurrentEquippedItem) || !CurrentEquippedItem->Implements<UEnclaveWieldableInterface>())
+	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
 	{
 		return false;
 	}
 
-	return IEnclaveWieldableInterface::Execute_HandleTertiaryAction(CurrentEquippedItem, InputEvent);
+	return IEnclaveWieldableInterface::Execute_HandleTertiaryAction(CurrentWieldedItem, InputEvent);
 }
 
 void UEnclaveEquipmentComponent::RebuildInputFilters()
 {
 	InputFilters.Reset();
 
-	if (NextEquipmentInputTag.IsValid())
+	if (NextWieldableInputTag.IsValid())
 	{
-		InputFilters.AddTag(NextEquipmentInputTag);
+		InputFilters.AddTag(NextWieldableInputTag);
 	}
 
-	if (PreviousEquipmentInputTag.IsValid())
+	if (PreviousWieldableInputTag.IsValid())
 	{
-		InputFilters.AddTag(PreviousEquipmentInputTag);
+		InputFilters.AddTag(PreviousWieldableInputTag);
 	}
 
-	if (ItemActionPrimaryInputTag.IsValid())
+	if (ItemPrimaryActionInputTag.IsValid())
 	{
-		InputFilters.AddTag(ItemActionPrimaryInputTag);
+		InputFilters.AddTag(ItemPrimaryActionInputTag);
 	}
 
-	if (ItemActionSecondaryInputTag.IsValid())
+	if (ItemSecondaryActionInputTag.IsValid())
 	{
-		InputFilters.AddTag(ItemActionSecondaryInputTag);
+		InputFilters.AddTag(ItemSecondaryActionInputTag);
 	}
 
-	if (ItemActionTertiaryInputTag.IsValid())
+	if (ItemTertiaryActionInputTag.IsValid())
 	{
-		InputFilters.AddTag(ItemActionTertiaryInputTag);
+		InputFilters.AddTag(ItemTertiaryActionInputTag);
 	}
 }
 
@@ -201,7 +201,7 @@ bool UEnclaveEquipmentComponent::HandleNextWieldableInput(const FEnclaveInputEve
 		return false;
 	}
 
-	return TryEquipNext();
+	return TryWieldNext();
 }
 
 bool UEnclaveEquipmentComponent::HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent)
@@ -211,22 +211,22 @@ bool UEnclaveEquipmentComponent::HandlePreviousWieldableInput(const FEnclaveInpu
 		return false;
 	}
 
-	return TryEquipPrevious();
+	return TryWieldPrevious();
 }
 
-bool UEnclaveEquipmentComponent::HandleItemPrimaryActionInput(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleItemPrimaryInput(const FEnclaveInputEvent& InputEvent)
 {
-	return TryPerformPrimaryAction(InputEvent);
+	return TryPerformItemPrimary(InputEvent);
 }
 
-bool UEnclaveEquipmentComponent::HandleItemSecondaryActionInput(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleItemSecondaryInput(const FEnclaveInputEvent& InputEvent)
 {
-	return TryPerformSecondaryAction(InputEvent);
+	return TryPerformItemSecondary(InputEvent);
 }
 
-bool UEnclaveEquipmentComponent::HandleItemTertiaryActionInput(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleItemTertiaryInput(const FEnclaveInputEvent& InputEvent)
 {
-	return TryPerformTertiaryAction(InputEvent);
+	return TryPerformItemTertiary(InputEvent);
 }
 
 bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)
@@ -285,10 +285,10 @@ bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)
 	return bFirstPersonAttached && bThirdPersonAttached;
 }
 
-void UEnclaveEquipmentComponent::OnRep_CurrentEquippedItem()
+void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()
 {
-	if (IsValid(CurrentEquippedItem))
+	if (IsValid(CurrentWieldedItem))
 	{
-		AttachItemToOwner(CurrentEquippedItem);
+		AttachItemToOwner(CurrentWieldedItem);
 	}
 }

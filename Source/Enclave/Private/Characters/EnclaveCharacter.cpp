@@ -93,7 +93,7 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 
 	if (IsValid(InitialItem))
 	{
-		EquipmentComp->EquipItem(InitialItem);
+		EquipmentComp->WieldItem(InitialItem);
 	}
 }
 

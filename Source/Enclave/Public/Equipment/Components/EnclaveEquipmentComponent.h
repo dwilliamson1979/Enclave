@@ -32,20 +32,20 @@ public:
 	virtual void InitializeComponent() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	bool EquipItem(AEnclaveItem* Item);
-	AEnclaveItem* GetCurrentEquippedItem() const { return CurrentEquippedItem; }
+	bool WieldItem(AEnclaveItem* Item);
+	AEnclaveItem* GetCurrentWieldedItem() const { return CurrentWieldedItem; }
 
 	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
 	virtual bool HandleInput(const FEnclaveInputEvent& InputEvent) override;
 
-	bool TryEquipNext();
-	bool TryEquipPrevious();
-	bool CanCycleEquipment() const;
+	bool TryWieldNext();
+	bool TryWieldPrevious();
+	bool CanCycleWieldables() const;
 
-	bool TryPerformPrimaryAction(const FEnclaveInputEvent& InputEvent);
-	bool TryPerformSecondaryAction(const FEnclaveInputEvent& InputEvent);
-	bool TryPerformTertiaryAction(const FEnclaveInputEvent& InputEvent);
+	bool TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent);
+	bool TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent);
+	bool TryPerformItemTertiary(const FEnclaveInputEvent& InputEvent);
 
 private:
 	void RebuildInputFilters();
@@ -53,29 +53,29 @@ private:
 	bool HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent);
 	bool HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent);
 
-	bool HandleItemPrimaryActionInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleItemSecondaryActionInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleItemTertiaryActionInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemPrimaryInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemSecondaryInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemTertiaryInput(const FEnclaveInputEvent& InputEvent);
 
 	/** Semantic input tag used to request the next active equipment item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
-	FGameplayTag NextEquipmentInputTag;
+	FGameplayTag NextWieldableInputTag;
 
 	/** Semantic input tag used to request the previous active equipment item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
-	FGameplayTag PreviousEquipmentInputTag;
+	FGameplayTag PreviousWieldableInputTag;
 
 	/** Semantic input tag used for the currently equipped item's primary action. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag ItemActionPrimaryInputTag;
+	FGameplayTag ItemPrimaryActionInputTag;
 
 	/** Semantic input tag used for the currently equipped item's secondary action. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag ItemActionSecondaryInputTag;
+	FGameplayTag ItemSecondaryActionInputTag;
 
 	/** Semantic input tag used for the currently equipped item's tertiary action. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag ItemActionTertiaryInputTag;
+	FGameplayTag ItemTertiaryActionInputTag;
 
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;
@@ -83,8 +83,8 @@ private:
 	bool AttachItemToOwner(AEnclaveItem* Item);
 
 	UFUNCTION()
-	void OnRep_CurrentEquippedItem();
+	void OnRep_CurrentWieldedItem();
 
-	UPROPERTY(ReplicatedUsing = OnRep_CurrentEquippedItem)
-	TObjectPtr<AEnclaveItem> CurrentEquippedItem = nullptr;
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentWieldedItem)
+	TObjectPtr<AEnclaveItem> CurrentWieldedItem = nullptr;
 };

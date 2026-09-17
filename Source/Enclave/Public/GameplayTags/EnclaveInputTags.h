@@ -41,8 +41,8 @@ namespace EnclaveGameplayTags
 
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment);
 
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_NextWieldable);
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_PreviousWieldable);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Next_Wieldable);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Previous_Wieldable);
 
 	//// ---------------------------------------------------------------------
 	//// Input - Gameplay Actions
