@@ -30,11 +30,9 @@ public:
 
 	// UActorComponent
 	virtual void InitializeComponent() override;
-
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	AEnclaveItem* SpawnDefaultItem(TSubclassOf<AEnclaveItem> ItemClass);
-
+	bool EquipItem(AEnclaveItem* Item);
 	AEnclaveItem* GetCurrentEquippedItem() const { return CurrentEquippedItem; }
 
 	// IEnclaveInputHandlerInterface
@@ -81,7 +79,6 @@ private:
 
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;
-
 
 	bool AttachItemToOwner(AEnclaveItem* Item);
 

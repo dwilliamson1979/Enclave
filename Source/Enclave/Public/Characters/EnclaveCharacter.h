@@ -11,13 +11,13 @@
 
 class UCameraComponent;
 class USpringArmComponent;
-//class USceneComponent;
 class UEnclaveInputConfig;
 class UEnclaveInputRouterComponent;
 class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
 class UEnclaveCombatComponent;
 class UEnclaveEquipmentComponent;
+class UEnclaveInventoryComponent;
 class UEnclaveItemAttachmentDefinition;
 class AEnclaveItem;
 
@@ -35,10 +35,10 @@ public:
 
 	// Interface implementations
 
-	//IInputReceiverInterface
+	// IEnclaveInputReceiverInterface
 	virtual void ProcessInput(const FEnclaveInputEvent& InputEvent) override;
 
-	//IEnclaveInputConfigProviderInterface
+	// IEnclaveInputConfigProviderInterface
 	virtual const UEnclaveInputConfig* GetInputConfig() const override;
 
 	// IEnclaveItemWielderInterface
@@ -51,10 +51,8 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
-
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh;
-
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> SpringArmComp = nullptr;
@@ -62,28 +60,27 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCameraComponent> CameraComp = nullptr;
 
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "View", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveViewComponent> ViewComp = nullptr;
-	
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveInputRouterComponent> InputRouterComp = nullptr;	
+	TObjectPtr<UEnclaveInputRouterComponent> InputRouterComp = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInputConfig> InputConfig = nullptr;
 
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveCombatComponent> CombatComp = nullptr;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveInventoryComponent> InventoryComp = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
+	TArray<TSubclassOf<AEnclaveItem>> DefaultItemClasses;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;
-	
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveItemAttachmentDefinition> ItemAttachmentDefinition = nullptr;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<AEnclaveItem> DefaultItemClass;
-
 };

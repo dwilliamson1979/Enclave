@@ -2,15 +2,9 @@
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 
-#include "Components/SkeletalMeshComponent.h"
-
-#include "Characters/EnclaveCharacter.h"
-
 #include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
-
-#include "GameFramework/Pawn.h"
 
 #include "Net/UnrealNetwork.h"
 #include "InputCoreTypes.h"
@@ -33,6 +27,35 @@ void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentEquippedItem);
+}
+
+bool UEnclaveEquipmentComponent::EquipItem(AEnclaveItem* Item)
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsValid(Item))
+	{
+		return false;
+	}
+
+	if (CurrentEquippedItem == Item)
+	{
+		return true;
+	}
+
+	if (IsValid(CurrentEquippedItem))
+	{
+		return false;
+	}
+
+	if (!AttachItemToOwner(Item))
+	{
+		return false;
+	}
+
+	CurrentEquippedItem = Item;
+
+	return true;
 }
 
 const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
@@ -204,46 +227,6 @@ bool UEnclaveEquipmentComponent::HandleSecondaryItemInput(const FEnclaveInputEve
 bool UEnclaveEquipmentComponent::HandleTertiaryItemInput(const FEnclaveInputEvent& InputEvent)
 {
 	return TryPerformTertiaryAction(InputEvent);
-}
-
-AEnclaveItem* UEnclaveEquipmentComponent::SpawnDefaultItem(TSubclassOf<AEnclaveItem> ItemClass)
-{
-	AActor* OwnerActor = GetOwner();
-
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !ItemClass)
-	{
-		return nullptr;
-	}
-
-	if (IsValid(CurrentEquippedItem))
-	{
-		return CurrentEquippedItem;
-	}
-
-	UWorld* World = GetWorld();
-
-	if (!IsValid(World))
-	{
-		return nullptr;
-	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = OwnerActor;
-	SpawnParameters.Instigator = Cast<APawn>(OwnerActor);
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	AEnclaveItem* Item = World->SpawnActor<AEnclaveItem>(ItemClass, OwnerActor->GetActorTransform(), SpawnParameters);
-
-	if (!IsValid(Item))
-	{
-		return nullptr;
-	}
-
-	CurrentEquippedItem = Item;
-
-	AttachItemToOwner(Item);
-
-	return Item;
 }
 
 bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)

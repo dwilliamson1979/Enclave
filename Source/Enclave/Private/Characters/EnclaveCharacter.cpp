@@ -1,6 +1,5 @@
 // Copyright Lightcarrier Studios
 
-
 #include "Characters/EnclaveCharacter.h"
 
 #include "Camera/CameraComponent.h"
@@ -13,19 +12,21 @@
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
-#include "Equipment/Components/EnclaveEquipmentComponent.h"
 
 #include "Combat/EnclaveCombatComponent.h"
 
-#include "Equipment/Items/EnclaveItem.h"
+#include "Inventory/Components/EnclaveInventoryComponent.h"
+
+#include "Equipment/Components/EnclaveEquipmentComponent.h"
 #include "Equipment/Data/EnclaveItemAttachmentDefinition.h"
+#include "Equipment/Items/EnclaveItem.h"
 
 #include "Engine/Engine.h"
 
 AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UEnclaveCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+	// Set this character to call Tick() every frame. You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
 	// Camera boom
@@ -36,7 +37,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	SpringArmComp->CameraLagSpeed = 15.f;
 	SpringArmComp->bUsePawnControlRotation = true;
 
-	//What if in the future we want the player to be able to alternate between first and third person views?
+	// What if in the future we want the player to be able to alternate between first and third person views?
 
 	// Follow camera
 	CameraComp = CreateDefaultSubobject<UCameraComponent>("CameraComp");
@@ -62,6 +63,9 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	CombatComp = CreateDefaultSubobject<UEnclaveCombatComponent>(TEXT("CombatComp"));
 	CombatComp->SetIsReplicated(true);
 
+	InventoryComp = CreateDefaultSubobject<UEnclaveInventoryComponent>(TEXT("InventoryComp"));
+	InventoryComp->SetIsReplicated(true);
+
 	EquipmentComp = CreateDefaultSubobject<UEnclaveEquipmentComponent>(TEXT("EquipmentComp"));
 	EquipmentComp->SetIsReplicated(true);
 }
@@ -70,9 +74,26 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
-	if (EquipmentComp && DefaultItemClass)
+	if (!InventoryComp || !EquipmentComp || !InventoryComp->IsEmpty())
 	{
-		EquipmentComp->SpawnDefaultItem(DefaultItemClass);
+		return;
+	}
+
+	AEnclaveItem* InitialItem = nullptr;
+
+	for (const TSubclassOf<AEnclaveItem>& ItemClass : DefaultItemClasses)
+	{
+		AEnclaveItem* Item = InventoryComp->SpawnItem(ItemClass);
+
+		if (!InitialItem && IsValid(Item))
+		{
+			InitialItem = Item;
+		}
+	}
+
+	if (IsValid(InitialItem))
+	{
+		EquipmentComp->EquipItem(InitialItem);
 	}
 }
 
@@ -92,14 +113,12 @@ void AEnclaveCharacter::BeginPlay()
 void AEnclaveCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
 }
 
 // Called to bind functionality to input
 void AEnclaveCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
-
 }
 
 void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
@@ -136,8 +155,7 @@ bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& 
 		return false;
 	}
 
-	const FEnclaveItemAttachmentMapping* AttachmentMapping =
-		ItemAttachmentDefinition->FindAttachmentMapping(ItemType);
+	const FEnclaveItemAttachmentMapping* AttachmentMapping = ItemAttachmentDefinition->FindAttachmentMapping(ItemType);
 
 	if (!AttachmentMapping)
 	{
