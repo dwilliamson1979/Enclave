@@ -291,12 +291,12 @@ bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)
 
 	const bool bFirstPersonAttached = Item->GetFirstPersonMesh()->AttachToComponent(
 		AttachmentTargets.FirstPerson.ParentComponent,
-		FAttachmentTransformRules::KeepRelativeTransform,// SnapToTargetNotIncludingScale,
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 		AttachmentTargets.FirstPerson.SocketName);
 
 	const bool bThirdPersonAttached = Item->GetThirdPersonMesh()->AttachToComponent(
 		AttachmentTargets.ThirdPerson.ParentComponent,
-		FAttachmentTransformRules::KeepRelativeTransform,// SnapToTargetNotIncludingScale,
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 		AttachmentTargets.ThirdPerson.SocketName);
 
 	return bFirstPersonAttached && bThirdPersonAttached;

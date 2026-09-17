@@ -136,9 +136,10 @@ bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& 
 		return false;
 	}
 
-	const FEnclaveItemAttachmentMapping* AttachmentMapping = ItemAttachmentDefinition->FindAttachmentMapping(ItemType);
+	const FEnclaveItemAttachmentMapping* AttachmentMapping =
+		ItemAttachmentDefinition->FindAttachmentMapping(ItemType);
 
-	if (!AttachmentMapping || AttachmentMapping->WieldedSocket.IsNone())
+	if (!AttachmentMapping)
 	{
 		return false;
 	}
@@ -148,11 +149,17 @@ bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& 
 		return false;
 	}
 
+	if (AttachmentMapping->FirstPersonWieldedSocket.IsNone() ||
+		AttachmentMapping->ThirdPersonWieldedSocket.IsNone())
+	{
+		return false;
+	}
+
 	OutTargets.FirstPerson.ParentComponent = FirstPersonMesh;
-	OutTargets.FirstPerson.SocketName = AttachmentMapping->WieldedSocket;
+	OutTargets.FirstPerson.SocketName = AttachmentMapping->FirstPersonWieldedSocket;
 
 	OutTargets.ThirdPerson.ParentComponent = GetMesh();
-	OutTargets.ThirdPerson.SocketName = AttachmentMapping->WieldedSocket;
+	OutTargets.ThirdPerson.SocketName = AttachmentMapping->ThirdPersonWieldedSocket;
 
 	return true;
 }

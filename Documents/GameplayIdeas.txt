@@ -1,0 +1,11 @@
+Team based multiplayer
+Players start in different regions that broken into sectors.
+Initially only the base sector is "secured" for each team.
+Conquering additional sectors unlocks perks (better weapons, upgrades, higher level armor)
+- Perhaps sectors are marked as having a certain perk.
+- Secured sectors can be used as a spawn point or teleport.
+- Can secured sectors be lost (possibly in a different game mode)?
+How do we push the action? 
+- If no action is occurring, the base-sector becomes compromised and lowers stats.
+-- Extreme camping may cause the base to become unusable (nuclear core meltdown). Maybe securing sectors also secures energy rods
+which stabilize the base.

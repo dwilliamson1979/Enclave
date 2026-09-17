@@ -18,10 +18,13 @@ struct ENCLAVE_API FEnclaveItemAttachmentMapping
 
 public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
-	FName WieldedSocket;
+	FName FirstPersonWieldedSocket = NAME_None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
-	FName StowedSocket;
+	FName ThirdPersonWieldedSocket = NAME_None;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
+	FName StowedSocket = NAME_None;
 };
 
 /**
