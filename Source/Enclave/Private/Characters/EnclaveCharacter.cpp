@@ -79,21 +79,17 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 		return;
 	}
 
-	AEnclaveItem* InitialItem = nullptr;
-
 	for (const TSubclassOf<AEnclaveItem>& ItemClass : DefaultItemClasses)
 	{
-		AEnclaveItem* Item = InventoryComp->SpawnItem(ItemClass);
-
-		if (!InitialItem && IsValid(Item))
-		{
-			InitialItem = Item;
-		}
+		InventoryComp->SpawnItem(ItemClass);
 	}
 
-	if (IsValid(InitialItem))
+	for (const TObjectPtr<AEnclaveItem>& Item : InventoryComp->GetItems())
 	{
-		EquipmentComp->WieldItem(InitialItem);
+		if (EquipmentComp->WieldItem(Item))
+		{
+			break;
+		}
 	}
 }
 

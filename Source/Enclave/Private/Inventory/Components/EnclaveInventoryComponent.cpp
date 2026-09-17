@@ -48,6 +48,9 @@ AEnclaveItem* UEnclaveInventoryComponent::SpawnItem(TSubclassOf<AEnclaveItem> It
 		return nullptr;
 	}
 
+	// Inventory items remain hidden until the equipment system chooses to wield them.
+	Item->SetActorHiddenInGame(true);
+
 	if (!AddItem(Item))
 	{
 		Item->Destroy();

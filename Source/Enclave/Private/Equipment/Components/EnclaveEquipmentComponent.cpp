@@ -5,9 +5,10 @@
 #include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "Inventory/Components/EnclaveInventoryComponent.h"
 
+#include "Components/SkeletalMeshComponent.h"
 #include "Net/UnrealNetwork.h"
-#include "InputCoreTypes.h"
 
 UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
 {
@@ -33,7 +34,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsValid(Item))
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsWieldableInventoryItem(Item))
 	{
 		return false;
 	}
@@ -43,17 +44,27 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 		return true;
 	}
 
-	if (IsValid(CurrentWieldedItem))
+	AEnclaveItem* PreviousItem = CurrentWieldedItem;
+
+	if (IsValid(PreviousItem))
 	{
-		return false;
+		SetWieldedPresentation(PreviousItem, false);
 	}
 
 	if (!AttachItemToOwner(Item))
 	{
+		if (IsValid(PreviousItem) && AttachItemToOwner(PreviousItem))
+		{
+			SetWieldedPresentation(PreviousItem, true);
+			PresentedWieldedItem = PreviousItem;
+		}
+
 		return false;
 	}
 
 	CurrentWieldedItem = Item;
+	SetWieldedPresentation(CurrentWieldedItem, true);
+	PresentedWieldedItem = CurrentWieldedItem;
 
 	return true;
 }
@@ -104,34 +115,60 @@ bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEven
 
 bool UEnclaveEquipmentComponent::TryWieldNext()
 {
-	if (!CanCycleWieldables())
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor))
 	{
 		return false;
 	}
 
-	// TODO: Select the next valid active equipment slot.
+	if (!OwnerActor->HasAuthority())
+	{
+		ServerTryWieldNext();
+		return true;
+	}
 
-	return true;
+	return TryWieldInDirection(1);
 }
 
 bool UEnclaveEquipmentComponent::TryWieldPrevious()
 {
-	if (!CanCycleWieldables())
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor))
 	{
 		return false;
 	}
 
-	// TODO: Select the previous valid active equipment slot.
+	if (!OwnerActor->HasAuthority())
+	{
+		ServerTryWieldPrevious();
+		return true;
+	}
 
-	return true;
+	return TryWieldInDirection(-1);
 }
 
 bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 {
-	// TODO: Add equipment-state validation once active slots and
-	// equipment transitions are implemented.
+	const UEnclaveInventoryComponent* InventoryComponent = GetInventoryComponent();
 
-	return true;
+	if (!IsValid(InventoryComponent))
+	{
+		return false;
+	}
+
+	int32 WieldableCount = 0;
+
+	for (const TObjectPtr<AEnclaveItem>& Item : InventoryComponent->GetItems())
+	{
+		if (IsWieldableInventoryItem(Item))
+		{
+			++WieldableCount;
+		}
+	}
+
+	return IsValid(CurrentWieldedItem) ? WieldableCount > 1 : WieldableCount > 0;
 }
 
 bool UEnclaveEquipmentComponent::TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent)
@@ -229,9 +266,79 @@ bool UEnclaveEquipmentComponent::HandleItemTertiaryInput(const FEnclaveInputEven
 	return TryPerformItemTertiary(InputEvent);
 }
 
+bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
+{
+	if (Direction != 1 && Direction != -1)
+	{
+		return false;
+	}
+
+	if (!CanCycleWieldables())
+	{
+		return false;
+	}
+
+	const UEnclaveInventoryComponent* InventoryComponent = GetInventoryComponent();
+
+	if (!IsValid(InventoryComponent))
+	{
+		return false;
+	}
+
+	const TArray<TObjectPtr<AEnclaveItem>>& Items = InventoryComponent->GetItems();
+	const int32 ItemCount = Items.Num();
+
+	if (ItemCount == 0)
+	{
+		return false;
+	}
+
+	int32 CurrentIndex = Items.IndexOfByPredicate([this](const TObjectPtr<AEnclaveItem>& Item)
+	{
+		return Item == CurrentWieldedItem;
+	});
+
+	if (CurrentIndex == INDEX_NONE)
+	{
+		CurrentIndex = Direction > 0 ? -1 : 0;
+	}
+
+	for (int32 Offset = 0; Offset < ItemCount; ++Offset)
+	{
+		CurrentIndex = (CurrentIndex + Direction + ItemCount) % ItemCount;
+		AEnclaveItem* Candidate = Items[CurrentIndex];
+
+		if (!IsValid(Candidate) || Candidate == CurrentWieldedItem || !IsWieldableInventoryItem(Candidate))
+		{
+			continue;
+		}
+
+		return WieldItem(Candidate);
+	}
+
+	return false;
+}
+
+bool UEnclaveEquipmentComponent::IsWieldableInventoryItem(const AEnclaveItem* Item) const
+{
+	if (!IsValid(Item) || !Item->Implements<UEnclaveWieldableInterface>())
+	{
+		return false;
+	}
+
+	const UEnclaveInventoryComponent* InventoryComponent = GetInventoryComponent();
+	return IsValid(InventoryComponent) && InventoryComponent->ContainsItem(Item);
+}
+
+UEnclaveInventoryComponent* UEnclaveEquipmentComponent::GetInventoryComponent() const
+{
+	const AActor* OwnerActor = GetOwner();
+	return IsValid(OwnerActor) ? OwnerActor->FindComponentByClass<UEnclaveInventoryComponent>() : nullptr;
+}
+
 bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)
 {
-	if (!IsValid(Item))
+	if (!IsValid(Item) || !IsValid(Item->GetFirstPersonMesh()) || !IsValid(Item->GetThirdPersonMesh()))
 	{
 		return false;
 	}
@@ -285,10 +392,41 @@ bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)
 	return bFirstPersonAttached && bThirdPersonAttached;
 }
 
+void UEnclaveEquipmentComponent::SetWieldedPresentation(AEnclaveItem* Item, bool bWielded)
+{
+	if (!IsValid(Item))
+	{
+		return;
+	}
+
+	Item->SetActorHiddenInGame(!bWielded);
+}
+
+void UEnclaveEquipmentComponent::ServerTryWieldNext_Implementation()
+{
+	TryWieldNext();
+}
+
+void UEnclaveEquipmentComponent::ServerTryWieldPrevious_Implementation()
+{
+	TryWieldPrevious();
+}
+
 void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()
 {
-	if (IsValid(CurrentWieldedItem))
+	if (AEnclaveItem* PreviousPresentedItem = PresentedWieldedItem.Get();
+		IsValid(PreviousPresentedItem) && PreviousPresentedItem != CurrentWieldedItem)
 	{
-		AttachItemToOwner(CurrentWieldedItem);
+		SetWieldedPresentation(PreviousPresentedItem, false);
+	}
+
+	if (IsValid(CurrentWieldedItem) && AttachItemToOwner(CurrentWieldedItem))
+	{
+		SetWieldedPresentation(CurrentWieldedItem, true);
+		PresentedWieldedItem = CurrentWieldedItem;
+	}
+	else
+	{
+		PresentedWieldedItem.Reset();
 	}
 }
