@@ -5,19 +5,24 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
+#include "Inventory/Interfaces/EnclaveItemSourceInterface.h"
 #include "EnclaveEquipmentComponent.generated.h"
 
 class AEnclaveItem;
-class UEnclaveInventoryComponent;
 
 /**
  * Manages the character's currently wielded item and item-action input.
  *
  * This component owns wielding operations, including selecting the next or
- * previous wieldable item from inventory and presenting the active item.
+ * previous wieldable item from an item source and presenting the active item.
  *
  * It also routes generic item actions (Primary, Secondary, Tertiary) to the
  * currently wielded item.
+ *
+ * Equipment depends only on IEnclaveItemSourceInterface, not on any concrete
+ * storage component. It binds to the owner's item source once, caches the
+ * subset of exposed items that are wieldable, and refreshes that cache only
+ * when the source reports a change - it never polls the source directly.
  *
  * Inventory/storage responsibilities do not belong here.
  */
@@ -31,6 +36,7 @@ public:
 
 	// UActorComponent
 	virtual void InitializeComponent() override;
+	virtual void UninitializeComponent() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	bool WieldItem(AEnclaveItem* Item);
@@ -59,8 +65,13 @@ private:
 	bool HandleItemTertiaryInput(const FEnclaveInputEvent& InputEvent);
 
 	bool TryWieldInDirection(int32 Direction);
-	bool IsWieldableInventoryItem(const AEnclaveItem* Item) const;
-	UEnclaveInventoryComponent* GetInventoryComponent() const;
+	bool IsAvailableWieldable(const AEnclaveItem* Item) const;
+
+	// Item source binding
+	void BindItemSource();
+	void UnbindItemSource();
+	void HandleItemSourceChanged();
+	void RebuildWieldableCache();
 
 	bool AttachItemToOwner(AEnclaveItem* Item);
 	void SetWieldedPresentation(AEnclaveItem* Item, bool bWielded);
@@ -71,11 +82,11 @@ private:
 	UFUNCTION(Server, Reliable)
 	void ServerTryWieldPrevious();
 
-	/** Semantic input tag used to request the next wieldable inventory item. */
+	/** Semantic input tag used to request the next available wieldable item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
 	FGameplayTag NextWieldableInputTag;
 
-	/** Semantic input tag used to request the previous wieldable inventory item. */
+	/** Semantic input tag used to request the previous available wieldable item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
 	FGameplayTag PreviousWieldableInputTag;
 
@@ -102,4 +113,12 @@ private:
 
 	/** Local presentation cache used to clean up the previously wielded item on replication. */
 	TWeakObjectPtr<AEnclaveItem> PresentedWieldedItem;
+
+	/** The owner's bound item source (e.g. an inventory component), accessed only through the interface. */
+	UPROPERTY(Transient)
+	TScriptInterface<IEnclaveItemSourceInterface> ItemSource;
+
+	/** Subset of the item source's items that implement IEnclaveWieldableInterface. Rebuilt only on source-change notifications. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AEnclaveItem>> WieldableCache;
 };

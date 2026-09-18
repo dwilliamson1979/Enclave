@@ -5,7 +5,6 @@
 #include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
-#include "Inventory/Components/EnclaveInventoryComponent.h"
 
 #include "Components/SkeletalMeshComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -21,6 +20,14 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 	Super::InitializeComponent();
 
 	RebuildInputFilters();
+	BindItemSource();
+}
+
+void UEnclaveEquipmentComponent::UninitializeComponent()
+{
+	UnbindItemSource();
+
+	Super::UninitializeComponent();
 }
 
 void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -34,7 +41,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsWieldableInventoryItem(Item))
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsAvailableWieldable(Item))
 	{
 		return false;
 	}
@@ -76,15 +83,6 @@ const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
 
 bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEvent)
 {
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			2.0f,
-			FColor::Yellow,
-			FString::Printf(TEXT("UEnclaveEquipmentComponent::HandleInput: %s"), *InputEvent.InputTag.ToString()));
-	}
-
 	if (NextWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextWieldableInputTag))
 	{
 		return HandleNextWieldableInput(InputEvent);
@@ -151,24 +149,7 @@ bool UEnclaveEquipmentComponent::TryWieldPrevious()
 
 bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 {
-	const UEnclaveInventoryComponent* InventoryComponent = GetInventoryComponent();
-
-	if (!IsValid(InventoryComponent))
-	{
-		return false;
-	}
-
-	int32 WieldableCount = 0;
-
-	for (const TObjectPtr<AEnclaveItem>& Item : InventoryComponent->GetItems())
-	{
-		if (IsWieldableInventoryItem(Item))
-		{
-			++WieldableCount;
-		}
-	}
-
-	return IsValid(CurrentWieldedItem) ? WieldableCount > 1 : WieldableCount > 0;
+	return IsValid(CurrentWieldedItem) ? WieldableCache.Num() > 1 : WieldableCache.Num() > 0;
 }
 
 bool UEnclaveEquipmentComponent::TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent)
@@ -278,22 +259,14 @@ bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
 		return false;
 	}
 
-	const UEnclaveInventoryComponent* InventoryComponent = GetInventoryComponent();
-
-	if (!IsValid(InventoryComponent))
-	{
-		return false;
-	}
-
-	const TArray<TObjectPtr<AEnclaveItem>>& Items = InventoryComponent->GetItems();
-	const int32 ItemCount = Items.Num();
+	const int32 ItemCount = WieldableCache.Num();
 
 	if (ItemCount == 0)
 	{
 		return false;
 	}
 
-	int32 CurrentIndex = Items.IndexOfByPredicate([this](const TObjectPtr<AEnclaveItem>& Item)
+	int32 CurrentIndex = WieldableCache.IndexOfByPredicate([this](const TObjectPtr<AEnclaveItem>& Item)
 	{
 		return Item == CurrentWieldedItem;
 	});
@@ -306,9 +279,9 @@ bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
 	for (int32 Offset = 0; Offset < ItemCount; ++Offset)
 	{
 		CurrentIndex = (CurrentIndex + Direction + ItemCount) % ItemCount;
-		AEnclaveItem* Candidate = Items[CurrentIndex];
+		AEnclaveItem* Candidate = WieldableCache[CurrentIndex];
 
-		if (!IsValid(Candidate) || Candidate == CurrentWieldedItem || !IsWieldableInventoryItem(Candidate))
+		if (!IsValid(Candidate) || Candidate == CurrentWieldedItem)
 		{
 			continue;
 		}
@@ -319,21 +292,89 @@ bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
 	return false;
 }
 
-bool UEnclaveEquipmentComponent::IsWieldableInventoryItem(const AEnclaveItem* Item) const
+bool UEnclaveEquipmentComponent::IsAvailableWieldable(const AEnclaveItem* Item) const
 {
-	if (!IsValid(Item) || !Item->Implements<UEnclaveWieldableInterface>())
-	{
-		return false;
-	}
-
-	const UEnclaveInventoryComponent* InventoryComponent = GetInventoryComponent();
-	return IsValid(InventoryComponent) && InventoryComponent->ContainsItem(Item);
+	return IsValid(Item) && WieldableCache.Contains(Item);
 }
 
-UEnclaveInventoryComponent* UEnclaveEquipmentComponent::GetInventoryComponent() const
+void UEnclaveEquipmentComponent::BindItemSource()
 {
-	const AActor* OwnerActor = GetOwner();
-	return IsValid(OwnerActor) ? OwnerActor->FindComponentByClass<UEnclaveInventoryComponent>() : nullptr;
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor))
+	{
+		return;
+	}
+
+	//UActorComponent* SourceComponent = OwnerActor->FindComponentByInterface<UEnclaveItemSourceInterface>();
+	UActorComponent* SourceComponent = OwnerActor->FindComponentByInterface(UEnclaveItemSourceInterface::StaticClass());
+
+	if (!IsValid(SourceComponent))
+	{
+		return;
+	}
+
+	IEnclaveItemSourceInterface* SourceInterface = Cast<IEnclaveItemSourceInterface>(SourceComponent);
+
+	if (!SourceInterface)
+	{
+		return;
+	}
+
+	ItemSource.SetObject(SourceComponent);
+	ItemSource.SetInterface(SourceInterface);
+
+	ItemSource->OnItemSourceChanged().AddUObject(this, &UEnclaveEquipmentComponent::HandleItemSourceChanged);
+	RebuildWieldableCache();
+}
+
+void UEnclaveEquipmentComponent::UnbindItemSource()
+{
+	if (ItemSource)
+	{
+		ItemSource->OnItemSourceChanged().RemoveAll(this);
+	}
+
+	ItemSource.SetInterface(nullptr);
+	ItemSource.SetObject(nullptr);
+	WieldableCache.Reset();
+}
+
+void UEnclaveEquipmentComponent::HandleItemSourceChanged()
+{
+	RebuildWieldableCache();
+}
+
+void UEnclaveEquipmentComponent::RebuildWieldableCache()
+{
+	WieldableCache.Reset();
+
+	if (!ItemSource)
+	{
+		return;
+	}
+
+	for (const TObjectPtr<AEnclaveItem>& Item : ItemSource->GetSourceItems())
+	{
+		if (IsValid(Item) && Item->Implements<UEnclaveWieldableInterface>())
+		{
+			WieldableCache.Add(Item);
+		}
+	}
+
+	// If the currently wielded item was removed from the source, only authority
+	// may correct replicated wielded state. Clients rebuild their local cache
+	// from OnRep_Items and wait for CurrentWieldedItem replication rather than
+	// mutating an authoritative replicated property locally.
+	AActor* OwnerActor = GetOwner();
+
+	if (IsValid(OwnerActor) && OwnerActor->HasAuthority() &&
+		IsValid(CurrentWieldedItem) && !WieldableCache.Contains(CurrentWieldedItem))
+	{
+		SetWieldedPresentation(CurrentWieldedItem, false);
+		CurrentWieldedItem = nullptr;
+		PresentedWieldedItem.Reset();
+	}
 }
 
 bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)

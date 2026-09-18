@@ -76,6 +76,8 @@ bool UEnclaveInventoryComponent::AddItem(AEnclaveItem* Item)
 
 	Items.Add(Item);
 
+	ItemSourceChangedDelegate.Broadcast();
+
 	return true;
 }
 
@@ -88,7 +90,13 @@ bool UEnclaveInventoryComponent::RemoveItem(AEnclaveItem* Item)
 		return false;
 	}
 
-	return Items.Remove(Item) > 0;
+	if (Items.Remove(Item) > 0)
+	{
+		ItemSourceChangedDelegate.Broadcast();
+		return true;
+	}
+
+	return false;
 }
 
 bool UEnclaveInventoryComponent::ContainsItem(const AEnclaveItem* Item) const
@@ -99,4 +107,9 @@ bool UEnclaveInventoryComponent::ContainsItem(const AEnclaveItem* Item) const
 AEnclaveItem* UEnclaveInventoryComponent::GetItemAt(int32 Index) const
 {
 	return Items.IsValidIndex(Index) ? Items[Index] : nullptr;
+}
+
+void UEnclaveInventoryComponent::OnRep_Items()
+{
+	ItemSourceChangedDelegate.Broadcast();
 }
