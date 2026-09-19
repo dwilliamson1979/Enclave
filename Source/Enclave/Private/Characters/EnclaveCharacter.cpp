@@ -16,8 +16,6 @@
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
 
-#include "Combat/EnclaveCombatComponent.h"
-
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
@@ -62,9 +60,6 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 
 	InputRouterComp = CreateDefaultSubobject<UEnclaveInputRouterComponent>(TEXT("InputRouterComp"));
 	ViewComp = CreateDefaultSubobject<UEnclaveViewComponent>(TEXT("ViewComp"));
-
-	CombatComp = CreateDefaultSubobject<UEnclaveCombatComponent>(TEXT("CombatComp"));
-	CombatComp->SetIsReplicated(true);
 
 	InventoryComp = CreateDefaultSubobject<UEnclaveInventoryComponent>(TEXT("InventoryComp"));
 	InventoryComp->SetIsReplicated(true);

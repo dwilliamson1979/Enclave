@@ -16,7 +16,6 @@ class UEnclaveInputConfig;
 class UEnclaveInputRouterComponent;
 class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
-class UEnclaveCombatComponent;
 class UEnclaveEquipmentComponent;
 class UEnclaveInventoryComponent;
 class UEnclaveItemAttachmentDefinition;
@@ -86,9 +85,6 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInputConfig> InputConfig = nullptr;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveCombatComponent> CombatComp = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInventoryComponent> InventoryComp = nullptr;
