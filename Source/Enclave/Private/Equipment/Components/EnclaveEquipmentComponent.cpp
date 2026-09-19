@@ -306,7 +306,6 @@ void UEnclaveEquipmentComponent::BindItemSource()
 		return;
 	}
 
-	//UActorComponent* SourceComponent = OwnerActor->FindComponentByInterface<UEnclaveItemSourceInterface>();
 	UActorComponent* SourceComponent = OwnerActor->FindComponentByInterface(UEnclaveItemSourceInterface::StaticClass());
 
 	if (!IsValid(SourceComponent))
