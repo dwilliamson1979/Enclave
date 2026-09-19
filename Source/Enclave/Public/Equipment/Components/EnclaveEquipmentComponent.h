@@ -6,9 +6,11 @@
 #include "Components/ActorComponent.h"
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
 #include "Inventory/Interfaces/EnclaveItemSourceInterface.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "EnclaveEquipmentComponent.generated.h"
 
 class AEnclaveItem;
+class UAbilitySystemComponent;
 
 /**
  * Manages the character's currently wielded item and item-action input.
@@ -75,6 +77,16 @@ private:
 
 	bool AttachItemToOwner(AEnclaveItem* Item);
 	void SetWieldedPresentation(AEnclaveItem* Item, bool bWielded);
+
+	// Ability granting - server-authoritative only, mirrors the existing
+	// authority gating on WieldItem. Clients learn about granted abilities
+	// through the ASC's own replication, not through this path.
+	UAbilitySystemComponent* GetOwnerAbilitySystemComponent() const;
+	void GrantAbilitiesForItem(AEnclaveItem* Item);
+	void RemoveGrantedAbilities();
+
+	/** Handles for abilities currently granted for CurrentWieldedItem. Server-only bookkeeping, not replicated. */
+	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 
 	UFUNCTION(Server, Reliable)
 	void ServerTryWieldNext();

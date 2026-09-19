@@ -6,6 +6,9 @@
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
 
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
+
 #include "Components/SkeletalMeshComponent.h"
 #include "Net/UnrealNetwork.h"
 
@@ -69,7 +72,13 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 		return false;
 	}
 
+	// Authority-only, matches the HasAuthority() gate already at the top of
+	// this function: swap granted abilities before flipping CurrentWieldedItem
+	// so RemoveGrantedAbilities() still targets the item being replaced.
+	RemoveGrantedAbilities();
 	CurrentWieldedItem = Item;
+	GrantAbilitiesForItem(CurrentWieldedItem);
+
 	SetWieldedPresentation(CurrentWieldedItem, true);
 	PresentedWieldedItem = CurrentWieldedItem;
 
@@ -450,6 +459,61 @@ void UEnclaveEquipmentComponent::ServerTryWieldNext_Implementation()
 void UEnclaveEquipmentComponent::ServerTryWieldPrevious_Implementation()
 {
 	TryWieldPrevious();
+}
+
+UAbilitySystemComponent* UEnclaveEquipmentComponent::GetOwnerAbilitySystemComponent() const
+{
+	const AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor))
+	{
+		return nullptr;
+	}
+
+	// Deliberately goes through the interface rather than casting to
+	// AEnclaveCharacter - Equipment doesn't need to know who hosts the ASC,
+	// only that its owner exposes one (same principle as ItemSource above).
+	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(OwnerActor);
+	return AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
+}
+
+void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
+{
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!IsValid(ASC) || !IsValid(Item))
+	{
+		return;
+	}
+
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : Item->GetGrantedAbilityClasses())
+	{
+		if (!AbilityClass)
+		{
+			continue;
+		}
+
+		// SourceObject = Item: lets the ability later identify which weapon
+		// activated it (via GetCurrentAbilitySpec()->SourceObject) without
+		// Equipment needing to pass that context through some other path.
+		FGameplayAbilitySpec AbilitySpec(AbilityClass, /*Level=*/ 1, /*InputID=*/ INDEX_NONE, /*SourceObject=*/ Item);
+		const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(AbilitySpec);
+
+		GrantedAbilityHandles.Add(Handle);
+	}
+}
+
+void UEnclaveEquipmentComponent::RemoveGrantedAbilities()
+{
+	if (UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent())
+	{
+		for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
+		{
+			ASC->ClearAbility(Handle);
+		}
+	}
+
+	GrantedAbilityHandles.Reset();
 }
 
 void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()

@@ -9,6 +9,7 @@
 
 class USceneComponent;
 class USkeletalMeshComponent;
+class UGameplayAbility;
 
 /**
  * Base actor for a physical runtime item.
@@ -25,6 +26,14 @@ public:
 	AEnclaveItem();
 
 	virtual FGameplayTag GetItemType() const;
+
+	/**
+	 * Ability classes EquipmentComponent should grant to the wielder's ASC
+	 * while this item is wielded, and remove the moment it stops being
+	 * wielded. Base implementation grants nothing - most items (e.g. future
+	 * non-actionable items) have no abilities of their own.
+	 */
+	virtual TArray<TSubclassOf<UGameplayAbility>> GetGrantedAbilityClasses() const { return {}; }
 
 	USkeletalMeshComponent* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMeshComponent* GetThirdPersonMesh() const { return ThirdPersonMesh; }
