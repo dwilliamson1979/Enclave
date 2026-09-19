@@ -1,4 +1,4 @@
-
+// Copyright Lightcarrier Studios
 
 #pragma once
 
@@ -7,14 +7,13 @@
 #include "EnclaveGameModeBase.generated.h"
 
 /**
- * 
+ *
  */
 UCLASS()
 class ENCLAVE_API AEnclaveGameModeBase : public AGameModeBase
 {
 	GENERATED_BODY()
-	
-	
-	
-	
+
+public:
+	AEnclaveGameModeBase();
 };

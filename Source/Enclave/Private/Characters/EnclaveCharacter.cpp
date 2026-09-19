@@ -7,6 +7,9 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+#include "AbilitySystemComponent.h"
+#include "Player/EnclavePlayerState.h"
+
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
 
@@ -74,6 +77,9 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	// Server-side: PlayerState is already valid by this point.
+	InitializeAbilityActorInfo();
+
 	if (!InventoryComp || !EquipmentComp || !InventoryComp->IsEmpty())
 	{
 		return;
@@ -91,6 +97,41 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 			break;
 		}
 	}
+}
+
+void AEnclaveCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	// Client-side: this is the owning client's independent notification that
+	// PlayerState (and therefore the ASC) is now valid. PossessedBy above
+	// only runs on the server - without this override, abilities would work
+	// for the host/listen-server player and silently fail for every client.
+	InitializeAbilityActorInfo();
+}
+
+void AEnclaveCharacter::InitializeAbilityActorInfo()
+{
+	AEnclavePlayerState* EnclavePlayerState = GetPlayerState<AEnclavePlayerState>();
+
+	if (!IsValid(EnclavePlayerState))
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = EnclavePlayerState->GetAbilitySystemComponent())
+	{
+		// Owner = PlayerState (persistent for the match), Avatar = this Pawn
+		// (expected to change on respawn). Safe to call more than once -
+		// GAS treats a repeat call with the same actors as a no-op.
+		ASC->InitAbilityActorInfo(EnclavePlayerState, this);
+	}
+}
+
+UAbilitySystemComponent* AEnclaveCharacter::GetAbilitySystemComponent() const
+{
+	const AEnclavePlayerState* EnclavePlayerState = GetPlayerState<AEnclavePlayerState>();
+	return IsValid(EnclavePlayerState) ? EnclavePlayerState->GetAbilitySystemComponent() : nullptr;
 }
 
 void AEnclaveCharacter::BeginPlay()

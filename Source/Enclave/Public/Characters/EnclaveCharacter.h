@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "AbilitySystemInterface.h"
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
 #include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
@@ -20,9 +21,10 @@ class UEnclaveEquipmentComponent;
 class UEnclaveInventoryComponent;
 class UEnclaveItemAttachmentDefinition;
 class AEnclaveItem;
+class UAbilitySystemComponent;
 
 UCLASS()
-class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveItemWielderInterface
+class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveItemWielderInterface, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
@@ -32,6 +34,19 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
+
+	/**
+	 * Client-side counterpart to PossessedBy: fires when the replicated
+	 * PlayerState reference lands on a client, which happens on a different
+	 * timeline than server-side possession. Both paths must independently
+	 * (re)point the ASC's avatar at this Pawn - this is the single most
+	 * common GAS setup bug (abilities silently not working on one side of
+	 * the connection because actor info was only initialized on the other).
+	 */
+	virtual void OnRep_PlayerState() override;
+
+	// IAbilitySystemInterface
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	// Interface implementations
 
@@ -51,6 +66,9 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
+	void InitializeAbilityActorInfo();
+
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh;
 
