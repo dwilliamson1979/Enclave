@@ -22,13 +22,12 @@
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
 /**
- * Phase 0 skeleton Attribute Set: Health and MaxHealth only.
- *
- * Deliberately does not yet clamp Health or react to Gameplay Effects
- * (PreAttributeChange / PostGameplayEffectExecute) - that logic belongs with
- * the damage-application work in a later phase, once there's an actual
- * source of damage to test it against. For now this only needs to exist,
- * replicate, and be visible/changeable for the Phase 0 checkpoint.
+ * Health and MaxHealth. Phase 2 adds the clamping logic that was
+ * deliberately deferred in Phase 0: PreAttributeChange guards direct
+ * attribute writes (e.g. from an Initter or a non-Effect setter),
+ * PostGameplayEffectExecute guards the result of an applied Gameplay Effect
+ * (the Fire ability's damage effect) specifically. Both are needed - they
+ * run at different points and neither substitutes for the other.
  */
 UCLASS()
 class ENCLAVE_API UEnclaveAttributeSet : public UAttributeSet
@@ -39,6 +38,9 @@ public:
 	UEnclaveAttributeSet();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
+	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Attributes|Health")
 	FGameplayAttributeData Health;

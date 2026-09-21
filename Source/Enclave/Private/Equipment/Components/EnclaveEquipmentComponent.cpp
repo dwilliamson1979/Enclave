@@ -163,12 +163,38 @@ bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 
 bool UEnclaveEquipmentComponent::TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent)
 {
-	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
+	if (!IsValid(CurrentWieldedItem))
 	{
 		return false;
 	}
 
-	return IEnclaveWieldableInterface::Execute_HandlePrimaryAction(CurrentWieldedItem, InputEvent);
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!IsValid(ASC))
+	{
+		return false;
+	}
+
+	// Deliberately reads CurrentWieldedItem->GetGrantedAbilityClasses() here
+	// rather than GrantedAbilityHandles above: that array is populated only
+	// where WieldItem's authority check passes, i.e. server-only, so it is
+	// always empty on the owning client. CurrentWieldedItem itself IS
+	// replicated, and the ability classes it grants come from a static data
+	// asset reference (WeaponDefinition), so this resolves identically on
+	// both sides - which is what lets TryActivateAbilityByClass below work
+	// correctly for LocalPredicted activation from the owning client.
+	//
+	// Phase 2 simplification: the first ability a weapon grants is treated
+	// as its primary action. Revisit with a proper slot/tag mapping once a
+	// second action (Reload) exists in Phase 4.
+	const TArray<TSubclassOf<UGameplayAbility>>& GrantedClasses = CurrentWieldedItem->GetGrantedAbilityClasses();
+
+	if (GrantedClasses.IsEmpty() || !GrantedClasses[0])
+	{
+		return false;
+	}
+
+	return ASC->TryActivateAbilityByClass(GrantedClasses[0]);
 }
 
 bool UEnclaveEquipmentComponent::TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent)
@@ -243,6 +269,12 @@ bool UEnclaveEquipmentComponent::HandlePreviousWieldableInput(const FEnclaveInpu
 
 bool UEnclaveEquipmentComponent::HandleItemPrimaryInput(const FEnclaveInputEvent& InputEvent)
 {
+	//Hard-coded for primary fire at the moment, but this will be updated to support other trigger events in the future: charged, auto, burst.
+	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
+	{
+		return false;
+	}
+
 	return TryPerformItemPrimary(InputEvent);
 }
 
