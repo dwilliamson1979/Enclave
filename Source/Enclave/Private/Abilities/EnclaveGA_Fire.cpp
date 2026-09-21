@@ -13,6 +13,14 @@
 
 #include "Collision/EnclaveCollisionChannels.h"
 
+// EnclaveGA_Fire.cpp, near the top, after the includes
+
+static TAutoConsoleVariable<bool> CVarDebugFireTrace(
+	TEXT("Enclave.Debug.FireTrace"),
+	false,
+	TEXT("Draw debug lines and log hit results for the Fire ability's line trace."),
+	ECVF_Cheat);
+
 UEnclaveGA_Fire::UEnclaveGA_Fire()
 {
 }
@@ -74,6 +82,12 @@ void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandl
 
 	FHitResult HitResult;
 	const bool bHit = World->LineTraceSingleByChannel(HitResult, ViewLocation, TraceEnd, ECC_Weapon, QueryParams);
+
+	if (CVarDebugFireTrace.GetValueOnGameThread())
+	{
+		DrawDebugLine(World, ViewLocation, bHit ? HitResult.ImpactPoint : TraceEnd, bHit ? FColor::Green : FColor::Red, false, 2.0f, 0, 1.0f);
+		UE_LOG(LogTemp, Warning, TEXT("Fire hit: %s"), *GetNameSafe(HitResult.GetActor()));
+	}
 
 	if (!bHit)
 	{
