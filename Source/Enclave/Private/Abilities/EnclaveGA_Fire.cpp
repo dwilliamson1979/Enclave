@@ -10,8 +10,12 @@
 #include "Engine/World.h"
 
 #include "GameplayTags/EnclaveAbilityTags.h"
+#include "GameplayTags/EnclaveGameplayCueTags.h"
 
 #include "Collision/EnclaveCollisionChannels.h"
+
+#include "Equipment/Weapons/EnclaveWeapon.h"
+#include "Combat/Interfaces/EnclaveHitFeedbackInterface.h"
 
 // EnclaveGA_Fire.cpp, near the top, after the includes
 
@@ -35,12 +39,61 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		return;
 	}
 
+	// Unconditional and before the authority check: this runs on the
+	// predicting owning client too, so the shot feels instant locally, while
+	// GAS's cue replication recognizes the matching prediction key on the
+	// server's own execution and does not double-play it there.
+	TriggerFireCue(ActorInfo);
+
 	if (HasAuthority(&ActivationInfo))
 	{
 		PerformTraceAndApplyDamage(Handle, ActorInfo);
 	}
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ false);
+}
+
+void UEnclaveGA_Fire::TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo)
+{
+	UAbilitySystemComponent* SourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+	AEnclaveWeapon* Weapon = Cast<AEnclaveWeapon>(GetCurrentSourceObject());
+
+	if (!IsValid(SourceASC) || !IsValid(Weapon))
+	{
+		return;
+	}
+
+	// EffectCauser (not just SourceObject) is set to the weapon so
+	// UEnclaveGameplayCueNotify_WeaponFire can resolve it without depending
+	// on which field a future caller happens to populate.
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = AvatarActor;
+	CueParameters.EffectCauser = Weapon;
+	CueParameters.SourceObject = Weapon;
+
+	SourceASC->ExecuteGameplayCue(EnclaveGameplayTags::GameplayCue_Weapon_Fire, CueParameters);
+}
+
+void UEnclaveGA_Fire::NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorInfo)
+{
+	APlayerController* PlayerController = ActorInfo ? Cast<APlayerController>(ActorInfo->PlayerController.Get()) : nullptr;
+
+	if (!IsValid(PlayerController))
+	{
+		return;
+	}
+
+	// Depends only on the interface - never on AEnclavePlayerController or
+	// any other concrete class that happens to implement it, matching how
+	// UEnclaveEquipmentComponent finds its item source.
+	IEnclaveHitFeedbackInterface* HitFeedback = Cast<IEnclaveHitFeedbackInterface>(
+		PlayerController->FindComponentByInterface(UEnclaveHitFeedbackInterface::StaticClass()));
+
+	if (HitFeedback)
+	{
+		HitFeedback->NotifyWeaponHitConfirmed();
+	}
 }
 
 void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo)
@@ -121,4 +174,6 @@ void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandl
 	SpecHandle.Data->SetSetByCallerMagnitude(EnclaveGameplayTags::Data_Damage, -DamageAmount);
 
 	SourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
+
+	NotifyHitConfirmed(ActorInfo);
 }

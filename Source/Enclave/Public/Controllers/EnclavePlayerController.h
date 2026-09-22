@@ -9,6 +9,7 @@ class UEnhancedInputComponent;
 class UEnclaveInputConfig;
 class IEnclaveInputReceiverInterface;
 class IEnclaveInputConfigProviderInterface;
+class UEnclaveCombatFeedbackComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclavePlayerController : public APlayerController
@@ -57,4 +58,13 @@ private:
 	TObjectPtr<const UEnclaveInputConfig> ActiveAvatarInputConfig = nullptr;
 
 	TArray<uint32> ActiveInputBindingHandles;
+
+	/**
+	 * Hosts local-player combat feedback (hit marker today). Implements
+	 * IEnclaveHitFeedbackInterface - callers (e.g. UEnclaveGA_Fire) find it
+	 * via FindComponentByInterface rather than depending on this class, the
+	 * same idiom UEnclaveEquipmentComponent uses to find its item source.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveCombatFeedbackComponent> CombatFeedbackComp = nullptr;
 };

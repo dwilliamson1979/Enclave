@@ -5,11 +5,14 @@
 #include "Input/Core/EnclaveInputConfig.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
+#include "Combat/Components/EnclaveCombatFeedbackComponent.h"
 
 AEnclavePlayerController::AEnclavePlayerController()
 {
 	bShowMouseCursor = false;
 	DefaultMouseCursor = EMouseCursor::Default;
+
+	CombatFeedbackComp = CreateDefaultSubobject<UEnclaveCombatFeedbackComponent>(TEXT("CombatFeedbackComp"));
 }
 
 void AEnclavePlayerController::OnPossess(APawn* InPawn)
