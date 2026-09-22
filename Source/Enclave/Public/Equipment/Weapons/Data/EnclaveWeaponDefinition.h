@@ -28,10 +28,10 @@ public:
 
 	const TArray<TSubclassOf<UGameplayAbility>>& GetGrantedAbilities() const { return GrantedAbilities; }
 
-	// Phase 3: read by UEnclaveGameplayCueNotify_WeaponFire in response to
-	// GameplayCue.Weapon.Fire - this class has no idea a cue notify exists,
-	// it just exposes weapon presentation data the same way it already
-	// exposes meshes and abilities.
+	// Phase 3: read by AEnclaveWeapon::HandleWeaponFire in response to
+	// GameplayCue.Weapon.Fire - this class has no idea a cue or a cue
+	// notify exists, it just exposes weapon presentation data the same way
+	// it already exposes meshes and abilities.
 	UAnimMontage* GetFireMontage() const { return FireMontage; }
 	UNiagaraSystem* GetMuzzleFlashEffect() const { return MuzzleFlashEffect; }
 	USoundBase* GetFireSound() const { return FireSound; }

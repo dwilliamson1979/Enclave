@@ -20,10 +20,12 @@ class UGameplayEffect;
  *
  * Phase 3: this class triggers cosmetics without knowing what, if
  * anything, responds to them. Fire feedback (montage, muzzle flash, fire
- * sound - see UEnclaveGameplayCueNotify_WeaponFire) is a Gameplay Cue
- * executed unconditionally on every successful activation, including a
- * miss, and including on the predicting owning client for instant local
- * feedback. The hit marker is deliberately NOT a Gameplay Cue - a Cue
+ * sound - see AEnclaveWeapon::HandleWeaponFire, reached via a Blueprint
+ * child of UEnclaveGameplayCueNotify forwarding through
+ * IEnclaveGameplayCueResponderInterface) is a Gameplay Cue executed
+ * unconditionally on every successful activation, including a miss, and
+ * including on the predicting owning client for instant local feedback.
+ * The hit marker is deliberately NOT a Gameplay Cue - a Cue
  * executed on the shooter's ASC replicates to everyone who has that ASC
  * relevant, which is wrong for feedback only the shooter should see - so
  * this instead looks up whatever on the PlayerController implements

@@ -64,9 +64,11 @@ void UEnclaveGA_Fire::TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo)
 		return;
 	}
 
-	// EffectCauser (not just SourceObject) is set to the weapon so
-	// UEnclaveGameplayCueNotify_WeaponFire can resolve it without depending
-	// on which field a future caller happens to populate.
+	// EffectCauser (not just SourceObject) is set to the weapon because
+	// UEnclaveGameplayCueNotify::ResolveCueResponder reads specifically off
+	// EffectCauser (a non-const TWeakObjectPtr<AActor>) to find whatever
+	// implements IEnclaveGameplayCueResponderInterface - SourceObject is
+	// const and isn't used for that resolution.
 	FGameplayCueParameters CueParameters;
 	CueParameters.Instigator = AvatarActor;
 	CueParameters.EffectCauser = Weapon;
