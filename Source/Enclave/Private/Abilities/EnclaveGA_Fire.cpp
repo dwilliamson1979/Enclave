@@ -127,29 +127,17 @@ void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilitySpecHandle& Hand
 		return;
 	}
 
-	// Aim from the avatar's own eyes, not a PlayerController - GetActorEyesViewPoint
-	// works for both a player-controlled pawn (where it just forwards to the
-	// camera view) and an AI-controlled one (which has no PlayerController at
-	// all), so this ability no longer assumes a human is behind the trigger.
-	// Not a weapon muzzle socket either - standard for hitscan shooters,
-	// since a muzzle-origin trace can hit geometry the crosshair is clearly
-	// not aimed at (corners, low walls) whenever the gun model leads or
-	// trails the camera. This is the only part of "how do I aim" that's
-	// actor-info-derived rather than weapon-specific, which is why it stays
-	// here rather than moving into PerformFireHitDetection.
-	FVector ViewLocation;
-	FRotator ViewRotation;
-	AvatarActor->GetActorEyesViewPoint(ViewLocation, ViewRotation);
-
-	// Everything about the shape of the trace itself - range, channel,
-	// single line vs. a future multi-pellet cone or projectile - is the
-	// triggering source's own concern now, and so is each hit's own damage
-	// and damage effect (FEnclaveHitResult::Damage/DamageEffectClass) - this
-	// loop doesn't change at all if a future implementer returns more than
-	// one hit, varies damage per hit (a headshot, falloff by distance), or
-	// routes different hits through different effects (an EMP pellet vs. a
-	// ballistic one).
-	const TArray<FEnclaveHitResult> HitResults = Fireable->PerformFireHitDetection(ViewLocation, ViewRotation, AvatarActor);
+	// Everything about how this thing aims (camera-based, a muzzle socket, a
+	// turret's own tracked target), the shape of its trace (range, channel,
+	// single line vs. a future multi-pellet cone or projectile), and each
+	// hit's own damage/damage effect (FEnclaveHitResult) is entirely the
+	// triggering source's concern now - this ability supplies nothing but
+	// "who's doing the shooting" (AvatarActor, so a Fireable doesn't hit its
+	// own wielder) and consumes whatever comes back. Deliberately does not
+	// resolve or hand in a ViewLocation/ViewRotation - that would presume
+	// every Fireable aims from AvatarActor's eyes, which won't hold for a
+	// future non-eye-based one (a deployed turret tracking its own target).
+	const TArray<FEnclaveHitResult> HitResults = Fireable->PerformFireHitDetection(AvatarActor);
 
 	if (HitResults.IsEmpty())
 	{
