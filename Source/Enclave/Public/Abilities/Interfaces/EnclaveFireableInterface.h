@@ -36,7 +36,7 @@ public:
 	/**
 	 * Performs this thing's own hit-detection and returns whatever it hit,
 	 * each with its own computed Damage already set (FEnclaveHitResult) - a
-	 * single hitscan trace today (AEnclaveWeapon::PerformFireTrace), a
+	 * single hitscan trace today (AEnclaveWeapon::PerformFireHitDetection), a
 	 * multi-pellet cone or a projectile spawn later without any change to
 	 * UEnclaveGA_Fire. Trace range (or any other reach limit) is this
 	 * implementation's own concern, not a separate property the ability
@@ -56,7 +56,7 @@ public:
 	 * bool - so a multi-hit implementation (a shotgun's pellets) is a
 	 * drop-in replacement with no change to how the ability consumes this.
 	 */
-	virtual TArray<FEnclaveHitResult> PerformFireTrace(const FVector& ViewLocation, const FRotator& ViewRotation, AActor* InstigatorToIgnore) const = 0;
+	virtual TArray<FEnclaveHitResult> PerformFireHitDetection(const FVector& ViewLocation, const FRotator& ViewRotation, AActor* InstigatorToIgnore) const = 0;
 
 	/** This thing's fire-rate cooldown Gameplay Effect. May return null - UEnclaveGA_Fire::GetCooldownGameplayEffect() falls back to its own (unset) base CooldownGameplayEffectClass in that case. */
 	virtual TSubclassOf<UGameplayEffect> GetFireCooldownEffectClass() const = 0;

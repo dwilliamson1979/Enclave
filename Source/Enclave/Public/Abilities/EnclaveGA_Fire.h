@@ -7,6 +7,7 @@
 #include "EnclaveGA_Fire.generated.h"
 
 class UGameplayEffect;
+class UAbilitySystemComponent;
 
 /**
  * Hitscan fire ability.
@@ -44,10 +45,14 @@ class UGameplayEffect;
  * and calls it, the same FindComponentByInterface idiom
  * UEnclaveEquipmentComponent uses for its item source.
  *
- * DamageEffectClass stays ability-level: its magnitude is Set by Caller, so
- * the same effect class is expected to work for whatever implements
- * IEnclaveFireableInterface - there is currently nothing per-implementer
- * left to configure on it.
+ * DamageEffectClass is NOT configured here - it lives on
+ * FEnclaveHitResult, stamped on per-hit by whatever implements
+ * IEnclaveFireableInterface (AEnclaveWeapon, from its
+ * UEnclaveWeaponDefinition). Different weapons - and in principle
+ * different hits within the same shot - can need genuinely different
+ * damage effects (an EMP hit modifying Shields/Electronics instead of
+ * Health), not just a different magnitude, so this ability treats it as
+ * per-hit data rather than a single shared class it owns.
  */
 UCLASS()
 class ENCLAVE_API UEnclaveGA_Fire : public UEnclaveGameplayAbility
@@ -64,15 +69,12 @@ protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
 private:
-	void PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo);
+	/** SourceASC/AvatarActor are resolved once in ActivateAbility and passed in here, rather than each callee re-deriving them from ActorInfo on its own. */
+	void PerformHitDetection(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
 
-	/** Executes GameplayCue.Weapon.Fire against the triggering source (GetCurrentSourceObject(), cast to AActor - the cue system only needs an actor implementing IEnclaveGameplayCueResponderInterface, not specifically a weapon). Unconditional - fires on a miss too, and on the predicting owning client as well as the server. Presentation only; does not know or care whether anything is bound to the cue. */
-	void TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo);
+	/** Executes GameplayCue.Weapon.Fire against the triggering source (GetCurrentSourceObject(), cast to AActor - the cue system only needs an actor implementing IEnclaveGameplayCueResponderInterface, not specifically a weapon). Unconditional - fires on a miss too, and on the predicting owning client as well as the server. Presentation only; does not know or care whether anything is bound to the cue. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
+	void TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
 
-	/** Server-only: tells whatever implements IEnclaveHitFeedbackInterface on the owning player's controller that the trace above actually landed a hit and applied damage. Not a Gameplay Cue - see the class comment for why. */
+	/** Server-only: tells whatever implements IEnclaveHitFeedbackInterface on the owning player's controller that the trace above actually landed a hit and applied damage. Not a Gameplay Cue - see the class comment for why. Safe to call for an AI-controlled avatar too - PlayerController resolves null there and this just no-ops. */
 	void NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorInfo);
-
-	/** Instant Gameplay Effect that reduces the target's Health. Must have a modifier on Health with magnitude "Set by Caller", tag Data.Damage. Shared - see class comment. */
-	UPROPERTY(EditDefaultsOnly, Category = "Fire")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
 };

@@ -28,15 +28,21 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		return;
 	}
 
+	// Resolved once here and threaded through to TriggerFireCue/
+	// PerformHitDetection, rather than each of them re-deriving the same
+	// two pointers off ActorInfo independently.
+	UAbilitySystemComponent* SourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+
 	// Unconditional and before the authority check: this runs on the
 	// predicting owning client too, so the shot feels instant locally, while
 	// GAS's cue replication recognizes the matching prediction key on the
 	// server's own execution and does not double-play it there.
-	TriggerFireCue(ActorInfo);
+	TriggerFireCue(ActorInfo, SourceASC, AvatarActor);
 
 	if (HasAuthority(&ActivationInfo))
 	{
-		PerformTraceAndApplyDamage(Handle, ActorInfo);
+		PerformHitDetection(Handle, ActorInfo, SourceASC, AvatarActor);
 	}
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ false);
@@ -58,11 +64,8 @@ UGameplayEffect* UEnclaveGA_Fire::GetCooldownGameplayEffect() const
 	return Super::GetCooldownGameplayEffect();
 }
 
-void UEnclaveGA_Fire::TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo)
+void UEnclaveGA_Fire::TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor)
 {
-	UAbilitySystemComponent* SourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
-
 	// The cue system only needs an actor implementing
 	// IEnclaveGameplayCueResponderInterface - it was never actually
 	// weapon-specific, so this resolves straight to AActor rather than
@@ -108,12 +111,9 @@ void UEnclaveGA_Fire::NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorI
 	}
 }
 
-void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo)
+void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor)
 {
-	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
-	APlayerController* PlayerController = ActorInfo ? Cast<APlayerController>(ActorInfo->PlayerController.Get()) : nullptr;
-
-	if (!IsValid(AvatarActor) || !IsValid(PlayerController) || !DamageEffectClass)
+	if (!IsValid(AvatarActor))
 	{
 		return;
 	}
@@ -127,30 +127,34 @@ void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandl
 		return;
 	}
 
-	// Aim from the camera, not a weapon muzzle socket - standard for hitscan
-	// shooters, since a muzzle-origin trace can hit geometry the crosshair
-	// is clearly not aimed at (corners, low walls) whenever the gun model
-	// leads or trails the camera. This is the only part of "how do I aim"
-	// that's actor-info-derived rather than weapon-specific, which is why it
-	// stays here rather than moving into PerformFireTrace.
+	// Aim from the avatar's own eyes, not a PlayerController - GetActorEyesViewPoint
+	// works for both a player-controlled pawn (where it just forwards to the
+	// camera view) and an AI-controlled one (which has no PlayerController at
+	// all), so this ability no longer assumes a human is behind the trigger.
+	// Not a weapon muzzle socket either - standard for hitscan shooters,
+	// since a muzzle-origin trace can hit geometry the crosshair is clearly
+	// not aimed at (corners, low walls) whenever the gun model leads or
+	// trails the camera. This is the only part of "how do I aim" that's
+	// actor-info-derived rather than weapon-specific, which is why it stays
+	// here rather than moving into PerformFireHitDetection.
 	FVector ViewLocation;
 	FRotator ViewRotation;
-	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	AvatarActor->GetActorEyesViewPoint(ViewLocation, ViewRotation);
 
 	// Everything about the shape of the trace itself - range, channel,
 	// single line vs. a future multi-pellet cone or projectile - is the
 	// triggering source's own concern now, and so is each hit's own damage
-	// (FEnclaveHitResult::Damage) - this loop doesn't change at all if a
-	// future implementer returns more than one hit, or varies damage per hit
-	// (a headshot, falloff by distance).
-	const TArray<FEnclaveHitResult> HitResults = Fireable->PerformFireTrace(ViewLocation, ViewRotation, AvatarActor);
+	// and damage effect (FEnclaveHitResult::Damage/DamageEffectClass) - this
+	// loop doesn't change at all if a future implementer returns more than
+	// one hit, varies damage per hit (a headshot, falloff by distance), or
+	// routes different hits through different effects (an EMP pellet vs. a
+	// ballistic one).
+	const TArray<FEnclaveHitResult> HitResults = Fireable->PerformFireHitDetection(ViewLocation, ViewRotation, AvatarActor);
 
 	if (HitResults.IsEmpty())
 	{
 		return;
 	}
-
-	UAbilitySystemComponent* SourceASC = ActorInfo->AbilitySystemComponent.Get();
 
 	if (!IsValid(SourceASC))
 	{
@@ -168,11 +172,20 @@ void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandl
 			continue;
 		}
 
+		if (!HitResult.DamageEffectClass)
+		{
+			// This specific hit didn't come with a damage effect to apply -
+			// a misconfigured weapon (no DamageEffectClass set on its
+			// UEnclaveWeaponDefinition), not something to silently
+			// substitute a default for.
+			continue;
+		}
+
 		FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
 		ContextHandle.AddSourceObject(GetCurrentSourceObject());
 		ContextHandle.AddHitResult(HitResult);
 
-		FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(DamageEffectClass, GetAbilityLevel(Handle, ActorInfo), ContextHandle);
+		FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(HitResult.DamageEffectClass, GetAbilityLevel(Handle, ActorInfo), ContextHandle);
 
 		if (!SpecHandle.IsValid())
 		{

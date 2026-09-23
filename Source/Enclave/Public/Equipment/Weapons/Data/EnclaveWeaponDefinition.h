@@ -56,6 +56,15 @@ public:
 	// a cooldown even mid-swap.
 	TSubclassOf<UGameplayEffect> GetCooldownEffectClass() const { return CooldownEffectClass; }
 
+	// This weapon's damage-application GE, read by AEnclaveWeapon at trace
+	// time and stamped onto each FEnclaveHitResult::DamageEffectClass -
+	// deliberately per-weapon rather than shared, since damage type
+	// (ballistic, energy, fire, an EMP hit that only touches a
+	// Shields/Electronics attribute) is a property of what fired, not
+	// something UEnclaveGA_Fire should assume is the same for everyone
+	// implementing IEnclaveFireableInterface.
+	TSubclassOf<UGameplayEffect> GetDamageEffectClass() const { return DamageEffectClass; }
+
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon"))
 	FGameplayTagContainer WeaponTags;
@@ -100,4 +109,8 @@ private:
 	/** Fire-rate cooldown Gameplay Effect for this specific weapon (e.g. GE_Fire_Cooldown_Rifle). Must carry this weapon's own Cooldown.Weapon.* tag. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UGameplayEffect> CooldownEffectClass;
+
+	/** Instant Gameplay Effect this weapon's hits apply. Must carry a modifier on the target attribute with magnitude "Set by Caller", tag Data.Damage. Per-weapon (not shared) so different damage types can route to different attributes - e.g. an EMP weapon's effect modifying Shields/Electronics instead of Health. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UGameplayEffect> DamageEffectClass;
 };

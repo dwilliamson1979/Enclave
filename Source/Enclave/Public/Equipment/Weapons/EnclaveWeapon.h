@@ -45,10 +45,10 @@ public:
 
 	// IEnclaveFireableInterface - this weapon's contract with UEnclaveGA_Fire.
 	// Everything here forwards to WeaponDefinition (the actual data/config
-	// store); PerformFireTrace also owns the line trace itself, including its
-	// own debug visualization, since "how does this weapon aim" is entirely
-	// this class's concern now, not the ability's.
-	virtual TArray<FEnclaveHitResult> PerformFireTrace(const FVector& ViewLocation, const FRotator& ViewRotation, AActor* InstigatorToIgnore) const override;
+	// store); PerformFireHitDetection also owns the line trace itself,
+	// including its own debug visualization, since "how does this weapon aim"
+	// is entirely this class's concern now, not the ability's.
+	virtual TArray<FEnclaveHitResult> PerformFireHitDetection(const FVector& ViewLocation, const FRotator& ViewRotation, AActor* InstigatorToIgnore) const override;
 	virtual TSubclassOf<UGameplayEffect> GetFireCooldownEffectClass() const override;
 
 	const UEnclaveWeaponDefinition* GetWeaponDefinition() const { return WeaponDefinition; }

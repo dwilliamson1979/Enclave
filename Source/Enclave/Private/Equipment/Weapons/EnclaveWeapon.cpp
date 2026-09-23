@@ -22,7 +22,7 @@
 static TAutoConsoleVariable<bool> CVarDebugFireTrace(
 	TEXT("Enclave.Debug.FireTrace"),
 	false,
-	TEXT("Draw debug lines and log hit results for a weapon's PerformFireTrace."),
+	TEXT("Draw debug lines and log hit results for a weapon's PerformFireHitDetection."),
 	ECVF_Cheat);
 
 AEnclaveWeapon::AEnclaveWeapon()
@@ -251,7 +251,7 @@ bool AEnclaveWeapon::HandleWeaponReload(const FGameplayCueParameters& Parameters
 	return true;
 }
 
-TArray<FEnclaveHitResult> AEnclaveWeapon::PerformFireTrace(const FVector& ViewLocation, const FRotator& ViewRotation, AActor* InstigatorToIgnore) const
+TArray<FEnclaveHitResult> AEnclaveWeapon::PerformFireHitDetection(const FVector& ViewLocation, const FRotator& ViewRotation, AActor* InstigatorToIgnore) const
 {
 	TArray<FEnclaveHitResult> Results;
 
@@ -300,13 +300,15 @@ TArray<FEnclaveHitResult> AEnclaveWeapon::PerformFireTrace(const FVector& ViewLo
 
 	if (bHit)
 	{
-		// Damage is computed here, not read separately by the ability - flat
-		// GetDamageAmount() today, but this is the seam for per-hit
+		// Damage and DamageEffectClass are both computed here, not read
+		// separately by the ability - flat GetDamageAmount()/
+		// GetDamageEffectClass() today, but this is the seam for per-hit
 		// variation later (HitResult.BoneName for a headshot multiplier,
-		// HitResult.Distance for falloff) without touching UEnclaveGA_Fire
-		// at all.
+		// HitResult.Distance for falloff, a different effect class for a
+		// different pellet) without touching UEnclaveGA_Fire at all.
 		FEnclaveHitResult EnclaveHitResult(HitResult);
 		EnclaveHitResult.Damage = WeaponDefinition->GetDamageAmount();
+		EnclaveHitResult.DamageEffectClass = WeaponDefinition->GetDamageEffectClass();
 		Results.Add(EnclaveHitResult);
 	}
 
