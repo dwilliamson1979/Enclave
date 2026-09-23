@@ -6,10 +6,12 @@
 #include "Equipment/Items/EnclaveItem.h"
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "GameplayCues/Interfaces/EnclaveGameplayCueResponderInterface.h"
+#include "Abilities/Interfaces/EnclaveFireableInterface.h"
 #include "EnclaveWeapon.generated.h"
 
 class UEnclaveWeaponDefinition;
 class UNiagaraComponent;
+class UGameplayEffect;
 
 /**
  * Base class for wieldable weapons.
@@ -21,7 +23,7 @@ class UNiagaraComponent;
  * to more specialized weapon implementations as those systems are introduced.
  */
 UCLASS(Abstract, Blueprintable)
-class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem, public IEnclaveWieldableInterface, public IEnclaveGameplayCueResponderInterface
+class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem, public IEnclaveWieldableInterface, public IEnclaveGameplayCueResponderInterface, public IEnclaveFireableInterface
 {
 	GENERATED_BODY()
 
@@ -40,6 +42,14 @@ public:
 	// IEnclaveGameplayCueResponderInterface
 	/** Dispatches by exact tag match to this weapon's own HandleWeaponFire/HandleWeaponReload/etc. Logs and returns false for a tag this weapon doesn't recognize, rather than silently doing nothing. */
 	virtual bool HandleGameplayCue(FGameplayTag CueTag, const FGameplayCueParameters& Parameters) override;
+
+	// IEnclaveFireableInterface - this weapon's contract with UEnclaveGA_Fire.
+	// Everything here forwards to WeaponDefinition (the actual data/config
+	// store); PerformFireTrace also owns the line trace itself, including its
+	// own debug visualization, since "how does this weapon aim" is entirely
+	// this class's concern now, not the ability's.
+	virtual TArray<FEnclaveHitResult> PerformFireTrace(const FVector& ViewLocation, const FRotator& ViewRotation, AActor* InstigatorToIgnore) const override;
+	virtual TSubclassOf<UGameplayEffect> GetFireCooldownEffectClass() const override;
 
 	const UEnclaveWeaponDefinition* GetWeaponDefinition() const { return WeaponDefinition; }
 

@@ -10,6 +10,20 @@
 
 #include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
 #include "GameplayTags/EnclaveGameplayCueTags.h"
+#include "Collision/EnclaveCollisionChannels.h"
+
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "DrawDebugHelpers.h"
+
+// Moved here from EnclaveGA_Fire.cpp along with the trace itself - debug
+// visualization of "how did this weapon's shot travel" is part of the
+// weapon's own trace behavior now, not the ability's concern.
+static TAutoConsoleVariable<bool> CVarDebugFireTrace(
+	TEXT("Enclave.Debug.FireTrace"),
+	false,
+	TEXT("Draw debug lines and log hit results for a weapon's PerformFireTrace."),
+	ECVF_Cheat);
 
 AEnclaveWeapon::AEnclaveWeapon()
 {
@@ -235,6 +249,73 @@ bool AEnclaveWeapon::HandleWeaponReload(const FGameplayCueParameters& Parameters
 	// ahead of one. Still returns true: this weapon does recognize
 	// GameplayCue.Weapon.Reload as its own, it just has nothing to play yet.
 	return true;
+}
+
+TArray<FEnclaveHitResult> AEnclaveWeapon::PerformFireTrace(const FVector& ViewLocation, const FRotator& ViewRotation, AActor* InstigatorToIgnore) const
+{
+	TArray<FEnclaveHitResult> Results;
+
+	if (!IsValid(WeaponDefinition))
+	{
+		return Results;
+	}
+
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World))
+	{
+		return Results;
+	}
+
+	// Aim from the camera, not a weapon muzzle socket - standard for hitscan
+	// shooters, since a muzzle-origin trace can hit geometry the crosshair is
+	// clearly not aimed at (corners, low walls) whenever the gun model leads
+	// or trails the camera. ViewLocation/ViewRotation are handed in by the
+	// ability (camera data, not weapon-specific); TraceRange is this
+	// weapon's own concern.
+	const FVector TraceEnd = ViewLocation + (ViewRotation.Vector() * WeaponDefinition->GetTraceRange());
+
+	FCollisionQueryParams QueryParams;
+
+	if (IsValid(InstigatorToIgnore))
+	{
+		QueryParams.AddIgnoredActor(InstigatorToIgnore);
+
+		// Also ignore anything attached to the instigator (this weapon
+		// included), since it's effectively part of the instigator for trace
+		// purposes.
+		TArray<AActor*> AttachedActors;
+		InstigatorToIgnore->GetAttachedActors(AttachedActors);
+		QueryParams.AddIgnoredActors(AttachedActors);
+	}
+
+	FHitResult HitResult;
+	const bool bHit = World->LineTraceSingleByChannel(HitResult, ViewLocation, TraceEnd, ECC_Weapon, QueryParams);
+
+	if (CVarDebugFireTrace.GetValueOnGameThread())
+	{
+		DrawDebugLine(World, ViewLocation, bHit ? HitResult.ImpactPoint : TraceEnd, bHit ? FColor::Green : FColor::Red, false, 2.0f, 0, 1.0f);
+		UE_LOG(LogTemp, Warning, TEXT("%s fire trace hit: %s"), *GetName(), *GetNameSafe(HitResult.GetActor()));
+	}
+
+	if (bHit)
+	{
+		// Damage is computed here, not read separately by the ability - flat
+		// GetDamageAmount() today, but this is the seam for per-hit
+		// variation later (HitResult.BoneName for a headshot multiplier,
+		// HitResult.Distance for falloff) without touching UEnclaveGA_Fire
+		// at all.
+		FEnclaveHitResult EnclaveHitResult(HitResult);
+		EnclaveHitResult.Damage = WeaponDefinition->GetDamageAmount();
+		Results.Add(EnclaveHitResult);
+	}
+
+	return Results;
+}
+
+TSubclassOf<UGameplayEffect> AEnclaveWeapon::GetFireCooldownEffectClass() const
+{
+	return IsValid(WeaponDefinition) ? WeaponDefinition->GetCooldownEffectClass() : nullptr;
 }
 
 //Adding this because I may reference it in the future. S2L14
