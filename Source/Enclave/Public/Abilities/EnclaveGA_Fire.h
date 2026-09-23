@@ -7,6 +7,7 @@
 #include "EnclaveGA_Fire.generated.h"
 
 class UGameplayEffect;
+class AEnclaveWeapon;
 
 /**
  * Hitscan fire ability.
@@ -35,11 +36,21 @@ class UGameplayEffect;
  * references AEnclavePlayerController or any other concrete class outside
  * its own domain.
  *
- * DamageEffectClass and the inherited CooldownGameplayEffectClass are
- * EditDefaultsOnly, which in practice means tuning a specific weapon
- * requires a Blueprint subclass of this class (e.g. BP_GA_Fire_Rifle) with
- * those defaults set, granted by that weapon's Weapon Definition instead of
- * this raw C++ class.
+ * DamageAmount, TraceRange, and the fire-rate cooldown effect are now read
+ * from the currently wielded weapon's UEnclaveWeaponDefinition (resolved via
+ * ResolveWeapon(), same idiom TriggerFireCue already used) rather than
+ * stored on this ability. This is the same principle
+ * UEnclaveGameplayCueNotify already follows for presentation data - the
+ * ability/notify doesn't own per-weapon data, it resolves it fresh each
+ * time from whatever is currently wielded. One weapon = one Weapon
+ * Definition asset; a Blueprint subclass of this ability (e.g.
+ * BP_GA_Fire_Rifle) is only needed when a weapon's firing *behavior*
+ * genuinely differs (a multi-trace shotgun, a burst-fire weapon), not to
+ * change a number.
+ *
+ * DamageEffectClass stays ability-level: its magnitude is Set by Caller, so
+ * the same effect class is expected to work for every hitscan weapon - there
+ * is currently nothing per-weapon left to configure on it.
  */
 UCLASS()
 class ENCLAVE_API UEnclaveGA_Fire : public UEnclaveGameplayAbility
@@ -48,6 +59,9 @@ class ENCLAVE_API UEnclaveGA_Fire : public UEnclaveGameplayAbility
 
 public:
 	UEnclaveGA_Fire();
+
+	/** Overridden to resolve the currently wielded weapon's own cooldown effect (UEnclaveWeaponDefinition::GetCooldownEffectClass) instead of a static CooldownGameplayEffectClass configured on the ability. Falls back to Super (i.e. CooldownGameplayEffectClass, left unset here) if no weapon can be resolved. */
+	virtual UGameplayEffect* GetCooldownGameplayEffect() const override;
 
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
@@ -61,13 +75,10 @@ private:
 	/** Server-only: tells whatever implements IEnclaveHitFeedbackInterface on the owning player's controller that the trace above actually landed a hit and applied damage. Not a Gameplay Cue - see the class comment for why. */
 	void NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorInfo);
 
-	/** Instant Gameplay Effect that reduces the target's Health. Must have a modifier on Health with magnitude "Set by Caller", tag Data.Damage. */
+	/** Resolves the currently wielded weapon (GetCurrentSourceObject(), cast to AEnclaveWeapon). Centralizes the same cast TriggerFireCue used to do inline, now also used for weapon-tuning lookups and the cooldown effect override. Returns nullptr if nothing valid is currently wielded. */
+	AEnclaveWeapon* ResolveWeapon() const;
+
+	/** Instant Gameplay Effect that reduces the target's Health. Must have a modifier on Health with magnitude "Set by Caller", tag Data.Damage. Shared across weapons - see class comment. */
 	UPROPERTY(EditDefaultsOnly, Category = "Fire")
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Fire")
-	float DamageAmount = 20.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Fire")
-	float TraceRange = 10000.0f;
 };

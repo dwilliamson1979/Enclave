@@ -15,6 +15,7 @@
 #include "Collision/EnclaveCollisionChannels.h"
 
 #include "Equipment/Weapons/EnclaveWeapon.h"
+#include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
 #include "Combat/Interfaces/EnclaveHitFeedbackInterface.h"
 
 // EnclaveGA_Fire.cpp, near the top, after the includes
@@ -53,11 +54,33 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 	EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ false);
 }
 
+UGameplayEffect* UEnclaveGA_Fire::GetCooldownGameplayEffect() const
+{
+	const AEnclaveWeapon* Weapon = ResolveWeapon();
+	const UEnclaveWeaponDefinition* WeaponDefinition = Weapon ? Weapon->GetWeaponDefinition() : nullptr;
+	const TSubclassOf<UGameplayEffect> CooldownClass = WeaponDefinition ? WeaponDefinition->GetCooldownEffectClass() : nullptr;
+
+	if (CooldownClass)
+	{
+		return CooldownClass->GetDefaultObject<UGameplayEffect>();
+	}
+
+	// No weapon resolved, or its Weapon Definition has no cooldown effect
+	// configured - fall back to the base UGameplayAbility behavior
+	// (CooldownGameplayEffectClass, which this ability leaves unset).
+	return Super::GetCooldownGameplayEffect();
+}
+
+AEnclaveWeapon* UEnclaveGA_Fire::ResolveWeapon() const
+{
+	return Cast<AEnclaveWeapon>(GetCurrentSourceObject());
+}
+
 void UEnclaveGA_Fire::TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo)
 {
 	UAbilitySystemComponent* SourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
-	AEnclaveWeapon* Weapon = Cast<AEnclaveWeapon>(GetCurrentSourceObject());
+	AEnclaveWeapon* Weapon = ResolveWeapon();
 
 	if (!IsValid(SourceASC) || !IsValid(Weapon))
 	{
@@ -108,6 +131,17 @@ void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandl
 		return;
 	}
 
+	const AEnclaveWeapon* Weapon = ResolveWeapon();
+	const UEnclaveWeaponDefinition* WeaponDefinition = Weapon ? Weapon->GetWeaponDefinition() : nullptr;
+
+	if (!WeaponDefinition)
+	{
+		// No weapon, or a weapon with no Weapon Definition assigned - there
+		// is no per-weapon damage/range to read, so there is nothing safe to
+		// fire with.
+		return;
+	}
+
 	UWorld* World = AvatarActor->GetWorld();
 
 	if (!IsValid(World))
@@ -123,7 +157,7 @@ void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandl
 	FRotator ViewRotation;
 	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
 
-	const FVector TraceEnd = ViewLocation + (ViewRotation.Vector() * TraceRange);
+	const FVector TraceEnd = ViewLocation + (ViewRotation.Vector() * WeaponDefinition->GetTraceRange());
 
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(AvatarActor);
@@ -172,8 +206,9 @@ void UEnclaveGA_Fire::PerformTraceAndApplyDamage(const FGameplayAbilitySpecHandl
 
 	// Negative: the effect's modifier Operation is Add, so Health +=
 	// (-DamageAmount). The magnitude itself stays a positive, designer-
-	// facing "damage amount" on the ability.
-	SpecHandle.Data->SetSetByCallerMagnitude(EnclaveGameplayTags::Data_Damage, -DamageAmount);
+	// facing "damage amount" - now read from the weapon rather than the
+	// ability, so different weapons don't need different ability subclasses.
+	SpecHandle.Data->SetSetByCallerMagnitude(EnclaveGameplayTags::Data_Damage, -WeaponDefinition->GetDamageAmount());
 
 	SourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
 

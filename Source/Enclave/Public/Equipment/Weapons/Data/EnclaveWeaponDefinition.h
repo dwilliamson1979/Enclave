@@ -9,6 +9,7 @@
 
 class USkeletalMesh;
 class UGameplayAbility;
+class UGameplayEffect;
 class UAnimMontage;
 class UNiagaraSystem;
 class USoundBase;
@@ -36,6 +37,24 @@ public:
 	UNiagaraSystem* GetMuzzleFlashEffect() const { return MuzzleFlashEffect; }
 	USoundBase* GetFireSound() const { return FireSound; }
 	FName GetMuzzleSocketName() const { return MuzzleSocketName; }
+
+	// Per-weapon combat tuning, read by UEnclaveGA_Fire at activation time
+	// (resolved off GetCurrentSourceObject(), the same idiom already used to
+	// find the weapon for GameplayCue.Weapon.Fire). Previously these lived as
+	// EditDefaultsOnly fields on the ability itself, which meant a new weapon
+	// with different numbers needed its own Blueprint subclass of the ability
+	// (BP_GA_Fire_Rifle, BP_GA_Fire_Shotgun, ...) just to change a float.
+	// Living here instead means one weapon = one data asset, full stop - a
+	// new ability subclass is only needed when a weapon's *firing behavior*
+	// genuinely differs (e.g. a multi-trace shotgun), not for tuning.
+	float GetDamageAmount() const { return DamageAmount; }
+	float GetTraceRange() const { return TraceRange; }
+
+	// This weapon's fire-rate cooldown GE. Deliberately per-weapon (not
+	// shared) since cooldown tags are already scoped per weapon identity
+	// (e.g. Cooldown.Weapon.Rifle.Fire) so two different weapons never share
+	// a cooldown even mid-swap.
+	TSubclassOf<UGameplayEffect> GetCooldownEffectClass() const { return CooldownEffectClass; }
 
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon"))
@@ -69,4 +88,16 @@ private:
 	/** Socket name expected to exist on both the first- and third-person meshes; the muzzle flash and fire sound anchor here. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Fire Cue", meta = (AllowPrivateAccess = "true"))
 	FName MuzzleSocketName = "Muzzle";
+
+	/** Flat damage applied per successful hit. Positive; UEnclaveGA_Fire negates it when setting the SetByCaller magnitude. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
+	float DamageAmount = 20.0f;
+
+	/** Max hitscan trace distance from the camera view point. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
+	float TraceRange = 10000.0f;
+
+	/** Fire-rate cooldown Gameplay Effect for this specific weapon (e.g. GE_Fire_Cooldown_Rifle). Must carry this weapon's own Cooldown.Weapon.* tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UGameplayEffect> CooldownEffectClass;
 };
