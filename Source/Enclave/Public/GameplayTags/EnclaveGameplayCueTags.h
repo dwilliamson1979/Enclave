@@ -21,6 +21,15 @@ namespace EnclaveGameplayTags
 	/** Executed by UEnclaveGA_Fire on every successful activation, regardless of whether the trace hits anything. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Weapon_Fire);
 
-	/** Executed by a reload ability on activation - reload montage/sound, no muzzle flash. Not yet wired to an ability; added for testing the cue pipeline ahead of the reload ability itself. */
+	/**
+	 * Added (not executed) by UEnclaveGA_Reload for the duration of the
+	 * reload and removed automatically when the ability ends - completed OR
+	 * cancelled - so the responder gets a WhileActive to start its reload
+	 * presentation and a Removed to stop it. The project's first duration
+	 * cue; Fire/DryFire stay one-shot executes.
+	 */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Weapon_Reload);
+
+	/** Executed by UEnclaveGA_Fire when activated with an empty magazine - dry-fire click, nothing else. No cooldown is committed and nothing traces. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Weapon_DryFire);
 }

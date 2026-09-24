@@ -22,10 +22,12 @@
  * create a Gameplay Cue Notify from" list, not because anything here is
  * unimplemented.
  *
- * Static, not Actor: stateless and one-shot, matching every other Gameplay
- * Cue notify in this project - nothing to persist or clean up between
- * executions, including for an ability re-executing the same cue every tick
- * (automatic weapon fire).
+ * Static, not Actor: the notify itself stays stateless even for duration
+ * cues (GameplayCue.Weapon.Reload) - it forwards OnActive/WhileActive/
+ * Removed along with Executed, and any state a duration cue needs (a
+ * playing montage) lives on the responder, which already owns it. That
+ * keeps one notify shape for every cue, and nothing to spawn or recycle per
+ * execution for an ability re-executing a cue every tick (automatic fire).
  */
 UCLASS(Abstract)
 class ENCLAVE_API UEnclaveGameplayCueNotify : public UGameplayCueNotify_Static
@@ -33,14 +35,17 @@ class ENCLAVE_API UEnclaveGameplayCueNotify : public UGameplayCueNotify_Static
 	GENERATED_BODY()
 
 public:
-	virtual bool OnExecute_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const override;	
+	virtual bool OnExecute_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const override;
+	virtual bool OnActive_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const override;
+	virtual bool WhileActive_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const override;
+	virtual bool OnRemove_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const override;
 
 protected:
 	/**
 	 * Resolves the actor this cue is actually about from
 	 * Parameters.EffectCauser - the triggering ability is responsible for
 	 * populating that field with whatever should receive
-	 * HandleGameplayCue (see UEnclaveGA_Fire::TriggerFireCue). Falls back
+	 * HandleGameplayCue (see UEnclaveGA_Fire::ExecuteSourceCue). Falls back
 	 * to MyTarget (GAS's own resolution of the ASC's avatar actor) only if
 	 * EffectCauser isn't set, which is correct only when the avatar itself
 	 * is the intended responder.
@@ -53,6 +58,9 @@ protected:
 	 * response target.
 	 */
 	static AActor* ResolveCueResponder(AActor* MyTarget, const FGameplayCueParameters& Parameters);
+
+	/** Resolve + forward, shared by every event override above. */
+	bool ForwardToResponder(AActor* MyTarget, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const;
 
 	FGameplayTag GetCueTag(const FGameplayCueParameters& Parameters) const;
 };

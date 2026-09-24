@@ -13,6 +13,8 @@
 #include "Collision/EnclaveCollisionChannels.h"
 
 #include "Engine/World.h"
+#include "Engine/Engine.h"
+#include "Net/UnrealNetwork.h"
 #include "GameFramework/Actor.h"
 #include "DrawDebugHelpers.h"
 
@@ -22,6 +24,14 @@ static TAutoConsoleVariable<bool> CVarDebugFireTrace(
 	TEXT("Enclave.Debug.FireTrace"),
 	false,
 	TEXT("Draw debug lines and log hit results for a weapon's PerformFireHitDetection."),
+	ECVF_Cheat);
+
+// Magazine count visibility before a HUD exists - logs + on-screen print on
+// every change, server side on write and client side on replication.
+static TAutoConsoleVariable<bool> CVarDebugAmmo(
+	TEXT("Enclave.Debug.Ammo"),
+	false,
+	TEXT("Log and print a firearm's magazine count whenever it changes (server write and client replication)."),
 	ECVF_Cheat);
 
 AEnclaveFirearmWeapon::AEnclaveFirearmWeapon()
@@ -42,6 +52,24 @@ AEnclaveFirearmWeapon::AEnclaveFirearmWeapon()
 	MuzzleFlashComponentThirdPerson = CreateDefaultSubobject<UNiagaraComponent>(TEXT("MuzzleFlashComponentThirdPerson"));
 	MuzzleFlashComponentThirdPerson->SetupAttachment(ThirdPersonMesh);
 	MuzzleFlashComponentThirdPerson->SetAutoActivate(false);
+}
+
+void AEnclaveFirearmWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AEnclaveFirearmWeapon, CurrentMagazineAmmo);
+}
+
+void AEnclaveFirearmWeapon::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (HasAuthority())
+	{
+		const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+		CurrentMagazineAmmo = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetMagazineCapacity() : 0;
+	}
 }
 
 const UEnclaveFirearmWeaponDefinition* AEnclaveFirearmWeapon::GetFirearmWeaponDefinition() const
@@ -93,16 +121,23 @@ void AEnclaveFirearmWeapon::ApplyMuzzleFlashSocket(UNiagaraComponent* MuzzleFlas
 	MuzzleFlashComponent->SetOwnerNoSee(!bIsFirstPersonMesh);
 }
 
-bool AEnclaveFirearmWeapon::HandleGameplayCue(FGameplayTag CueTag, const FGameplayCueParameters& Parameters)
+bool AEnclaveFirearmWeapon::HandleGameplayCue(FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters)
 {
+	// Fire and DryFire are one-shot (executed) cues; any other event for
+	// them is recognized-but-ignored rather than "unhandled".
 	if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_Fire))
 	{
-		return HandleWeaponFire(Parameters);
+		return EventType == EGameplayCueEvent::Executed ? HandleWeaponFire(Parameters) : true;
+	}
+
+	if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_DryFire))
+	{
+		return EventType == EGameplayCueEvent::Executed ? HandleWeaponDryFire(Parameters) : true;
 	}
 
 	if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_Reload))
 	{
-		return HandleWeaponReload(Parameters);
+		return HandleWeaponReload(EventType, Parameters);
 	}
 
 	// Not silent: a tag reaching here with no branch above means a cue was
@@ -127,21 +162,7 @@ bool AEnclaveFirearmWeapon::HandleWeaponFire(const FGameplayCueParameters& Param
 	// a given viewer (first-person for the owning client, third-person for
 	// everyone else) is this actor's own mesh-visibility setup, not this
 	// method's concern.
-	if (UAnimMontage* FireMontage = FirearmWeaponDefinition->GetFireMontage())
-	{
-		for (USkeletalMeshComponent* MeshComp : { FirstPersonMesh, ThirdPersonMesh })
-		{
-			if (!IsValid(MeshComp))
-			{
-				continue;
-			}
-
-			if (UAnimInstance* AnimInstance = MeshComp->GetAnimInstance())
-			{
-				AnimInstance->Montage_Play(FireMontage);
-			}
-		}
-	}
+	PlayMontageOnWeaponMeshes(FirearmWeaponDefinition->GetFireMontage());
 
 	// Muzzle flash (Phase 3.b) - the components are persistent and
 	// pre-attached (asset, socket, and owner-visibility flags all resolved
@@ -173,32 +194,156 @@ bool AEnclaveFirearmWeapon::HandleWeaponFire(const FGameplayCueParameters& Param
 		MuzzleFlashComponent->SetVariableBool(FName("Trigger"), true);
 	}
 
-	// Fire sound - only needs to play once; not a per-viewer visibility
-	// concern like the montage/muzzle flash. Prefers the third-person mesh
-	// since it's the one guaranteed to represent the weapon's world position
-	// for every viewer, including the owning client's own third-person body.
-	if (FirearmWeaponDefinition->GetFireSound())
-	{
-		USkeletalMeshComponent* AttachTarget = IsValid(ThirdPersonMesh) ? ThirdPersonMesh : FirstPersonMesh;
+	PlaySoundAtMuzzle(FirearmWeaponDefinition->GetFireSound());
 
-		if (IsValid(AttachTarget))
-		{
-			UGameplayStatics::SpawnSoundAttached(
-				FirearmWeaponDefinition->GetFireSound(),
-				AttachTarget,
-				FirearmWeaponDefinition->GetMuzzleSocketName());
-		}
+	return true;
+}
+
+bool AEnclaveFirearmWeapon::HandleWeaponDryFire(const FGameplayCueParameters& Parameters)
+{
+	if (const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition())
+	{
+		PlaySoundAtMuzzle(FirearmWeaponDefinition->GetDryFireSound());
 	}
 
 	return true;
 }
 
-bool AEnclaveFirearmWeapon::HandleWeaponReload(const FGameplayCueParameters& Parameters)
+bool AEnclaveFirearmWeapon::HandleWeaponReload(EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters)
 {
-	// No reload ability yet - the tag exists so the pipeline can be tested
-	// ahead of one. Still returns true: this weapon does recognize
-	// GameplayCue.Weapon.Reload as its own, it just has nothing to play yet.
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+	UAnimMontage* ReloadMontage = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetReloadMontage() : nullptr;
+
+	if (!ReloadMontage)
+	{
+		// Recognized, just nothing to show yet.
+		return true;
+	}
+
+	switch (EventType)
+	{
+	case EGameplayCueEvent::WhileActive:
+	{
+		// WhileActive, not OnActive: every machine receives both for one
+		// add, and only WhileActive also fires when the cue becomes relevant
+		// mid-reload (see IEnclaveGameplayCueResponderInterface).
+		//
+		// The reload duration is the gameplay number; the montage bends to
+		// fit it. RawMagnitude is what UEnclaveGA_Reload is actually waiting
+		// on (GetReloadDuration() at activation, attachment modifiers
+		// included), so a "hot-swap magazine" speeds the animation up with
+		// no extra wiring.
+		const float ReloadDuration = Parameters.RawMagnitude;
+		const float MontageLength = ReloadMontage->GetPlayLength();
+		const float PlayRate = (ReloadDuration > KINDA_SMALL_NUMBER && MontageLength > KINDA_SMALL_NUMBER) ? MontageLength / ReloadDuration : 1.0f;
+
+		PlayMontageOnWeaponMeshes(ReloadMontage, PlayRate);
+
+		// ---------------------------------------------------------------
+		// Wielder (arms / body) reload animation - deliberately deferred.
+		// The montage above only moves the gun itself. The first-person
+		// arms and third-person body need their own montages
+		// (FP_AM_<Weapon>_Reload / MM_<Weapon>_Reload), played on the
+		// WIELDER's meshes. Planned shape, keeping the rule that a weapon
+		// never casts to AEnclaveCharacter:
+		//
+		//   1. New struct FEnclaveWielderMontages { FirstPerson; ThirdPerson; }
+		//      and a WielderReloadMontages field of that type on
+		//      UEnclaveFirearmWeaponDefinition.
+		//   2. IEnclaveItemWielderInterface (already how the wielder
+		//      resolves attachment targets for an item) gains:
+		//        virtual void PlayWieldedItemMontages(const FEnclaveWielderMontages& Montages, float PlayRate) = 0;
+		//        virtual void StopWieldedItemMontages(const FEnclaveWielderMontages& Montages, float BlendOutTime) = 0;
+		//      AEnclaveCharacter implements them against its own FP arms /
+		//      TP body meshes.
+		//   3. Here:
+		//        if (IEnclaveItemWielderInterface* Wielder = Cast<IEnclaveItemWielderInterface>(GetAttachParentActor()))
+		//        {
+		//            Wielder->PlayWieldedItemMontages(FirearmWeaponDefinition->GetWielderReloadMontages(), PlayRate);
+		//        }
+		//      and the matching Stop call in the Removed case below.
+		//   4. Same treatment later for the fire montage.
+		// ---------------------------------------------------------------
+		break;
+	}
+
+	case EGameplayCueEvent::Removed:
+		// Only visible for a cancelled reload - a completed one's montage
+		// has already finished (it was scaled to the duration), and
+		// Montage_Stop on a finished montage is a no-op.
+		StopMontageOnWeaponMeshes(ReloadMontage, /*BlendOutTime=*/ 0.1f);
+		break;
+
+	default:
+		break;
+	}
+
 	return true;
+}
+
+void AEnclaveFirearmWeapon::PlayMontageOnWeaponMeshes(UAnimMontage* Montage, float PlayRate)
+{
+	if (!Montage)
+	{
+		return;
+	}
+
+	for (USkeletalMeshComponent* MeshComp : { FirstPersonMesh, ThirdPersonMesh })
+	{
+		if (!IsValid(MeshComp))
+		{
+			continue;
+		}
+
+		if (UAnimInstance* AnimInstance = MeshComp->GetAnimInstance())
+		{
+			AnimInstance->Montage_Play(Montage, PlayRate);
+		}
+	}
+}
+
+void AEnclaveFirearmWeapon::StopMontageOnWeaponMeshes(UAnimMontage* Montage, float BlendOutTime)
+{
+	if (!Montage)
+	{
+		return;
+	}
+
+	for (USkeletalMeshComponent* MeshComp : { FirstPersonMesh, ThirdPersonMesh })
+	{
+		if (!IsValid(MeshComp))
+		{
+			continue;
+		}
+
+		UAnimInstance* AnimInstance = MeshComp->GetAnimInstance();
+
+		if (AnimInstance && AnimInstance->Montage_IsPlaying(Montage))
+		{
+			AnimInstance->Montage_Stop(BlendOutTime, Montage);
+		}
+	}
+}
+
+void AEnclaveFirearmWeapon::PlaySoundAtMuzzle(USoundBase* Sound)
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+
+	if (!Sound || !FirearmWeaponDefinition)
+	{
+		return;
+	}
+
+	// Only needs to play once; not a per-viewer visibility concern like the
+	// montage/muzzle flash. Prefers the third-person mesh since it's the one
+	// guaranteed to represent the weapon's world position for every viewer,
+	// including the owning client's own third-person body.
+	USkeletalMeshComponent* AttachTarget = IsValid(ThirdPersonMesh) ? ThirdPersonMesh : FirstPersonMesh;
+
+	if (IsValid(AttachTarget))
+	{
+		UGameplayStatics::SpawnSoundAttached(Sound, AttachTarget, FirearmWeaponDefinition->GetMuzzleSocketName());
+	}
 }
 
 TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor* InstigatorToIgnore) const
@@ -275,4 +420,113 @@ TSubclassOf<UGameplayEffect> AEnclaveFirearmWeapon::GetFireCooldownEffectClass()
 {
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 	return FirearmWeaponDefinition ? FirearmWeaponDefinition->GetCooldownEffectClass() : nullptr;
+}
+
+bool AEnclaveFirearmWeapon::CanConsumeAmmo() const
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+
+	if (!FirearmWeaponDefinition)
+	{
+		return false;
+	}
+
+	// No magazine configured = never runs dry.
+	if (FirearmWeaponDefinition->GetMagazineCapacity() <= 0)
+	{
+		return true;
+	}
+
+	return CurrentMagazineAmmo >= FirearmWeaponDefinition->GetAmmoPerShot();
+}
+
+void AEnclaveFirearmWeapon::ConsumeAmmo()
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+
+	if (!HasAuthority() || !FirearmWeaponDefinition || FirearmWeaponDefinition->GetMagazineCapacity() <= 0)
+	{
+		return;
+	}
+
+	CurrentMagazineAmmo = FMath::Max(0, CurrentMagazineAmmo - FirearmWeaponDefinition->GetAmmoPerShot());
+	DebugLogAmmo(TEXT("Fire"));
+}
+
+bool AEnclaveFirearmWeapon::CanReload() const
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+
+	if (!FirearmWeaponDefinition || FirearmWeaponDefinition->GetMagazineCapacity() <= 0)
+	{
+		return false;
+	}
+
+	// Once the reserve pool exists this also needs "and there's reserve
+	// ammo to load" - reading replicated state only, since this runs on the
+	// predicting client too.
+	return CurrentMagazineAmmo < FirearmWeaponDefinition->GetMagazineCapacity();
+}
+
+float AEnclaveFirearmWeapon::GetReloadDuration() const
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+
+	// Modifier seam: a "hot-swap magazine" attachment or a perk scales the
+	// definition's base duration here (e.g. multiply by the product of
+	// every equipped attachment's ReloadDurationMultiplier) - the ability
+	// and the reload cue both consume this value, so neither changes.
+	return FirearmWeaponDefinition ? FMath::Max(0.0f, FirearmWeaponDefinition->GetReloadDuration()) : 0.0f;
+}
+
+void AEnclaveFirearmWeapon::CompleteReload()
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+
+	if (!HasAuthority() || !FirearmWeaponDefinition)
+	{
+		return;
+	}
+
+	const int32 RoundsNeeded = FirearmWeaponDefinition->GetMagazineCapacity() - CurrentMagazineAmmo;
+
+	if (RoundsNeeded <= 0)
+	{
+		return;
+	}
+
+	CurrentMagazineAmmo += TakeReserveAmmo(RoundsNeeded);
+	DebugLogAmmo(TEXT("Reload"));
+}
+
+int32 AEnclaveFirearmWeapon::TakeReserveAmmo(int32 Requested)
+{
+	// Infinite reserve for now - see the header comment for where the
+	// shared pool will plug in.
+	return FMath::Max(0, Requested);
+}
+
+void AEnclaveFirearmWeapon::OnRep_CurrentMagazineAmmo()
+{
+	DebugLogAmmo(TEXT("Replicated"));
+}
+
+void AEnclaveFirearmWeapon::DebugLogAmmo(const TCHAR* Context) const
+{
+	if (!CVarDebugAmmo.GetValueOnGameThread())
+	{
+		return;
+	}
+
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+	const int32 Capacity = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetMagazineCapacity() : 0;
+	const FString Message = FString::Printf(TEXT("[%s] %s %s: %d / %d"),
+		HasAuthority() ? TEXT("Server") : TEXT("Client"), *GetName(), Context, CurrentMagazineAmmo, Capacity);
+
+	UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, Message);
+	}
 }

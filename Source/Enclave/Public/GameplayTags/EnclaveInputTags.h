@@ -34,6 +34,7 @@ namespace EnclaveGameplayTags
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Primary);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Secondary);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Tertiary);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Reload);
 
 	// ---------------------------------------------------------------------
 	// Equipment - Equipment Actions
@@ -68,4 +69,4 @@ namespace EnclaveGameplayTags
 	//ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Drone_Ascend);
 	//ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Drone_Descend);
 	//ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Drone_Detonate);
-}
+}

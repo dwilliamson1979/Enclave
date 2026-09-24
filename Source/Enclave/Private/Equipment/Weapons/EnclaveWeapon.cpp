@@ -27,14 +27,14 @@ FGameplayTag AEnclaveWeapon::GetItemType() const
 	return WeaponDefinition->GetWeaponType();
 }
 
-TArray<TSubclassOf<UGameplayAbility>> AEnclaveWeapon::GetGrantedAbilityClasses() const
+TArray<FEnclaveAbilityGrant> AEnclaveWeapon::GetAbilityGrants() const
 {
 	if (!IsValid(WeaponDefinition))
 	{
 		return {};
 	}
 
-	return WeaponDefinition->GetGrantedAbilities();
+	return WeaponDefinition->GetAbilityGrants();
 }
 
 void AEnclaveWeapon::ApplyWeaponDefinition()

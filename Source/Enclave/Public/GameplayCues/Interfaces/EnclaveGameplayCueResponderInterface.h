@@ -40,14 +40,24 @@ class ENCLAVE_API IEnclaveGameplayCueResponderInterface
 
 public:
 	/**
-	 * A Gameplay Cue notify's OnExecute_Implementation forwards straight to
-	 * this - CueTag is that notify's own GameplayCueTag (or
+	 * A Gameplay Cue notify forwards every cue event straight to this -
+	 * CueTag is that notify's own GameplayCueTag (or
 	 * Parameters.OriginalTag, which is the same value), Parameters is
-	 * whatever the triggering ability populated. Returns true if this
-	 * implementation recognized and handled the tag, false otherwise -
-	 * implementations should log on an unhandled tag reaching them rather
-	 * than silently returning false, so a missing branch after adding a new
-	 * cue shows up immediately instead of as a silent no-op.
+	 * whatever the triggering ability populated.
+	 *
+	 * EventType distinguishes a one-shot cue (Executed - fire, dry fire)
+	 * from a duration cue's lifecycle (OnActive / WhileActive / Removed -
+	 * reload). Every event for a recognized tag arrives here, including
+	 * ones an implementation has no use for; ignore those and still return
+	 * true. For a duration cue, prefer WhileActive over OnActive to start
+	 * presentation: WhileActive also fires when the cue becomes relevant
+	 * mid-flight (late join, coming into view), and on every machine each
+	 * add produces both, so reacting to both would double-play.
+	 *
+	 * Returns true if this implementation recognized the tag, false
+	 * otherwise - implementations should log on an unhandled tag reaching
+	 * them rather than silently returning false, so a missing branch after
+	 * adding a new cue shows up immediately instead of as a silent no-op.
 	 */
-	virtual bool HandleGameplayCue(FGameplayTag CueTag, const FGameplayCueParameters& Parameters) = 0;
+	virtual bool HandleGameplayCue(FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) = 0;
 };

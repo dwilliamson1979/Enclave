@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
+#include "AbilitySystemComponent.h"
 #include "EnclaveGameplayAbility.generated.h"
 
 /**
@@ -39,4 +40,21 @@ protected:
 	 */
 	template<class T>
 	T* GetTriggeringSourceAs() const { return Cast<T>(GetCurrentSourceObject()); }
-};
+
+	/**
+	 * Same resolution as GetTriggeringSourceAs(), but from an explicit spec
+	 * handle rather than this instance's "current" spec - for the
+	 * CanActivateAbility/CheckCost-style overrides GAS hands Handle and
+	 * ActorInfo to explicitly. Those can run before this instance has a
+	 * current spec (or on the class default object, which never does,
+	 * where GetCurrentSourceObject() asserts); this variant is safe either
+	 * way and just returns nullptr if the spec can't be found.
+	 */
+	template<class T>
+	static T* GetTriggeringSourceFromSpecAs(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo)
+	{
+		const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+		const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(Handle) : nullptr;
+		return Spec ? Cast<T>(Spec->SourceObject.Get()) : nullptr;
+	}
+};

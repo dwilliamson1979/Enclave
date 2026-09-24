@@ -53,6 +53,17 @@ class UAbilitySystemComponent;
  * damage effects (an EMP hit modifying Shields/Electronics instead of
  * Health), not just a different magnitude, so this ability treats it as
  * per-hit data rather than a single shared class it owns.
+ *
+ * Ammo (Phase 4) is optional and also comes from the triggering source,
+ * via IEnclaveAmmoConsumerInterface. An empty magazine does not fail
+ * activation (CheckCost is deliberately not overridden - a failed cost
+ * check stops GAS before ActivateAbility ever runs, leaving nowhere to play
+ * a dry-fire click); ActivateAbility checks first and executes
+ * GameplayCue.Weapon.DryFire instead of firing. The round itself is spent
+ * in ApplyCost, i.e. only once CommitAbility has passed its cooldown check,
+ * and only where the ability has authority - the magazine replicates back
+ * to the owning client. Blocked outright while State.Weapon.Reloading is
+ * owned (UEnclaveGA_Reload).
  */
 UCLASS()
 class ENCLAVE_API UEnclaveGA_Fire : public UEnclaveGameplayAbility
@@ -65,6 +76,9 @@ public:
 	/** Overridden to resolve the triggering source's own cooldown effect (IEnclaveFireableInterface::GetFireCooldownEffectClass) instead of a static CooldownGameplayEffectClass configured on the ability. Falls back to Super (i.e. CooldownGameplayEffectClass, left unset here) if no fireable source can be resolved. */
 	virtual UGameplayEffect* GetCooldownGameplayEffect() const override;
 
+	/** Super (any GE cost), then spends one activation's ammo from the triggering source if it implements IEnclaveAmmoConsumerInterface. Authority only. */
+	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
+
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
@@ -72,8 +86,8 @@ private:
 	/** SourceASC/AvatarActor are resolved once in ActivateAbility and passed in here, rather than each callee re-deriving them from ActorInfo on its own. */
 	void PerformHitDetection(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
 
-	/** Executes GameplayCue.Weapon.Fire against the triggering source (GetCurrentSourceObject(), cast to AActor - the cue system only needs an actor implementing IEnclaveGameplayCueResponderInterface, not specifically a weapon). Unconditional - fires on a miss too, and on the predicting owning client as well as the server. Presentation only; does not know or care whether anything is bound to the cue. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
-	void TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
+	/** Executes CueTag (GameplayCue.Weapon.Fire, or .DryFire on an empty magazine) against the triggering source (GetCurrentSourceObject(), cast to AActor - the cue system only needs an actor implementing IEnclaveGameplayCueResponderInterface, not specifically a weapon). Runs on the predicting owning client as well as the server. Presentation only; does not know or care whether anything is bound to the cue. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
+	void ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
 
 	/** Server-only: tells whatever implements IEnclaveHitFeedbackInterface on the owning player's controller that the trace above actually landed a hit and applied damage. Not a Gameplay Cue - see the class comment for why. Safe to call for an AI-controlled avatar too - PlayerController resolves null there and this just no-ops. */
 	void NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorInfo);

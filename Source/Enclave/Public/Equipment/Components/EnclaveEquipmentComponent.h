@@ -18,8 +18,11 @@ class UAbilitySystemComponent;
  * This component owns wielding operations, including selecting the next or
  * previous wieldable item from an item source and presenting the active item.
  *
- * It also routes generic item actions (Primary, Secondary, Tertiary) to the
- * currently wielded item.
+ * It also routes generic item actions (Primary, Secondary, Tertiary, Reload)
+ * to the currently wielded item. An action is first matched against the
+ * abilities the wielded item granted (by the input tag each
+ * FEnclaveAbilityGrant carries); Secondary/Tertiary fall back to
+ * IEnclaveWieldableInterface when the item granted no ability for that input.
  *
  * Equipment depends only on IEnclaveItemSourceInterface, not on any concrete
  * storage component. It binds to the owner's item source once, caches the
@@ -55,6 +58,7 @@ public:
 	bool TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent);
 	bool TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent);
 	bool TryPerformItemTertiary(const FEnclaveInputEvent& InputEvent);
+	bool TryPerformItemReload(const FEnclaveInputEvent& InputEvent);
 
 private:
 	void RebuildInputFilters();
@@ -65,6 +69,17 @@ private:
 	bool HandleItemPrimaryInput(const FEnclaveInputEvent& InputEvent);
 	bool HandleItemSecondaryInput(const FEnclaveInputEvent& InputEvent);
 	bool HandleItemTertiaryInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemReloadInput(const FEnclaveInputEvent& InputEvent);
+
+	/**
+	 * The granted ability spec (on the owner's ASC) whose SourceObject is
+	 * CurrentWieldedItem and whose dynamic spec source tags contain
+	 * InputTag - i.e. "the ability this item bound to this input". Invalid
+	 * handle if the item granted nothing for InputTag. Works on the owning
+	 * client too: activatable ability specs, including SourceObject and
+	 * dynamic tags, replicate to the owner.
+	 */
+	FGameplayAbilitySpecHandle FindWieldedItemAbilityForInput(const FGameplayTag& InputTag) const;
 
 	bool TryWieldInDirection(int32 Direction);
 	bool IsAvailableWieldable(const AEnclaveItem* Item) const;
@@ -113,6 +128,10 @@ private:
 	/** Semantic input tag used for the currently wielded item's tertiary action. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
 	FGameplayTag ItemTertiaryActionInputTag;
+
+	/** Semantic input tag used to reload the currently wielded item (Input.Item.Action.Reload). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
+	FGameplayTag ItemReloadActionInputTag;
 
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;

@@ -12,14 +12,39 @@
 #include "GameplayTags/EnclaveGameplayCueTags.h"
 
 #include "Abilities/Interfaces/EnclaveFireableInterface.h"
+#include "Abilities/Interfaces/EnclaveAmmoConsumerInterface.h"
 #include "Combat/Interfaces/EnclaveHitFeedbackInterface.h"
 
 UEnclaveGA_Fire::UEnclaveGA_Fire()
 {
+	// Can't fire mid-reload. GAS checks this in CanActivateAbility on both
+	// the predicting client and the server.
+	ActivationBlockedTags.AddTag(EnclaveGameplayTags::State_Weapon_Reloading);
 }
 
 void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
+	// Resolved once here and threaded through to ExecuteSourceCue/
+	// PerformHitDetection, rather than each of them re-deriving the same
+	// two pointers off ActorInfo independently.
+	UAbilitySystemComponent* SourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+
+	// Empty magazine: click, commit nothing (no cooldown, no cost), end.
+	// Checked before CommitAbility rather than via a CheckCost override -
+	// see the class comment. A source that doesn't consume ammo at all
+	// never gets here. This is also where an "auto-reload on empty" player
+	// option would hook in: try-activate the item's reload ability instead
+	// of (or after) the dry-fire cue.
+	const IEnclaveAmmoConsumerInterface* AmmoConsumer = GetTriggeringSourceAs<IEnclaveAmmoConsumerInterface>();
+
+	if (AmmoConsumer && !AmmoConsumer->CanConsumeAmmo())
+	{
+		ExecuteSourceCue(EnclaveGameplayTags::GameplayCue_Weapon_DryFire, SourceASC, AvatarActor);
+		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ true);
+		return;
+	}
+
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		// Cooldown or cost check failed (e.g. still on cooldown from the
@@ -28,17 +53,11 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		return;
 	}
 
-	// Resolved once here and threaded through to TriggerFireCue/
-	// PerformHitDetection, rather than each of them re-deriving the same
-	// two pointers off ActorInfo independently.
-	UAbilitySystemComponent* SourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
-
 	// Unconditional and before the authority check: this runs on the
 	// predicting owning client too, so the shot feels instant locally, while
 	// GAS's cue replication recognizes the matching prediction key on the
 	// server's own execution and does not double-play it there.
-	TriggerFireCue(ActorInfo, SourceASC, AvatarActor);
+	ExecuteSourceCue(EnclaveGameplayTags::GameplayCue_Weapon_Fire, SourceASC, AvatarActor);
 
 	if (HasAuthority(&ActivationInfo))
 	{
@@ -64,7 +83,28 @@ UGameplayEffect* UEnclaveGA_Fire::GetCooldownGameplayEffect() const
 	return Super::GetCooldownGameplayEffect();
 }
 
-void UEnclaveGA_Fire::TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor)
+void UEnclaveGA_Fire::ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	Super::ApplyCost(Handle, ActorInfo, ActivationInfo);
+
+	// Server-authoritative, not predicted: the magazine is plain replicated
+	// weapon state, not a GAS attribute, so there is no prediction-key
+	// rollback for it. The owning client sees the new count one round trip
+	// later - in the worst case (firing the last round faster than the
+	// count replicates) the client predicts one shot the server then
+	// refuses with a dry fire. Same trade-off Lyra ships with.
+	if (!HasAuthority(&ActivationInfo))
+	{
+		return;
+	}
+
+	if (IEnclaveAmmoConsumerInterface* AmmoConsumer = GetTriggeringSourceAs<IEnclaveAmmoConsumerInterface>())
+	{
+		AmmoConsumer->ConsumeAmmo();
+	}
+}
+
+void UEnclaveGA_Fire::ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor)
 {
 	// The cue system only needs an actor implementing
 	// IEnclaveGameplayCueResponderInterface - it was never actually
@@ -87,7 +127,7 @@ void UEnclaveGA_Fire::TriggerFireCue(const FGameplayAbilityActorInfo* ActorInfo,
 	CueParameters.EffectCauser = TriggeringActor;
 	CueParameters.SourceObject = TriggeringActor;
 
-	SourceASC->ExecuteGameplayCue(EnclaveGameplayTags::GameplayCue_Weapon_Fire, CueParameters);
+	SourceASC->ExecuteGameplayCue(CueTag, CueParameters);
 }
 
 void UEnclaveGA_Fire::NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorInfo)

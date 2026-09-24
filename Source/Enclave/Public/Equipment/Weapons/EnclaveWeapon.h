@@ -33,7 +33,7 @@ public:
 	AEnclaveWeapon();
 
 	virtual FGameplayTag GetItemType() const override;
-	virtual TArray<TSubclassOf<UGameplayAbility>> GetGrantedAbilityClasses() const override;
+	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const override;
 
 	// IEnclaveWieldableInterface
 	virtual bool HandlePrimaryAction_Implementation(const FEnclaveInputEvent& InputEvent) override;

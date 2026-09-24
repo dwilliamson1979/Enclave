@@ -5,11 +5,11 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
+#include "Abilities/EnclaveAbilityGrant.h"
 #include "EnclaveItem.generated.h"
 
 class USceneComponent;
 class USkeletalMeshComponent;
-class UGameplayAbility;
 
 /**
  * Base actor for a physical runtime item.
@@ -28,12 +28,13 @@ public:
 	virtual FGameplayTag GetItemType() const;
 
 	/**
-	 * Ability classes EquipmentComponent should grant to the wielder's ASC
-	 * while this item is wielded, and remove the moment it stops being
-	 * wielded. Base implementation grants nothing - most items (e.g. future
+	 * Abilities (each paired with the input tag that activates it)
+	 * EquipmentComponent should grant to the wielder's ASC while this item
+	 * is wielded, and remove the moment it stops being wielded. Base
+	 * implementation grants nothing - most items (e.g. future
 	 * non-actionable items) have no abilities of their own.
 	 */
-	virtual TArray<TSubclassOf<UGameplayAbility>> GetGrantedAbilityClasses() const { return {}; }
+	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const { return {}; }
 
 	USkeletalMeshComponent* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMeshComponent* GetThirdPersonMesh() const { return ThirdPersonMesh; }
@@ -47,4 +48,4 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Presentation")
 	TObjectPtr<USkeletalMeshComponent> ThirdPersonMesh;
-};
+};

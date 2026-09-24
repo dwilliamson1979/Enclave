@@ -59,6 +59,17 @@ public:
 	// assume is the same for everyone implementing IEnclaveFireableInterface.
 	TSubclassOf<UGameplayEffect> GetDamageEffectClass() const { return DamageEffectClass; }
 
+	// Phase 4: magazine + reload. Read by AEnclaveFirearmWeapon, which is
+	// what UEnclaveGA_Fire/UEnclaveGA_Reload actually talk to (through
+	// IEnclaveAmmoConsumerInterface/IEnclaveReloadableInterface) - neither
+	// ability reads this asset directly.
+	int32 GetMagazineCapacity() const { return MagazineCapacity; }
+	int32 GetAmmoPerShot() const { return AmmoPerShot; }
+	float GetReloadDuration() const { return ReloadDuration; }
+
+	UAnimMontage* GetReloadMontage() const { return ReloadMontage; }
+	USoundBase* GetDryFireSound() const { return DryFireSound; }
+
 private:
 
 	/** Played on both the first- and third-person meshes when GameplayCue.Weapon.Fire executes. Optional. */
@@ -92,4 +103,36 @@ private:
 	/** Instant Gameplay Effect this weapon's hits apply. Must carry a modifier on the target attribute with magnitude "Set by Caller", tag Data.Damage. Per-weapon (not shared) so different damage types can route to different attributes - e.g. an EMP weapon's effect modifying Shields/Electronics instead of Health. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
+
+	/** Rounds a full magazine holds; the weapon spawns full. 0 = no magazine at all (never runs dry, never reloads). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Ammo", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
+	int32 MagazineCapacity = 12;
+
+	/** Rounds one fire activation spends. A shotgun's pellets are still one round; a 3-round burst weapon would set 3. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Ammo", meta = (AllowPrivateAccess = "true", ClampMin = "1"))
+	int32 AmmoPerShot = 1;
+
+	/**
+	 * Base seconds from pressing reload to a full magazine - the gameplay
+	 * number; ReloadMontage is play-rate-scaled to match it, not the other
+	 * way around. Attachments/perks modify the value
+	 * AEnclaveFirearmWeapon::GetReloadDuration() returns, never this field.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Ammo", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
+	float ReloadDuration = 1.5f;
+
+	/**
+	 * Weapon-mesh reload montage (slide/magazine motion), played on both the
+	 * first- and third-person weapon meshes while GameplayCue.Weapon.Reload
+	 * is active, play-rate-scaled to fit ReloadDuration. Arm/body montages
+	 * for the wielder are a later step. Clip-out/clip-in sounds belong on
+	 * this montage as Play Sound anim notifies so they stay in sync with the
+	 * scaled play rate. Optional.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Reload Cue", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> ReloadMontage;
+
+	/** Played from the muzzle when firing with an empty magazine (GameplayCue.Weapon.DryFire). Optional. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Dry Fire Cue", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USoundBase> DryFireSound;
 };

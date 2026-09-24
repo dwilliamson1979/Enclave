@@ -21,6 +21,7 @@ namespace EnclaveGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Primary, "Input.Item.Action.Primary", "Primary action for the currently equipped item.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Secondary, "Input.Item.Action.Secondary", "Secondary action for the currently equipped item.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Tertiary, "Input.Item.Action.Tertiary", "Tertiary action for the currently equipped item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Reload, "Input.Item.Action.Reload", "Reload (or otherwise replenish) the currently equipped item.");
 
 	// Equipment EquipmentActions
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment, "Input.Equipment", "Root tag for equipment-selection input.");
@@ -40,4 +41,4 @@ namespace EnclaveGameplayTags
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action_Item_Unequip, "Input.Action.Item.Unequip", "Unequip the currently equipped item.");
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action_Item_Drop, "Input.Action.Item.Drop", "Drop the currently equipped item.");
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action_Interact, "Input.Action.Interact", "Primary interaction input.");
-}
+}

@@ -117,6 +117,11 @@ bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEven
 		return HandleItemTertiaryInput(InputEvent);
 	}
 
+	if (ItemReloadActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemReloadActionInputTag))
+	{
+		return HandleItemReloadInput(InputEvent);
+	}
+
 	return false;
 }
 
@@ -163,43 +168,38 @@ bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 
 bool UEnclaveEquipmentComponent::TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent)
 {
+	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(ItemPrimaryActionInputTag);
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!SpecHandle.IsValid() || !IsValid(ASC))
+	{
+		return false;
+	}
+
+	return ASC->TryActivateAbility(SpecHandle);
+}
+
+bool UEnclaveEquipmentComponent::TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent)
+{
 	if (!IsValid(CurrentWieldedItem))
 	{
 		return false;
 	}
 
-	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+	// An ability the item bound to this input wins; only items that granted
+	// nothing for it fall back to the wieldable interface. Ability
+	// activation only on Started - secondary input also routes Triggered/
+	// Completed events for the interface path (hold-to-aim), and those must
+	// not re-activate an ability every frame.
+	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(ItemSecondaryActionInputTag);
 
-	if (!IsValid(ASC))
+	if (SpecHandle.IsValid())
 	{
-		return false;
+		UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+		return InputEvent.TriggerEvent == ETriggerEvent::Started && IsValid(ASC) && ASC->TryActivateAbility(SpecHandle);
 	}
 
-	// Deliberately reads CurrentWieldedItem->GetGrantedAbilityClasses() here
-	// rather than GrantedAbilityHandles above: that array is populated only
-	// where WieldItem's authority check passes, i.e. server-only, so it is
-	// always empty on the owning client. CurrentWieldedItem itself IS
-	// replicated, and the ability classes it grants come from a static data
-	// asset reference (WeaponDefinition), so this resolves identically on
-	// both sides - which is what lets TryActivateAbilityByClass below work
-	// correctly for LocalPredicted activation from the owning client.
-	//
-	// Phase 2 simplification: the first ability a weapon grants is treated
-	// as its primary action. Revisit with a proper slot/tag mapping once a
-	// second action (Reload) exists in Phase 4.
-	const TArray<TSubclassOf<UGameplayAbility>>& GrantedClasses = CurrentWieldedItem->GetGrantedAbilityClasses();
-
-	if (GrantedClasses.IsEmpty() || !GrantedClasses[0])
-	{
-		return false;
-	}
-
-	return ASC->TryActivateAbilityByClass(GrantedClasses[0]);
-}
-
-bool UEnclaveEquipmentComponent::TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent)
-{
-	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
+	if (!CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
 	{
 		return false;
 	}
@@ -209,12 +209,75 @@ bool UEnclaveEquipmentComponent::TryPerformItemSecondary(const FEnclaveInputEven
 
 bool UEnclaveEquipmentComponent::TryPerformItemTertiary(const FEnclaveInputEvent& InputEvent)
 {
-	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
+	if (!IsValid(CurrentWieldedItem))
+	{
+		return false;
+	}
+
+	// Same ability-first, interface-fallback rule as TryPerformItemSecondary.
+	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(ItemTertiaryActionInputTag);
+
+	if (SpecHandle.IsValid())
+	{
+		UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+		return InputEvent.TriggerEvent == ETriggerEvent::Started && IsValid(ASC) && ASC->TryActivateAbility(SpecHandle);
+	}
+
+	if (!CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
 	{
 		return false;
 	}
 
 	return IEnclaveWieldableInterface::Execute_HandleTertiaryAction(CurrentWieldedItem, InputEvent);
+}
+
+bool UEnclaveEquipmentComponent::TryPerformItemReload(const FEnclaveInputEvent& InputEvent)
+{
+	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(ItemReloadActionInputTag);
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!SpecHandle.IsValid() || !IsValid(ASC))
+	{
+		return false;
+	}
+
+	// Whether a reload makes sense right now (magazine already full, etc.)
+	// is UEnclaveGA_Reload::CanActivateAbility's call, not this component's.
+	return ASC->TryActivateAbility(SpecHandle);
+}
+
+FGameplayAbilitySpecHandle UEnclaveEquipmentComponent::FindWieldedItemAbilityForInput(const FGameplayTag& InputTag) const
+{
+	if (!InputTag.IsValid() || !IsValid(CurrentWieldedItem))
+	{
+		return FGameplayAbilitySpecHandle();
+	}
+
+	const UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!IsValid(ASC))
+	{
+		return FGameplayAbilitySpecHandle();
+	}
+
+	// Replaces the Phase 2 "GrantedClasses[0] is the primary action"
+	// shortcut. Reads the ASC's activatable specs rather than
+	// GrantedAbilityHandles: that array is server-only bookkeeping (filled
+	// only where WieldItem's authority check passes), while the specs
+	// themselves - SourceObject and dynamic source tags included -
+	// replicate to the owning client, so this resolves identically on both
+	// sides for LocalPredicted activation. Matching on SourceObject as well
+	// as the tag keeps a stale spec from a just-swapped-out weapon (removal
+	// not yet replicated) from ever answering for the new one.
+	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	{
+		if (Spec.SourceObject.Get() == CurrentWieldedItem.Get() && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		{
+			return Spec.Handle;
+		}
+	}
+
+	return FGameplayAbilitySpecHandle();
 }
 
 void UEnclaveEquipmentComponent::RebuildInputFilters()
@@ -244,6 +307,11 @@ void UEnclaveEquipmentComponent::RebuildInputFilters()
 	if (ItemTertiaryActionInputTag.IsValid())
 	{
 		InputFilters.AddTag(ItemTertiaryActionInputTag);
+	}
+
+	if (ItemReloadActionInputTag.IsValid())
+	{
+		InputFilters.AddTag(ItemReloadActionInputTag);
 	}
 }
 
@@ -286,6 +354,18 @@ bool UEnclaveEquipmentComponent::HandleItemSecondaryInput(const FEnclaveInputEve
 bool UEnclaveEquipmentComponent::HandleItemTertiaryInput(const FEnclaveInputEvent& InputEvent)
 {
 	return TryPerformItemTertiary(InputEvent);
+}
+
+bool UEnclaveEquipmentComponent::HandleItemReloadInput(const FEnclaveInputEvent& InputEvent)
+{	
+	// Press-to-reload. A future "hold to inspect / tap to reload" split
+	// would branch on TriggerEvent here.
+	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
+	{
+		return false;
+	}
+
+	return TryPerformItemReload(InputEvent);
 }
 
 bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
@@ -518,9 +598,9 @@ void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
 		return;
 	}
 
-	for (const TSubclassOf<UGameplayAbility>& AbilityClass : Item->GetGrantedAbilityClasses())
+	for (const FEnclaveAbilityGrant& Grant : Item->GetAbilityGrants())
 	{
-		if (!AbilityClass)
+		if (!Grant.AbilityClass)
 		{
 			continue;
 		}
@@ -528,7 +608,15 @@ void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
 		// SourceObject = Item: lets the ability later identify which weapon
 		// activated it (via GetCurrentAbilitySpec()->SourceObject) without
 		// Equipment needing to pass that context through some other path.
-		FGameplayAbilitySpec AbilitySpec(AbilityClass, /*Level=*/ 1, /*InputID=*/ INDEX_NONE, /*SourceObject=*/ Item);
+		FGameplayAbilitySpec AbilitySpec(Grant.AbilityClass, /*Level=*/ 1, /*InputID=*/ INDEX_NONE, /*SourceObject=*/ Item);
+
+		// The input binding rides on the spec itself (dynamic source tags
+		// replicate with the spec), which is what
+		// FindWieldedItemAbilityForInput matches against.
+		if (Grant.InputTag.IsValid())
+		{
+			AbilitySpec.GetDynamicSpecSourceTags().AddTag(Grant.InputTag);
+		}
 		const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(AbilitySpec);
 
 		GrantedAbilityHandles.Add(Handle);

@@ -5,10 +5,10 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
+#include "Abilities/EnclaveAbilityGrant.h"
 #include "EnclaveWeaponDefinition.generated.h"
 
 class USkeletalMesh;
-class UGameplayAbility;
 
 /**
  * Data shared by every wieldable weapon, regardless of what kind of weapon
@@ -34,7 +34,7 @@ public:
 	USkeletalMesh* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMesh* GetThirdPersonMesh() const { return ThirdPersonMesh; }
 
-	const TArray<TSubclassOf<UGameplayAbility>>& GetGrantedAbilities() const { return GrantedAbilities; }
+	const TArray<FEnclaveAbilityGrant>& GetAbilityGrants() const { return AbilityGrants; }
 
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon"))
@@ -49,7 +49,16 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USkeletalMesh> ThirdPersonMesh;
 
-	/** Granted to the wielder's ASC while this weapon is equipped, removed the moment it's unequipped. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Abilities", meta = (AllowPrivateAccess = "true"))
-	TArray<TSubclassOf<UGameplayAbility>> GrantedAbilities;
-};
+	/**
+	 * Granted to the wielder's ASC while this weapon is equipped, removed
+	 * the moment it's unequipped. Each entry pairs an ability with the input
+	 * tag that activates it (e.g. UEnclaveGA_Fire + Input.Item.Action.Primary,
+	 * UEnclaveGA_Reload + Input.Item.Action.Reload).
+	 *
+	 * Renamed from GrantedAbilities when its element type changed - existing
+	 * data assets need these entries re-entered; the old array's values
+	 * don't carry over.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Abilities", meta = (AllowPrivateAccess = "true", TitleProperty = "InputTag"))
+	TArray<FEnclaveAbilityGrant> AbilityGrants;
+};
