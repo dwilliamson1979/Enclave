@@ -41,6 +41,7 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 	if (AmmoConsumer && !AmmoConsumer->CanConsumeAmmo())
 	{
 		ExecuteSourceCue(EnclaveGameplayTags::GameplayCue_Weapon_DryFire, SourceASC, AvatarActor);
+		AcknowledgeUnspentAmmo(ActivationInfo);
 		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ true);
 		return;
 	}
@@ -49,6 +50,7 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 	{
 		// Cooldown or cost check failed (e.g. still on cooldown from the
 		// last shot) - nothing fires, nothing traces.
+		AcknowledgeUnspentAmmo(ActivationInfo);
 		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ true);
 		return;
 	}
@@ -87,12 +89,19 @@ void UEnclaveGA_Fire::ApplyCost(const FGameplayAbilitySpecHandle Handle, const F
 {
 	Super::ApplyCost(Handle, ActorInfo, ActivationInfo);
 
-	// Server-authoritative, not predicted: the magazine is plain replicated
-	// weapon state, not a GAS attribute, so there is no prediction-key
-	// rollback for it. The owning client sees the new count one round trip
-	// later - in the worst case (firing the last round faster than the
-	// count replicates) the client predicts one shot the server then
-	// refuses with a dry fire. Same trade-off Lyra ships with.
+	// Both sides, keyed by this activation's prediction key: the server
+	// spends for real and acknowledges the key; the predicting client
+	// records a predicted spend under the same key, so its count drops
+	// immediately and never lets it predict a shot past its last round.
+	// The consumer tells the two sides apart itself.
+	if (IEnclaveAmmoConsumerInterface* AmmoConsumer = GetTriggeringSourceAs<IEnclaveAmmoConsumerInterface>())
+	{
+		AmmoConsumer->ConsumeAmmo(ActivationInfo.GetActivationPredictionKey());
+	}
+}
+
+void UEnclaveGA_Fire::AcknowledgeUnspentAmmo(const FGameplayAbilityActivationInfo& ActivationInfo)
+{
 	if (!HasAuthority(&ActivationInfo))
 	{
 		return;
@@ -100,7 +109,7 @@ void UEnclaveGA_Fire::ApplyCost(const FGameplayAbilitySpecHandle Handle, const F
 
 	if (IEnclaveAmmoConsumerInterface* AmmoConsumer = GetTriggeringSourceAs<IEnclaveAmmoConsumerInterface>())
 	{
-		AmmoConsumer->ConsumeAmmo();
+		AmmoConsumer->AcknowledgeAmmoPrediction(ActivationInfo.GetActivationPredictionKey());
 	}
 }
 

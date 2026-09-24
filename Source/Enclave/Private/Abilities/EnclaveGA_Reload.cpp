@@ -52,6 +52,20 @@ void UEnclaveGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		return;
 	}
 
+	bReloadPredictionRejected = false;
+
+	if (!HasAuthority(&ActivationInfo))
+	{
+		// Rejection is broadcast before GAS ends the rejected ability, so
+		// the flag is already set by the time EndAbility checks it.
+		FPredictionKey ActivationKey = ActivationInfo.GetActivationPredictionKey();
+
+		if (ActivationKey.IsValidKey())
+		{
+			ActivationKey.NewRejectedDelegate().BindUObject(this, &UEnclaveGA_Reload::OnReloadPredictionRejected);
+		}
+	}
+
 	// Read once, at activation: the same number drives the server's wait
 	// and (via the cue's RawMagnitude) the montage play rate, so they can't
 	// disagree even if a modifier changes mid-reload.
@@ -112,8 +126,30 @@ void UEnclaveGA_Reload::OnReloadDurationElapsed()
 {
 	if (IEnclaveReloadableInterface* Reloadable = GetTriggeringSourceAs<IEnclaveReloadableInterface>())
 	{
-		Reloadable->CompleteReload();
+		Reloadable->CompleteReload(CurrentActivationInfo.GetActivationPredictionKey());
 	}
 
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ false);
+}
+
+void UEnclaveGA_Reload::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+	// The owning client never ends its own reload (see the class comment),
+	// so a normal end here is the server's ClientEndAbility arriving after
+	// CompleteReload ran. IsEndAbilityValid guards the duplicate EndAbility
+	// calls GAS can make for an already-ended instance.
+	if (!bWasCancelled && !bReloadPredictionRejected && !HasAuthority(&ActivationInfo) && IsEndAbilityValid(Handle, ActorInfo))
+	{
+		if (IEnclaveReloadableInterface* Reloadable = GetTriggeringSourceAs<IEnclaveReloadableInterface>())
+		{
+			Reloadable->PredictReloadComplete(ActivationInfo.GetActivationPredictionKey());
+		}
+	}
+
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
+void UEnclaveGA_Reload::OnReloadPredictionRejected()
+{
+	bReloadPredictionRejected = true;
 }

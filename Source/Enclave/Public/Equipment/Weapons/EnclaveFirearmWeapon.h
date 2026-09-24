@@ -8,9 +8,51 @@
 #include "Abilities/Interfaces/EnclaveFireableInterface.h"
 #include "Abilities/Interfaces/EnclaveAmmoConsumerInterface.h"
 #include "Abilities/Interfaces/EnclaveReloadableInterface.h"
+#include "GameplayPrediction.h"
 #include "EnclaveFirearmWeapon.generated.h"
 
 class UEnclaveFirearmWeaponDefinition;
+
+/**
+ * The magazine as the server knows it, replicated as one unit so the owning
+ * client always receives a round count together with the newest prediction
+ * key that count already accounts for. That pairing is what makes
+ * client-side ammo prediction reconcile exactly: any predicted change whose
+ * key is at or before LastAcknowledgedPredictionKey is already reflected in
+ * Rounds and can be dropped, all in the same OnRep, with no window where
+ * the two disagree. (A separate key channel - the ASC's own prediction-key
+ * catch-up, which replicates on the PlayerState - can arrive before or
+ * after the weapon's update, and would briefly double-count or un-count a
+ * shot.)
+ */
+USTRUCT()
+struct FEnclaveMagazineState
+{
+	GENERATED_BODY()
+
+	/** Rounds in the magazine. Server truth. */
+	UPROPERTY()
+	int32 Rounds = 0;
+
+	/**
+	 * Newest owning-client prediction key (FPredictionKey::Current) whose
+	 * ammo effect - a spend, a refill, or "processed, nothing spent" - is
+	 * already reflected in Rounds. 0 = none yet. Keys are only meaningful
+	 * to the client that generated them, so this must be reset to 0 if the
+	 * weapon ever changes hands (future pickup/drop).
+	 */
+	UPROPERTY()
+	int16 LastAcknowledgedPredictionKey = 0;
+};
+
+/** Owning client only: one ammo change it predicted that the server hasn't acknowledged yet. */
+struct FEnclavePendingAmmoPrediction
+{
+	FPredictionKey::KeyType PredictionKey = 0;
+
+	/** Negative for a predicted spend, positive for a predicted refill. */
+	int32 RoundsDelta = 0;
+};
 class UNiagaraComponent;
 class USkeletalMeshComponent;
 class UGameplayEffect;
@@ -29,6 +71,11 @@ class USoundBase;
  *   .DryFire and .Reload to this weapon's own cosmetic response.
  * - IEnclaveAmmoConsumerInterface/IEnclaveReloadableInterface (Phase 4), this
  *   weapon's contracts with UEnclaveGA_Fire's ammo cost and UEnclaveGA_Reload.
+ *   Ammo is client-predicted: the owning client applies its own spends and
+ *   refills immediately (PendingAmmoPredictions) on top of the server's
+ *   replicated MagazineState, so it never predicts a shot past its own last
+ *   round, and its HUD count never lags. The server stays the only
+ *   authority; see FEnclaveMagazineState for how the two reconcile.
  *   The magazine lives here, on the weapon actor, not in an Attribute Set:
  *   the ASC is on the PlayerState and holds one set of numbers per player,
  *   while every firearm has its own magazine - and a weapon dropped on death
@@ -67,16 +114,23 @@ public:
 
 	// IEnclaveAmmoConsumerInterface - UEnclaveGA_Fire's ammo cost.
 	virtual bool CanConsumeAmmo() const override;
-	virtual void ConsumeAmmo() override;
+	virtual void ConsumeAmmo(const FPredictionKey& PredictionKey) override;
+	virtual void AcknowledgeAmmoPrediction(const FPredictionKey& PredictionKey) override;
 
 	// IEnclaveReloadableInterface - UEnclaveGA_Reload's contract.
 	virtual bool CanReload() const override;
 	virtual float GetReloadDuration() const override;
-	virtual void CompleteReload() override;
+	virtual void CompleteReload(const FPredictionKey& PredictionKey) override;
+	virtual void PredictReloadComplete(const FPredictionKey& PredictionKey) override;
 
-	/** Rounds currently in the magazine. Replicated; what a HUD ammo counter will bind to. */
+	/**
+	 * Rounds in the magazine as this machine should treat them: the
+	 * server's count plus, on the owning client, every predicted change the
+	 * server hasn't acknowledged yet. What activation checks use, and what
+	 * a HUD ammo counter should bind to.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Weapon|Ammo")
-	int32 GetCurrentMagazineAmmo() const { return CurrentMagazineAmmo; }
+	int32 GetCurrentMagazineAmmo() const;
 
 protected:
 
@@ -127,21 +181,36 @@ private:
 	 */
 	int32 TakeReserveAmmo(int32 Requested);
 
+	/** Server only: records that PredictionKey's ammo effect is now in MagazineState.Rounds. Ignores invalid and server-initiated keys (no client is waiting on those). */
+	void AcknowledgePredictionKey(const FPredictionKey& PredictionKey);
+
+	/** Owning client only: records a predicted change under PredictionKey, unless the server has already acknowledged that key. bSettleOnRejection binds the key's rejection delegate so a shot the server never ran is undone. */
+	void AddPendingAmmoPrediction(const FPredictionKey& PredictionKey, int32 RoundsDelta, bool bSettleOnRejection);
+
+	/** Owning client: the server refused to run the activation for Key at all - undo whatever was predicted under it. */
+	void HandleAmmoPredictionRejected(FPredictionKey::KeyType Key);
+
+	/** True if Key is at or before AcknowledgedKey in prediction-key order (keys count up from 1 and wrap back to 1 after 32767). False while nothing has been acknowledged. */
+	static bool IsPredictionKeyAcknowledged(FPredictionKey::KeyType Key, FPredictionKey::KeyType AcknowledgedKey);
+
+	/** Drops every pending prediction the newly replicated MagazineState already accounts for. */
 	UFUNCTION()
-	void OnRep_CurrentMagazineAmmo();
+	void OnRep_MagazineState();
 
 	/** Logs/prints the magazine count when Enclave.Debug.Ammo is on - lets PIE verify ammo flow before any HUD exists (same pattern as Enclave.Debug.HitMarker). */
 	void DebugLogAmmo(const TCHAR* Context) const;
 
 	/**
-	 * Rounds in the magazine. Server-authoritative (only ConsumeAmmo/
-	 * CompleteReload write it, both authority-gated); replicated so the
-	 * owning client's UEnclaveGA_Fire/UEnclaveGA_Reload activation checks
-	 * and a future HUD read the same number. Not owner-only: a spectator
-	 * HUD or a dropped weapon's pickup prompt may want it too.
+	 * Server truth for the magazine (see FEnclaveMagazineState). Only
+	 * ConsumeAmmo/AcknowledgeAmmoPrediction/CompleteReload write it, all
+	 * authority-gated. Not owner-only: a spectator HUD or a dropped
+	 * weapon's pickup prompt may want the count too.
 	 */
-	UPROPERTY(VisibleInstanceOnly, ReplicatedUsing = OnRep_CurrentMagazineAmmo, Category = "Weapon|Ammo")
-	int32 CurrentMagazineAmmo = 0;
+	UPROPERTY(VisibleInstanceOnly, ReplicatedUsing = OnRep_MagazineState, Category = "Weapon|Ammo")
+	FEnclaveMagazineState MagazineState;
+
+	/** Owning client only, never replicated: predicted changes awaiting the server's acknowledgement, oldest first. Always empty on the server and on other clients. */
+	TArray<FEnclavePendingAmmoPrediction> PendingAmmoPredictions;
 
 	/**
 	 * Persistent, pre-attached muzzle flash components (Phase 3.b). Dormant

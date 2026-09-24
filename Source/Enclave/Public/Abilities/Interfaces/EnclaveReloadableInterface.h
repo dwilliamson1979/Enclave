@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
+#include "GameplayPrediction.h"
 #include "EnclaveReloadableInterface.generated.h"
 
 UINTERFACE(MinimalAPI, BlueprintType)
@@ -40,6 +41,17 @@ public:
 	 */
 	virtual float GetReloadDuration() const = 0;
 
-	/** Server-only: the reload finished uninterrupted - move ammo into the magazine. Never called for a cancelled reload. */
-	virtual void CompleteReload() = 0;
+	/** Server only: the reload finished uninterrupted - move ammo into the magazine and acknowledge PredictionKey (the reload activation's key). Never called for a cancelled reload. */
+	virtual void CompleteReload(const FPredictionKey& PredictionKey) = 0;
+
+	/**
+	 * Owning client only: the server told this client its reload (activation
+	 * PredictionKey) completed - show the refill now rather than when the
+	 * refilled count replicates. The ability-end RPC and the weapon's
+	 * replicated count travel on different actors with no ordering
+	 * guarantee, so without this the player can fire into a stale empty
+	 * magazine (dry-fire click) right after a reload finishes. Settled when
+	 * the server's acknowledgement of PredictionKey replicates.
+	 */
+	virtual void PredictReloadComplete(const FPredictionKey& PredictionKey) = 0;
 };

@@ -61,9 +61,13 @@ class UAbilitySystemComponent;
  * a dry-fire click); ActivateAbility checks first and executes
  * GameplayCue.Weapon.DryFire instead of firing. The round itself is spent
  * in ApplyCost, i.e. only once CommitAbility has passed its cooldown check,
- * and only where the ability has authority - the magazine replicates back
- * to the owning client. Blocked outright while State.Weapon.Reloading is
- * owned (UEnclaveGA_Reload).
+ * on BOTH the predicting client and the server, each passing the
+ * activation's prediction key - the ammo consumer predicts the spend on the
+ * client and reconciles it against the server's (see
+ * AEnclaveFirearmWeapon). Server-side activations that spend nothing (dry
+ * fire, failed commit) still acknowledge their key so a client that
+ * predicted differently settles. Blocked outright while
+ * State.Weapon.Reloading is owned (UEnclaveGA_Reload).
  */
 UCLASS()
 class ENCLAVE_API UEnclaveGA_Fire : public UEnclaveGameplayAbility
@@ -76,7 +80,7 @@ public:
 	/** Overridden to resolve the triggering source's own cooldown effect (IEnclaveFireableInterface::GetFireCooldownEffectClass) instead of a static CooldownGameplayEffectClass configured on the ability. Falls back to Super (i.e. CooldownGameplayEffectClass, left unset here) if no fireable source can be resolved. */
 	virtual UGameplayEffect* GetCooldownGameplayEffect() const override;
 
-	/** Super (any GE cost), then spends one activation's ammo from the triggering source if it implements IEnclaveAmmoConsumerInterface. Authority only. */
+	/** Super (any GE cost), then spends one activation's ammo from the triggering source if it implements IEnclaveAmmoConsumerInterface - really on the server, predicted on the owning client. */
 	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
 
 protected:
@@ -88,6 +92,9 @@ private:
 
 	/** Executes CueTag (GameplayCue.Weapon.Fire, or .DryFire on an empty magazine) against the triggering source (GetCurrentSourceObject(), cast to AActor - the cue system only needs an actor implementing IEnclaveGameplayCueResponderInterface, not specifically a weapon). Runs on the predicting owning client as well as the server. Presentation only; does not know or care whether anything is bound to the cue. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
 	void ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
+
+	/** Server only: this activation spent no ammo (dry fire / failed commit) - acknowledge its prediction key anyway so the owning client drops any spend it predicted for it. No-op for a source that doesn't consume ammo. */
+	void AcknowledgeUnspentAmmo(const FGameplayAbilityActivationInfo& ActivationInfo);
 
 	/** Server-only: tells whatever implements IEnclaveHitFeedbackInterface on the owning player's controller that the trace above actually landed a hit and applied damage. Not a Gameplay Cue - see the class comment for why. Safe to call for an AI-controlled avatar too - PlayerController resolves null there and this just no-ops. */
 	void NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorInfo);

@@ -58,7 +58,7 @@ void AEnclaveFirearmWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME(AEnclaveFirearmWeapon, CurrentMagazineAmmo);
+	DOREPLIFETIME(AEnclaveFirearmWeapon, MagazineState);
 }
 
 void AEnclaveFirearmWeapon::BeginPlay()
@@ -68,7 +68,8 @@ void AEnclaveFirearmWeapon::BeginPlay()
 	if (HasAuthority())
 	{
 		const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
-		CurrentMagazineAmmo = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetMagazineCapacity() : 0;
+		MagazineState.Rounds = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetMagazineCapacity() : 0;
+		MagazineState.LastAcknowledgedPredictionKey = 0;
 	}
 }
 
@@ -422,6 +423,23 @@ TSubclassOf<UGameplayEffect> AEnclaveFirearmWeapon::GetFireCooldownEffectClass()
 	return FirearmWeaponDefinition ? FirearmWeaponDefinition->GetCooldownEffectClass() : nullptr;
 }
 
+int32 AEnclaveFirearmWeapon::GetCurrentMagazineAmmo() const
+{
+	int32 Rounds = MagazineState.Rounds;
+
+	// Empty everywhere except the owning client between predicting a change
+	// and the server acknowledging it.
+	for (const FEnclavePendingAmmoPrediction& Pending : PendingAmmoPredictions)
+	{
+		Rounds += Pending.RoundsDelta;
+	}
+
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+	const int32 Capacity = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetMagazineCapacity() : 0;
+
+	return Capacity > 0 ? FMath::Clamp(Rounds, 0, Capacity) : FMath::Max(0, Rounds);
+}
+
 bool AEnclaveFirearmWeapon::CanConsumeAmmo() const
 {
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
@@ -437,20 +455,50 @@ bool AEnclaveFirearmWeapon::CanConsumeAmmo() const
 		return true;
 	}
 
-	return CurrentMagazineAmmo >= FirearmWeaponDefinition->GetAmmoPerShot();
+	// Predicted count on the owning client - the whole point: it already
+	// includes shots the server hasn't answered yet, so the client can't
+	// predict a shot past its own last round.
+	return GetCurrentMagazineAmmo() >= FirearmWeaponDefinition->GetAmmoPerShot();
 }
 
-void AEnclaveFirearmWeapon::ConsumeAmmo()
+void AEnclaveFirearmWeapon::ConsumeAmmo(const FPredictionKey& PredictionKey)
 {
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 
-	if (!HasAuthority() || !FirearmWeaponDefinition || FirearmWeaponDefinition->GetMagazineCapacity() <= 0)
+	if (!FirearmWeaponDefinition || FirearmWeaponDefinition->GetMagazineCapacity() <= 0)
 	{
 		return;
 	}
 
-	CurrentMagazineAmmo = FMath::Max(0, CurrentMagazineAmmo - FirearmWeaponDefinition->GetAmmoPerShot());
-	DebugLogAmmo(TEXT("Fire"));
+	const int32 AmmoPerShot = FirearmWeaponDefinition->GetAmmoPerShot();
+
+	if (HasAuthority())
+	{
+		// The real spend, stamped with the key of the shot it belongs to so
+		// the owning client can drop its matching prediction in the same
+		// replication update that delivers the new count.
+		MagazineState.Rounds = FMath::Max(0, MagazineState.Rounds - AmmoPerShot);
+		AcknowledgePredictionKey(PredictionKey);
+		DebugLogAmmo(TEXT("Fire"));
+		return;
+	}
+
+	// Owning client, inside its predicted activation. Settle on rejection
+	// too: if the server refuses to run this activation at all, no
+	// acknowledgement for this key will ever come.
+	AddPendingAmmoPrediction(PredictionKey, -AmmoPerShot, /*bSettleOnRejection=*/ true);
+	DebugLogAmmo(TEXT("Fire (predicted)"));
+}
+
+void AEnclaveFirearmWeapon::AcknowledgeAmmoPrediction(const FPredictionKey& PredictionKey)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	AcknowledgePredictionKey(PredictionKey);
+	DebugLogAmmo(TEXT("Acknowledged (nothing spent)"));
 }
 
 bool AEnclaveFirearmWeapon::CanReload() const
@@ -463,9 +511,9 @@ bool AEnclaveFirearmWeapon::CanReload() const
 	}
 
 	// Once the reserve pool exists this also needs "and there's reserve
-	// ammo to load" - reading replicated state only, since this runs on the
-	// predicting client too.
-	return CurrentMagazineAmmo < FirearmWeaponDefinition->GetMagazineCapacity();
+	// ammo to load". Predicted count on the owning client, same as
+	// CanConsumeAmmo.
+	return GetCurrentMagazineAmmo() < FirearmWeaponDefinition->GetMagazineCapacity();
 }
 
 float AEnclaveFirearmWeapon::GetReloadDuration() const
@@ -479,7 +527,7 @@ float AEnclaveFirearmWeapon::GetReloadDuration() const
 	return FirearmWeaponDefinition ? FMath::Max(0.0f, FirearmWeaponDefinition->GetReloadDuration()) : 0.0f;
 }
 
-void AEnclaveFirearmWeapon::CompleteReload()
+void AEnclaveFirearmWeapon::CompleteReload(const FPredictionKey& PredictionKey)
 {
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 
@@ -488,15 +536,133 @@ void AEnclaveFirearmWeapon::CompleteReload()
 		return;
 	}
 
-	const int32 RoundsNeeded = FirearmWeaponDefinition->GetMagazineCapacity() - CurrentMagazineAmmo;
+	const int32 RoundsNeeded = FirearmWeaponDefinition->GetMagazineCapacity() - MagazineState.Rounds;
 
-	if (RoundsNeeded <= 0)
+	if (RoundsNeeded > 0)
+	{
+		MagazineState.Rounds += TakeReserveAmmo(RoundsNeeded);
+	}
+
+	// Acknowledged even if nothing was needed, so the client's predicted
+	// refill for this key always settles. The reload's key is newer than
+	// every shot fired before it, so this also sweeps up any older shot
+	// prediction still pending on the client.
+	AcknowledgePredictionKey(PredictionKey);
+	DebugLogAmmo(TEXT("Reload"));
+}
+
+void AEnclaveFirearmWeapon::PredictReloadComplete(const FPredictionKey& PredictionKey)
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+
+	if (HasAuthority() || !FirearmWeaponDefinition)
 	{
 		return;
 	}
 
-	CurrentMagazineAmmo += TakeReserveAmmo(RoundsNeeded);
-	DebugLogAmmo(TEXT("Reload"));
+	// Enough to bring the predicted count to full. Once the reserve pool
+	// exists, clamp this to the reserve the client knows about - the server
+	// corrects any difference when it acknowledges the key.
+	const int32 RoundsToFull = FirearmWeaponDefinition->GetMagazineCapacity() - GetCurrentMagazineAmmo();
+
+	if (RoundsToFull <= 0)
+	{
+		return;
+	}
+
+	// No rejection binding: the reload ability only calls this after the
+	// server has already ended the reload successfully, so the key can no
+	// longer be rejected.
+	AddPendingAmmoPrediction(PredictionKey, RoundsToFull, /*bSettleOnRejection=*/ false);
+	DebugLogAmmo(TEXT("Reload (predicted)"));
+}
+
+void AEnclaveFirearmWeapon::AcknowledgePredictionKey(const FPredictionKey& PredictionKey)
+{
+	// Invalid: nothing was predicted (e.g. a listen-server host's own
+	// activation). Server-initiated: generated by the server, so no client
+	// has a pending prediction under it - and its value comes from a
+	// different counter, which would corrupt the ordering below.
+	if (!PredictionKey.IsValidKey() || PredictionKey.IsServerInitiatedKey())
+	{
+		return;
+	}
+
+	// Only ever move forward. Activations are processed in the order the
+	// client made them, so this is normally every key in turn, but never
+	// let an older one pull the acknowledgement backwards.
+	if (!IsPredictionKeyAcknowledged(PredictionKey.Current, MagazineState.LastAcknowledgedPredictionKey))
+	{
+		MagazineState.LastAcknowledgedPredictionKey = PredictionKey.Current;
+	}
+}
+
+void AEnclaveFirearmWeapon::AddPendingAmmoPrediction(const FPredictionKey& PredictionKey, int32 RoundsDelta, bool bSettleOnRejection)
+{
+	if (!PredictionKey.IsValidKey() || RoundsDelta == 0)
+	{
+		return;
+	}
+
+	// The server's answer for this key already arrived (possible for a
+	// predicted refill, which is only recorded once the reload has ended):
+	// its effect is already in MagazineState.Rounds, so recording it again
+	// would count it twice.
+	if (IsPredictionKeyAcknowledged(PredictionKey.Current, MagazineState.LastAcknowledgedPredictionKey))
+	{
+		return;
+	}
+
+	PendingAmmoPredictions.Add({ PredictionKey.Current, RoundsDelta });
+
+	if (bSettleOnRejection)
+	{
+		// Rejection is broadcast when the server refuses to run the
+		// activation at all (ClientActivateAbilityFailed). A copy is fine -
+		// the delegate is keyed on the key's value, not this instance.
+		FPredictionKey KeyCopy = PredictionKey;
+		KeyCopy.NewRejectedDelegate().BindUObject(this, &AEnclaveFirearmWeapon::HandleAmmoPredictionRejected, PredictionKey.Current);
+	}
+}
+
+void AEnclaveFirearmWeapon::HandleAmmoPredictionRejected(FPredictionKey::KeyType Key)
+{
+	const int32 NumRemoved = PendingAmmoPredictions.RemoveAll([Key](const FEnclavePendingAmmoPrediction& Pending)
+	{
+		return Pending.PredictionKey == Key;
+	});
+
+	if (NumRemoved > 0)
+	{
+		DebugLogAmmo(TEXT("Prediction rejected"));
+	}
+}
+
+bool AEnclaveFirearmWeapon::IsPredictionKeyAcknowledged(FPredictionKey::KeyType Key, FPredictionKey::KeyType AcknowledgedKey)
+{
+	if (AcknowledgedKey <= 0 || Key <= 0)
+	{
+		return false;
+	}
+
+	// Keys run 1..32767 and then wrap back to 1, so compare by distance
+	// around that cycle rather than raw value: a key more than half a cycle
+	// "ahead" is really behind (it's from before the wrap). A client can
+	// never have anywhere near half a cycle of shots in flight, so this is
+	// unambiguous in practice.
+	constexpr int32 KeyCycle = 32767;
+	int32 Distance = static_cast<int32>(AcknowledgedKey) - static_cast<int32>(Key);
+
+	if (Distance > KeyCycle / 2)
+	{
+		Distance -= KeyCycle;
+	}
+	else if (Distance < -KeyCycle / 2)
+	{
+		Distance += KeyCycle;
+	}
+
+	return Distance >= 0;
 }
 
 int32 AEnclaveFirearmWeapon::TakeReserveAmmo(int32 Requested)
@@ -506,8 +672,18 @@ int32 AEnclaveFirearmWeapon::TakeReserveAmmo(int32 Requested)
 	return FMath::Max(0, Requested);
 }
 
-void AEnclaveFirearmWeapon::OnRep_CurrentMagazineAmmo()
+void AEnclaveFirearmWeapon::OnRep_MagazineState()
 {
+	// Rounds and the acknowledgement arrive together (one struct), so every
+	// prediction dropped here is exactly one already counted in the new
+	// Rounds - the predicted total doesn't jump.
+	const FPredictionKey::KeyType AcknowledgedKey = MagazineState.LastAcknowledgedPredictionKey;
+
+	PendingAmmoPredictions.RemoveAll([AcknowledgedKey](const FEnclavePendingAmmoPrediction& Pending)
+	{
+		return IsPredictionKeyAcknowledged(Pending.PredictionKey, AcknowledgedKey);
+	});
+
 	DebugLogAmmo(TEXT("Replicated"));
 }
 
@@ -520,8 +696,13 @@ void AEnclaveFirearmWeapon::DebugLogAmmo(const TCHAR* Context) const
 
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 	const int32 Capacity = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetMagazineCapacity() : 0;
-	const FString Message = FString::Printf(TEXT("[%s] %s %s: %d / %d"),
-		HasAuthority() ? TEXT("Server") : TEXT("Client"), *GetName(), Context, CurrentMagazineAmmo, Capacity);
+
+	// Effective count first; server count and pending-prediction count
+	// show the reconciliation at work on the owning client.
+	const FString Message = FString::Printf(TEXT("[%s] %s %s: %d / %d (server %d, pending %d, ack key %d)"),
+		HasAuthority() ? TEXT("Server") : TEXT("Client"), *GetName(), Context,
+		GetCurrentMagazineAmmo(), Capacity, MagazineState.Rounds, PendingAmmoPredictions.Num(),
+		static_cast<int32>(MagazineState.LastAcknowledgedPredictionKey));
 
 	UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
 

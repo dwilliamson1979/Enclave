@@ -42,6 +42,14 @@
  * back. Firing is therefore blocked on the client for about one extra
  * round trip after the reload really finished - the cost of never losing
  * a completed reload.
+ *
+ * Ammo prediction: when that server-sent end arrives (not cancelled, not
+ * rejected), the client predicts the refill on the reloadable
+ * (PredictReloadComplete) instead of waiting for the refilled count to
+ * replicate - the end RPC and the weapon's count travel on different
+ * actors, so the count can land later, and firing in that gap would
+ * dry-fire into a magazine that's actually full. Both sides pass this
+ * activation's prediction key so the prediction settles exactly.
  */
 UCLASS()
 class ENCLAVE_API UEnclaveGA_Reload : public UEnclaveGameplayAbility
@@ -56,6 +64,9 @@ public:
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
+	/** On the owning client, a normal (not cancelled, not rejected) end means the server completed the reload - predicts the refill before Super ends the ability. */
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
+
 private:
 	/** Adds GameplayCue.Weapon.Reload for the lifetime of this activation (removed automatically on end/cancel). Runs on the predicting client and the server alike. */
 	void AddReloadCue(const FGameplayAbilityActorInfo* ActorInfo, float ReloadDuration);
@@ -63,4 +74,16 @@ private:
 	/** Server only: the reload duration elapsed uninterrupted - refill, then end (which replicates to the owning client and removes the cue everywhere). */
 	UFUNCTION()
 	void OnReloadDurationElapsed();
+
+	/** Owning client: the server refused to run this reload at all. */
+	void OnReloadPredictionRejected();
+
+	/**
+	 * Set when the server rejects this activation. Needed because GAS ends
+	 * a rejected predicted ability as a normal, NOT cancelled, end
+	 * (ClientActivateAbilityFailed -> K2_EndAbility) - without this flag,
+	 * EndAbility couldn't tell a rejected reload from a completed one and
+	 * would predict a refill that never happened. Reset each activation.
+	 */
+	bool bReloadPredictionRejected = false;
 };
