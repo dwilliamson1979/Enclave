@@ -213,3 +213,35 @@ bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& 
 
 	return true;
 }
+
+FEnclaveAnimData AEnclaveCharacter::GetAnimData() const
+{
+	FEnclaveAnimData AnimData;
+
+	AnimData.LocalVelocity = GetActorRotation().UnrotateVector(GetVelocity());
+
+	// bIsCrouched is replicated by ACharacter, so this is correct on
+	// simulated proxies too.
+	AnimData.bIsCrouching = bIsCrouched;
+
+	if (const UCharacterMovementComponent* MovementComp = GetCharacterMovement())
+	{
+		AnimData.bIsFalling = MovementComp->IsFalling();
+
+		// KNOWN GAP: current acceleration is only meaningful on the server
+		// and the owning client - the engine doesn't replicate it to
+		// simulated proxies, so this reads false for other players. Nothing
+		// in the vertical slice depends on it (locomotion keys off speed).
+		// When start/stop transitions need it, replicate a compressed
+		// acceleration here (Lyra's FLyraReplicatedAcceleration pattern);
+		// anim instances won't change.
+		AnimData.bIsAccelerating = !MovementComp->GetCurrentAcceleration().IsNearlyZero();
+	}
+
+	// Locally/server: controller rotation. Simulated proxies: rebuilt from
+	// ACharacter's replicated RemoteViewPitch, which arrives as 0..360 -
+	// normalize to -180..180 (effectively -90..90 for pitch).
+	AnimData.AimPitch = FRotator::NormalizeAxis(GetBaseAimRotation().Pitch);
+
+	return AnimData;
+}

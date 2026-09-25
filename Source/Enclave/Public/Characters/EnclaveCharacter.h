@@ -8,6 +8,7 @@
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
 #include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
+#include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "EnclaveCharacter.generated.h"
 
 class UCameraComponent;
@@ -23,7 +24,7 @@ class AEnclaveItem;
 class UAbilitySystemComponent;
 
 UCLASS()
-class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveItemWielderInterface, public IAbilitySystemInterface
+class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveItemWielderInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
 {
 	GENERATED_BODY()
 
@@ -58,6 +59,9 @@ public:
 	// IEnclaveItemWielderInterface
 	virtual bool ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const override;
 
+	// IEnclaveAnimDataProviderInterface
+	virtual FEnclaveAnimData GetAnimData() const override;
+
 	UEnclaveCharacterMovementComponent* GetEnclaveCharacterMovement() const;
 
 protected:
@@ -68,8 +72,10 @@ private:
 	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
 	void InitializeAbilityActorInfo();
 
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh;
+	// BlueprintReadOnly so BP_EnclaveCharacter's graph can reach it (e.g. to
+	// test Link Anim Class Layers before the equip-driven C++ path exists).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> SpringArmComp = nullptr;
