@@ -54,4 +54,21 @@ class ENCLAVE_API IEnclaveItemWielderInterface
 
 public:
 	virtual bool ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const = 0;
+
+	/**
+	 * Start presenting the wielder as holding an item of ItemType - the
+	 * wielder resolves which animation layers (if any) that means for its
+	 * own skeleton(s) and links them. The item only ever says what it is.
+	 *
+	 * Called on every machine (server via WieldItem, clients via
+	 * OnRep_CurrentWieldedItem), since animation is local presentation.
+	 */
+	virtual void LinkWieldedItemAnimLayers(const FGameplayTag& ItemType) = 0;
+
+	/**
+	 * Stop presenting an item of ItemType. Unlinks only what that type's
+	 * layers provided, so the wielder falls back to its main ABPs' default
+	 * (e.g. unarmed) layers unless another item has already replaced them.
+	 */
+	virtual void UnlinkWieldedItemAnimLayers(const FGameplayTag& ItemType) = 0;
 };

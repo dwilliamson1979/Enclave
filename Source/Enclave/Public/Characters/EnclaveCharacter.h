@@ -58,6 +58,8 @@ public:
 
 	// IEnclaveItemWielderInterface
 	virtual bool ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const override;
+	virtual void LinkWieldedItemAnimLayers(const FGameplayTag& ItemType) override;
+	virtual void UnlinkWieldedItemAnimLayers(const FGameplayTag& ItemType) override;
 
 	// IEnclaveAnimDataProviderInterface
 	virtual FEnclaveAnimData GetAnimData() const override;

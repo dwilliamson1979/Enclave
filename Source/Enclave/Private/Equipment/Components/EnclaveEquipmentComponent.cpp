@@ -561,6 +561,26 @@ void UEnclaveEquipmentComponent::SetWieldedPresentation(AEnclaveItem* Item, bool
 	}
 
 	Item->SetActorHiddenInGame(!bWielded);
+
+	// Wielder animation layers follow the same wielded/unwielded transitions
+	// as visibility. This function already runs on every machine - server
+	// from WieldItem / HandleItemSourceChanged, clients from
+	// OnRep_CurrentWieldedItem - which is exactly where local presentation
+	// like anim layer linking has to happen. Only the item's type crosses
+	// the boundary; the wielder decides what that means for its skeleton.
+	if (IEnclaveItemWielderInterface* Wielder = Cast<IEnclaveItemWielderInterface>(GetOwner()))
+	{
+		const FGameplayTag ItemType = Item->GetItemType();
+
+		if (bWielded)
+		{
+			Wielder->LinkWieldedItemAnimLayers(ItemType);
+		}
+		else
+		{
+			Wielder->UnlinkWieldedItemAnimLayers(ItemType);
+		}
+	}
 }
 
 void UEnclaveEquipmentComponent::ServerTryWieldNext_Implementation()

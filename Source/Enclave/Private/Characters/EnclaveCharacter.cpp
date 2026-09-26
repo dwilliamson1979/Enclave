@@ -214,6 +214,53 @@ bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& 
 	return true;
 }
 
+void AEnclaveCharacter::LinkWieldedItemAnimLayers(const FGameplayTag& ItemType)
+{
+	const FEnclaveItemPresentationMapping* PresentationMapping =
+		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindPresentationMapping(ItemType) : nullptr;
+
+	if (!PresentationMapping)
+	{
+		return;
+	}
+
+	// Linking replaces whatever currently fills the same ALI layers, so a
+	// straight item swap (rifle -> pistol) needs no explicit unlink first.
+	if (IsValid(FirstPersonMesh) && PresentationMapping->FirstPersonAnimLayers)
+	{
+		FirstPersonMesh->LinkAnimClassLayers(PresentationMapping->FirstPersonAnimLayers);
+	}
+
+	if (IsValid(GetMesh()) && PresentationMapping->ThirdPersonAnimLayers)
+	{
+		GetMesh()->LinkAnimClassLayers(PresentationMapping->ThirdPersonAnimLayers);
+	}
+}
+
+void AEnclaveCharacter::UnlinkWieldedItemAnimLayers(const FGameplayTag& ItemType)
+{
+	const FEnclaveItemPresentationMapping* PresentationMapping =
+		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindPresentationMapping(ItemType) : nullptr;
+
+	if (!PresentationMapping)
+	{
+		return;
+	}
+
+	// Unlinking by class only resets layer nodes currently running that
+	// class - if a newer item already linked over them this is a no-op,
+	// otherwise the main ABP's own (default/unarmed) layers take back over.
+	if (IsValid(FirstPersonMesh) && PresentationMapping->FirstPersonAnimLayers)
+	{
+		FirstPersonMesh->UnlinkAnimClassLayers(PresentationMapping->FirstPersonAnimLayers);
+	}
+
+	if (IsValid(GetMesh()) && PresentationMapping->ThirdPersonAnimLayers)
+	{
+		GetMesh()->UnlinkAnimClassLayers(PresentationMapping->ThirdPersonAnimLayers);
+	}
+}
+
 FEnclaveAnimData AEnclaveCharacter::GetAnimData() const
 {
 	FEnclaveAnimData AnimData;

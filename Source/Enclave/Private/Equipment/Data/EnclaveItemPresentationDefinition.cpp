@@ -4,10 +4,16 @@
 
 const FEnclaveItemPresentationMapping* UEnclaveItemPresentationDefinition::FindPresentationMapping(const FGameplayTag& ItemType) const
 {
-	if (!ItemType.IsValid())
+	// Exact match first, then each parent in turn (Weapon.Type.Rifle.Marksman
+	// -> Weapon.Type.Rifle -> Weapon.Type -> Weapon). RequestDirectParent
+	// returns an invalid tag past the root, which ends the walk.
+	for (FGameplayTag Tag = ItemType; Tag.IsValid(); Tag = Tag.RequestDirectParent())
 	{
-		return nullptr;
+		if (const FEnclaveItemPresentationMapping* Mapping = ItemPresentationMappings.Find(Tag))
+		{
+			return Mapping;
+		}
 	}
 
-	return ItemPresentationMappings.Find(ItemType);
+	return nullptr;
 }
