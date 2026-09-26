@@ -48,4 +48,4 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Presentation")
 	TObjectPtr<USkeletalMeshComponent> ThirdPersonMesh;
-};
+};

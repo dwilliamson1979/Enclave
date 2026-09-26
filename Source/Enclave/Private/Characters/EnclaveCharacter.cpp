@@ -19,7 +19,7 @@
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
-#include "Equipment/Data/EnclaveItemAttachmentDefinition.h"
+#include "Equipment/Data/EnclaveItemPresentationDefinition.h"
 #include "Equipment/Items/EnclaveItem.h"
 
 #include "Engine/Engine.h"
@@ -182,14 +182,14 @@ UEnclaveCharacterMovementComponent* AEnclaveCharacter::GetEnclaveCharacterMoveme
 
 bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const
 {
-	if (!ItemType.IsValid() || !IsValid(ItemAttachmentDefinition))
+	if (!ItemType.IsValid() || !IsValid(ItemPresentationDefinition))
 	{
 		return false;
 	}
 
-	const FEnclaveItemAttachmentMapping* AttachmentMapping = ItemAttachmentDefinition->FindAttachmentMapping(ItemType);
+	const FEnclaveItemPresentationMapping* PresentationMapping = ItemPresentationDefinition->FindPresentationMapping(ItemType);
 
-	if (!AttachmentMapping)
+	if (!PresentationMapping)
 	{
 		return false;
 	}
@@ -199,17 +199,17 @@ bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& 
 		return false;
 	}
 
-	if (AttachmentMapping->FirstPersonWieldedSocket.IsNone() ||
-		AttachmentMapping->ThirdPersonWieldedSocket.IsNone())
+	if (PresentationMapping->FirstPersonWieldedSocket.IsNone() ||
+		PresentationMapping->ThirdPersonWieldedSocket.IsNone())
 	{
 		return false;
 	}
 
 	OutTargets.FirstPerson.ParentComponent = FirstPersonMesh;
-	OutTargets.FirstPerson.SocketName = AttachmentMapping->FirstPersonWieldedSocket;
+	OutTargets.FirstPerson.SocketName = PresentationMapping->FirstPersonWieldedSocket;
 
 	OutTargets.ThirdPerson.ParentComponent = GetMesh();
-	OutTargets.ThirdPerson.SocketName = AttachmentMapping->ThirdPersonWieldedSocket;
+	OutTargets.ThirdPerson.SocketName = PresentationMapping->ThirdPersonWieldedSocket;
 
 	return true;
 }

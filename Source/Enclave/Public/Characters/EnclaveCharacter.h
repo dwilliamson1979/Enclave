@@ -19,7 +19,7 @@ class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
 class UEnclaveEquipmentComponent;
 class UEnclaveInventoryComponent;
-class UEnclaveItemAttachmentDefinition;
+class UEnclaveItemPresentationDefinition;
 class AEnclaveItem;
 class UAbilitySystemComponent;
 
@@ -102,5 +102,5 @@ private:
 	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveItemAttachmentDefinition> ItemAttachmentDefinition = nullptr;
+	TObjectPtr<UEnclaveItemPresentationDefinition> ItemPresentationDefinition = nullptr;
 };
