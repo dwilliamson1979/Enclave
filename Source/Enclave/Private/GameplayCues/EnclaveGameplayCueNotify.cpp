@@ -3,6 +3,7 @@
 #include "GameplayCues/EnclaveGameplayCueNotify.h"
 
 #include "GameplayCues/Interfaces/EnclaveGameplayCueResponderInterface.h"
+#include "Debug/EnclaveDebug.h"
 
 bool UEnclaveGameplayCueNotify::OnExecute_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const
 {
@@ -41,7 +42,7 @@ bool UEnclaveGameplayCueNotify::ForwardToResponder(AActor* MyTarget, EGameplayCu
 		// EffectCauser (resolution fell back to MyTarget, the avatar, which
 		// isn't a responder). Verbose rather than Warning - see the PIE
 		// verification note on weapon-swap-mid-reload.
-		UE_LOG(LogTemp, Verbose, TEXT("%s: %s resolved no cue responder for event %d"), *GetName(), *GetNameSafe(ResponderActor), static_cast<int32>(EventType));
+		ENCLAVE_LOG(LogEnclaveGameplayCue, Verbose, "%s: %s resolved no cue responder for event %d", *GetName(), *GetNameSafe(ResponderActor), static_cast<int32>(EventType));
 		return false;
 	}
 

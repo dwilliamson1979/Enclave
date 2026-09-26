@@ -3,6 +3,7 @@
 #include "Combat/Components/EnclaveCombatFeedbackComponent.h"
 
 #include "Engine/Engine.h"
+#include "Debug/EnclaveDebug.h"
 
 static TAutoConsoleVariable<bool> CVarDebugHitMarker(
 	TEXT("Enclave.Debug.HitMarker"),
@@ -29,12 +30,8 @@ void UEnclaveCombatFeedbackComponent::Client_NotifyWeaponHitConfirmed_Implementa
 {
 	if (CVarDebugHitMarker.GetValueOnGameThread())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[HitMarker] Confirmed hit received on owning client."));
-
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(INDEX_NONE, 1.5f, FColor::Yellow, TEXT("HIT"));
-		}
+		ENCLAVE_NET_LOG(LogEnclaveCombat, Log, GetOwner(), TEXT("[HitMarker] Confirmed hit received on owning client."));
+		ENCLAVE_SCREEN(TEXT("HIT"), FColor::Yellow, 1.5f);
 	}
 
 	OnWeaponHitConfirmed.Broadcast();

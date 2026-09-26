@@ -23,6 +23,15 @@
 #include "Equipment/Items/EnclaveItem.h"
 
 #include "Engine/Engine.h"
+#include "Debug/EnclaveDebug.h"
+
+// Input tag tracing. Previously printed unconditionally on every input
+// event; now opt-in like the other Enclave.Debug.* toggles.
+static TAutoConsoleVariable<bool> CVarDebugInput(
+	TEXT("Enclave.Debug.Input"),
+	false,
+	TEXT("Log and print every input tag the character receives in ProcessInput."),
+	ECVF_Cheat);
 
 AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UEnclaveCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -155,13 +164,10 @@ void AEnclaveCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 {
-	if (GEngine)
+	if (CVarDebugInput.GetValueOnGameThread())
 	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			2.0f,
-			FColor::Green,
-			FString::Printf(TEXT("AEnclaveCharacter::ProcessInput: %s"), *InputEvent.InputTag.ToString()));
+		ENCLAVE_LOG(LogEnclaveInput, Log, "%s ProcessInput: %s", *GetName(), *InputEvent.InputTag.ToString());
+		ENCLAVE_SCREEN(FString::Printf(TEXT("ProcessInput: %s"), *InputEvent.InputTag.ToString()), FColor::Green, 2.0f);
 	}
 
 	if (InputRouterComp)

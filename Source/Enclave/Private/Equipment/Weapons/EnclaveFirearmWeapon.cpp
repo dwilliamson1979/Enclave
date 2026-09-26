@@ -17,6 +17,7 @@
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Actor.h"
 #include "DrawDebugHelpers.h"
+#include "Debug/EnclaveDebug.h"
 
 // Debug visualization of "how did this weapon's shot travel" is this
 // weapon's own trace behavior, not the ability's concern.
@@ -146,7 +147,9 @@ bool AEnclaveFirearmWeapon::HandleGameplayCue(FGameplayTag CueTag, EGameplayCueE
 	// this dispatch being updated to match - exactly the kind of "silently
 	// does nothing" bug a missing AnimInstance or a missing socket already
 	// cost real debugging time on elsewhere in this class's history.
-	UE_LOG(LogTemp, Warning, TEXT("%s: no handler for gameplay cue %s"), *GetName(), *CueTag.ToString());
+	// Plain UE_LOG, not ENCLAVE_LOG: a missing handler is a real bug and
+	// should still show up in Test builds.
+	UE_LOG(LogEnclaveGameplayCue, Warning, TEXT("%s: no handler for gameplay cue %s"), *GetName(), *CueTag.ToString());
 	return false;
 }
 
@@ -397,7 +400,7 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 	if (CVarDebugFireTrace.GetValueOnGameThread())
 	{
 		DrawDebugLine(World, ViewLocation, bHit ? HitResult.ImpactPoint : TraceEnd, bHit ? FColor::Green : FColor::Red, false, 2.0f, 0, 1.0f);
-		UE_LOG(LogTemp, Warning, TEXT("%s fire trace hit: %s"), *GetName(), *GetNameSafe(HitResult.GetActor()));
+		ENCLAVE_NET_LOG(LogEnclaveWeapon, Log, this, FString::Printf(TEXT("fire trace hit: %s"), *GetNameSafe(HitResult.GetActor())));
 	}
 
 	if (bHit)
@@ -689,6 +692,9 @@ void AEnclaveFirearmWeapon::OnRep_MagazineState()
 
 void AEnclaveFirearmWeapon::DebugLogAmmo(const TCHAR* Context) const
 {
+	// Whole body compiled out of Test/Shipping - the CVar still exists
+	// there, but there is nothing to print.
+#if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (!CVarDebugAmmo.GetValueOnGameThread())
 	{
 		return;
@@ -699,15 +705,14 @@ void AEnclaveFirearmWeapon::DebugLogAmmo(const TCHAR* Context) const
 
 	// Effective count first; server count and pending-prediction count
 	// show the reconciliation at work on the owning client.
+	// Net mode rather than HasAuthority(): distinguishes ListenServer /
+	// DedicatedServer / Client, and doesn't label Standalone as "Server".
 	const FString Message = FString::Printf(TEXT("[%s] %s %s: %d / %d (server %d, pending %d, ack key %d)"),
-		HasAuthority() ? TEXT("Server") : TEXT("Client"), *GetName(), Context,
+		*EnclaveDebug::GetNetModeString(this), *GetName(), Context,
 		GetCurrentMagazineAmmo(), Capacity, MagazineState.Rounds, PendingAmmoPredictions.Num(),
 		static_cast<int32>(MagazineState.LastAcknowledgedPredictionKey));
 
-	UE_LOG(LogTemp, Warning, TEXT("%s"), *Message);
-
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, Message);
-	}
+	ENCLAVE_LOG_MSG(LogEnclaveWeapon, Log, Message);
+	ENCLAVE_SCREEN(Message, FColor::Yellow, 2.0f);
+#endif
 }
