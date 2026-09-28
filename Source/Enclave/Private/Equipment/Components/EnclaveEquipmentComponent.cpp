@@ -499,20 +499,8 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 
 IEnclaveItemWielderInterface* UEnclaveEquipmentComponent::GetWielder() const
 {
-	AActor* OwnerActor = GetOwner();
-
-	if (!IsValid(OwnerActor))
-	{
-		return nullptr;
-	}
-
-	// Normally a UEnclaveWielderComponent - same lookup as the item source.
-	if (UActorComponent* WielderComponent = OwnerActor->FindComponentByInterface(UEnclaveItemWielderInterface::StaticClass()))
-	{
-		return Cast<IEnclaveItemWielderInterface>(WielderComponent);
-	}
-
-	return Cast<IEnclaveItemWielderInterface>(OwnerActor);
+	// Normally a UEnclaveWielderComponent on the owner - same lookup items use.
+	return IEnclaveItemWielderInterface::FindWielder(GetOwner());
 }
 
 bool UEnclaveEquipmentComponent::WieldItemOnWielder(AEnclaveItem* Item)

@@ -8,6 +8,29 @@
 #include "Animation/AnimInstance.h"
 #include "EnclaveItemPresentationDefinition.generated.h"
 
+class UAnimMontage;
+
+/**
+ * This body's own montages for one wielder action (Wielder.Action.*) with
+ * one item type - e.g. Fire with a rifle: FP_AM_Rifle_Fire on the arms,
+ * AM_MM_Rifle_Fire on the body. Either may be empty.
+ *
+ * Third-person montages are expected on the DefaultGroup.UpperBody slot so
+ * the legs keep moving underneath; first-person ones on DefaultSlot.
+ */
+USTRUCT(BlueprintType)
+struct ENCLAVE_API FEnclaveWielderMontages
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> FirstPerson = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> ThirdPerson = nullptr;
+};
+
 /**
  * How one avatar presents one item type: where it attaches (sockets) and -
  * as the avatar-animation work lands - which animation layers and wielder
@@ -41,6 +64,14 @@ public:
 	/** Third-person (body) counterpart of FirstPersonAnimLayers - e.g. ABP_TP_RifleLayers. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TSubclassOf<UAnimInstance> ThirdPersonAnimLayers;
+
+	/**
+	 * This body's montages per wielder action (Wielder.Action.Draw, .Fire,
+	 * .DryFire, .Reload) for this item type. An action with no entry plays
+	 * nothing on the wielder - the item's own weapon-mesh montage still plays.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation", meta = (Categories = "Wielder.Action", ForceInlineRow))
+	TMap<FGameplayTag, FEnclaveWielderMontages> WielderMontages;
 };
 
 /**
@@ -66,6 +97,14 @@ class ENCLAVE_API UEnclaveItemPresentationDefinition : public UPrimaryDataAsset
 public:
 	/** Most specific row for ItemType, walking up its parent tags; nullptr if none match. */
 	const FEnclaveItemPresentationMapping* FindPresentationMapping(const FGameplayTag& ItemType) const;
+
+	/**
+	 * Montages for Action on ItemType's row (same parent-tag fallback as
+	 * FindPresentationMapping). Uses the most specific row only: a row that
+	 * exists but has no entry for Action plays nothing rather than borrowing
+	 * a parent row's.
+	 */
+	const FEnclaveWielderMontages* FindWielderMontages(const FGameplayTag& ItemType, const FGameplayTag& Action) const;
 
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation", meta = (AllowPrivateAccess = "true"))

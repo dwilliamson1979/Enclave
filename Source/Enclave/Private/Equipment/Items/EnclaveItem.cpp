@@ -38,3 +38,23 @@ FGameplayTag AEnclaveItem::GetItemType() const
 {
 	return FGameplayTag();
 }
+
+void AEnclaveItem::NotifyWielderOfAction(const FGameplayTag& Action, EEnclaveWieldedItemActionPhase Phase, float Duration) const
+{
+	// The wielder attaches this item's actor to its own actor when it wields
+	// it, so the attach parent is where the wielder lives.
+	IEnclaveItemWielderInterface* Wielder = IEnclaveItemWielderInterface::FindWielder(GetAttachParentActor());
+
+	if (!Wielder)
+	{
+		return;
+	}
+
+	FEnclaveWieldedItemActionEvent Event;
+	Event.ItemType = GetItemType();
+	Event.Action = Action;
+	Event.Phase = Phase;
+	Event.Duration = Duration;
+
+	Wielder->HandleWieldedItemAction(Event);
+}

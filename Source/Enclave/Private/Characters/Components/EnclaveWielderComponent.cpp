@@ -3,9 +3,12 @@
 #include "Characters/Components/EnclaveWielderComponent.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Equipment/Data/EnclaveItemPresentationDefinition.h"
 #include "Equipment/Items/EnclaveItem.h"
 #include "Debug/EnclaveDebug.h"
+#include "GameplayTags/EnclaveWielderTags.h"
 
 UEnclaveWielderComponent::UEnclaveWielderComponent()
 {
@@ -27,6 +30,13 @@ bool UEnclaveWielderComponent::WieldItem(AEnclaveItem* Item)
 
 	Item->SetActorHiddenInGame(false);
 	LinkAnimLayers(Item->GetItemType());
+
+	// Taking an item in hand IS drawing it - this body's own decision, so it
+	// raises Draw itself rather than waiting to be told.
+	FEnclaveWieldedItemActionEvent DrawEvent;
+	DrawEvent.ItemType = Item->GetItemType();
+	DrawEvent.Action = EnclaveGameplayTags::Wielder_Action_Draw;
+	HandleWieldedItemAction(DrawEvent);
 
 	return true;
 }
@@ -137,5 +147,66 @@ void UEnclaveWielderComponent::UnlinkAnimLayers(const FGameplayTag& ItemType)
 	if (IsValid(ThirdPersonMesh) && PresentationMapping->ThirdPersonAnimLayers)
 	{
 		ThirdPersonMesh->UnlinkAnimClassLayers(PresentationMapping->ThirdPersonAnimLayers);
+	}
+}
+
+void UEnclaveWielderComponent::HandleWieldedItemAction(const FEnclaveWieldedItemActionEvent& Event)
+{
+	const FEnclaveWielderMontages* Montages =
+		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindWielderMontages(Event.ItemType, Event.Action) : nullptr;
+
+	if (!Montages)
+	{
+		// This body has nothing to show for this action with this item.
+		return;
+	}
+
+	// Both meshes, every machine: owner-only / owner-no-see visibility
+	// already decides which one a given viewer actually sees.
+	switch (Event.Phase)
+	{
+	case EEnclaveWieldedItemActionPhase::Started:
+		PlayMontageOnMesh(FirstPersonMesh, Montages->FirstPerson, Event.Duration);
+		PlayMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson, Event.Duration);
+		break;
+
+	case EEnclaveWieldedItemActionPhase::Ended:
+		// Only visible for an action cut short - a duration-scaled montage
+		// that ran to completion has already finished.
+		StopMontageOnMesh(FirstPersonMesh, Montages->FirstPerson);
+		StopMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson);
+		break;
+	}
+}
+
+void UEnclaveWielderComponent::PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const
+{
+	UAnimInstance* AnimInstance = (IsValid(MeshComp) && Montage) ? MeshComp->GetAnimInstance() : nullptr;
+
+	if (!AnimInstance)
+	{
+		return;
+	}
+
+	const float MontageLength = Montage->GetPlayLength();
+	const float PlayRate = (Duration > KINDA_SMALL_NUMBER && MontageLength > KINDA_SMALL_NUMBER) ? MontageLength / Duration : 1.0f;
+
+	if (AnimInstance->Montage_Play(Montage, PlayRate) <= 0.0f)
+	{
+		// Plain UE_LOG, not ENCLAVE_LOG: misconfigured data (almost always a
+		// montage authored for a different skeleton than the mesh), which
+		// otherwise fails completely silently.
+		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: montage %s failed to play on %s - does its skeleton match the mesh's?"),
+			*GetNameSafe(GetOwner()), *GetNameSafe(Montage), *GetNameSafe(MeshComp));
+	}
+}
+
+void UEnclaveWielderComponent::StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const
+{
+	UAnimInstance* AnimInstance = (IsValid(MeshComp) && Montage) ? MeshComp->GetAnimInstance() : nullptr;
+
+	if (AnimInstance && AnimInstance->Montage_IsPlaying(Montage))
+	{
+		AnimInstance->Montage_Stop(ActionEndedBlendOutTime, Montage);
 	}
 }

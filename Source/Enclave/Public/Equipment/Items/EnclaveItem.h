@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/EnclaveAbilityGrant.h"
+#include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "EnclaveItem.generated.h"
 
 class USceneComponent;
@@ -40,6 +41,13 @@ public:
 	USkeletalMeshComponent* GetThirdPersonMesh() const { return ThirdPersonMesh; }
 
 protected:
+	/**
+	 * Announce to whoever is wielding this item (its attach parent's
+	 * wielder) that it is performing Action (Wielder.Action.*). No-op when
+	 * not wielded. The wielder decides what, if anything, that looks like.
+	 */
+	void NotifyWielderOfAction(const FGameplayTag& Action, EEnclaveWieldedItemActionPhase Phase, float Duration = 0.0f) const;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<USceneComponent> SceneRoot;
 

@@ -9,6 +9,7 @@
 #include "EnclaveWielderComponent.generated.h"
 
 class USkeletalMeshComponent;
+class UAnimMontage;
 class UEnclaveItemPresentationDefinition;
 class AEnclaveItem;
 
@@ -44,6 +45,9 @@ public:
 	virtual bool WieldItem(AEnclaveItem* Item) override;
 	virtual void UnwieldItem(AEnclaveItem* Item) override;
 
+	/** Plays this body's montages for the action (Started, duration-scaled) or stops them (Ended). */
+	virtual void HandleWieldedItemAction(const FEnclaveWieldedItemActionEvent& Event) override;
+
 private:
 	/** Attaches Item to the owner, and its FP/TP meshes to the sockets its type's presentation row names. */
 	bool AttachItem(AEnclaveItem* Item);
@@ -52,9 +56,19 @@ private:
 	void LinkAnimLayers(const FGameplayTag& ItemType);
 	void UnlinkAnimLayers(const FGameplayTag& ItemType);
 
+	/** Plays Montage on MeshComp, scaled to finish in Duration seconds when Duration > 0. */
+	void PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
+
+	/** Stops Montage on MeshComp if it's still playing there. */
+	void StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const;
+
 	/** How items look on this body - sockets and animation layers per item type (e.g. DA_ItemPresentation_Humanoid). */
 	UPROPERTY(EditDefaultsOnly, Category = "Wielder")
 	TObjectPtr<UEnclaveItemPresentationDefinition> ItemPresentationDefinition = nullptr;
+
+	/** Blend-out when a lasting action ends early (e.g. a reload cancelled by switching weapons). */
+	UPROPERTY(EditDefaultsOnly, Category = "Wielder", meta = (ClampMin = "0.0"))
+	float ActionEndedBlendOutTime = 0.1f;
 
 	UPROPERTY()
 	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh = nullptr;

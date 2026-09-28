@@ -17,3 +17,10 @@ const FEnclaveItemPresentationMapping* UEnclaveItemPresentationDefinition::FindP
 
 	return nullptr;
 }
+
+const FEnclaveWielderMontages* UEnclaveItemPresentationDefinition::FindWielderMontages(const FGameplayTag& ItemType, const FGameplayTag& Action) const
+{
+	const FEnclaveItemPresentationMapping* Mapping = FindPresentationMapping(ItemType);
+
+	return (Mapping && Action.IsValid()) ? Mapping->WielderMontages.Find(Action) : nullptr;
+}

@@ -10,6 +10,7 @@
 
 #include "Equipment/Weapons/Data/EnclaveFirearmWeaponDefinition.h"
 #include "GameplayTags/EnclaveGameplayCueTags.h"
+#include "GameplayTags/EnclaveWielderTags.h"
 #include "Collision/EnclaveCollisionChannels.h"
 
 #include "Engine/World.h"
@@ -168,6 +169,9 @@ bool AEnclaveFirearmWeapon::HandleWeaponFire(const FGameplayCueParameters& Param
 	// method's concern.
 	PlayMontageOnWeaponMeshes(FirearmWeaponDefinition->GetFireMontage());
 
+	// Tell the wielder a shot happened; its arms/body response is its call.
+	NotifyWielderOfAction(EnclaveGameplayTags::Wielder_Action_Fire, EEnclaveWieldedItemActionPhase::Started);
+
 	// Muzzle flash (Phase 3.b) - the components are persistent and
 	// pre-attached (asset, socket, and owner-visibility flags all resolved
 	// once by ApplyMuzzleFlashSocket when the weapon definition is applied),
@@ -210,6 +214,8 @@ bool AEnclaveFirearmWeapon::HandleWeaponDryFire(const FGameplayCueParameters& Pa
 		PlaySoundAtMuzzle(FirearmWeaponDefinition->GetDryFireSound());
 	}
 
+	NotifyWielderOfAction(EnclaveGameplayTags::Wielder_Action_DryFire, EEnclaveWieldedItemActionPhase::Started);
+
 	return true;
 }
 
@@ -217,12 +223,6 @@ bool AEnclaveFirearmWeapon::HandleWeaponReload(EGameplayCueEvent::Type EventType
 {
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 	UAnimMontage* ReloadMontage = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetReloadMontage() : nullptr;
-
-	if (!ReloadMontage)
-	{
-		// Recognized, just nothing to show yet.
-		return true;
-	}
 
 	switch (EventType)
 	{
@@ -232,50 +232,34 @@ bool AEnclaveFirearmWeapon::HandleWeaponReload(EGameplayCueEvent::Type EventType
 		// add, and only WhileActive also fires when the cue becomes relevant
 		// mid-reload (see IEnclaveGameplayCueResponderInterface).
 		//
-		// The reload duration is the gameplay number; the montage bends to
+		// The reload duration is the gameplay number; every montage bends to
 		// fit it. RawMagnitude is what UEnclaveGA_Reload is actually waiting
 		// on (GetReloadDuration() at activation, attachment modifiers
 		// included), so a "hot-swap magazine" speeds the animation up with
 		// no extra wiring.
 		const float ReloadDuration = Parameters.RawMagnitude;
-		const float MontageLength = ReloadMontage->GetPlayLength();
-		const float PlayRate = (ReloadDuration > KINDA_SMALL_NUMBER && MontageLength > KINDA_SMALL_NUMBER) ? MontageLength / ReloadDuration : 1.0f;
 
-		PlayMontageOnWeaponMeshes(ReloadMontage, PlayRate);
+		// Weapon mesh (magazine, bolt...) - this weapon's own montage.
+		if (ReloadMontage)
+		{
+			const float MontageLength = ReloadMontage->GetPlayLength();
+			const float PlayRate = (ReloadDuration > KINDA_SMALL_NUMBER && MontageLength > KINDA_SMALL_NUMBER) ? MontageLength / ReloadDuration : 1.0f;
 
-		// ---------------------------------------------------------------
-		// Wielder (arms / body) reload animation - deliberately deferred.
-		// The montage above only moves the gun itself. The first-person
-		// arms and third-person body need their own montages
-		// (FP_AM_<Weapon>_Reload / MM_<Weapon>_Reload), played on the
-		// WIELDER's meshes. Planned shape, keeping the rule that a weapon
-		// never casts to AEnclaveCharacter:
-		//
-		//   1. New struct FEnclaveWielderMontages { FirstPerson; ThirdPerson; }
-		//      and a WielderReloadMontages field of that type on
-		//      UEnclaveFirearmWeaponDefinition.
-		//   2. IEnclaveItemWielderInterface (already how the wielder
-		//      resolves attachment targets for an item) gains:
-		//        virtual void PlayWieldedItemMontages(const FEnclaveWielderMontages& Montages, float PlayRate) = 0;
-		//        virtual void StopWieldedItemMontages(const FEnclaveWielderMontages& Montages, float BlendOutTime) = 0;
-		//      AEnclaveCharacter implements them against its own FP arms /
-		//      TP body meshes.
-		//   3. Here:
-		//        if (IEnclaveItemWielderInterface* Wielder = Cast<IEnclaveItemWielderInterface>(GetAttachParentActor()))
-		//        {
-		//            Wielder->PlayWieldedItemMontages(FirearmWeaponDefinition->GetWielderReloadMontages(), PlayRate);
-		//        }
-		//      and the matching Stop call in the Removed case below.
-		//   4. Same treatment later for the fire montage.
-		// ---------------------------------------------------------------
+			PlayMontageOnWeaponMeshes(ReloadMontage, PlayRate);
+		}
+
+		// Tell the wielder a reload of this length started; it scales its
+		// own arms/body response to the same duration.
+		NotifyWielderOfAction(EnclaveGameplayTags::Wielder_Action_Reload, EEnclaveWieldedItemActionPhase::Started, ReloadDuration);
 		break;
 	}
 
 	case EGameplayCueEvent::Removed:
-		// Only visible for a cancelled reload - a completed one's montage
-		// has already finished (it was scaled to the duration), and
-		// Montage_Stop on a finished montage is a no-op.
+		// Completed or cancelled alike. Only visible for a cancelled reload -
+		// a completed one's montages have already finished (they were scaled
+		// to the duration), and stopping a finished montage is a no-op.
 		StopMontageOnWeaponMeshes(ReloadMontage, /*BlendOutTime=*/ 0.1f);
+		NotifyWielderOfAction(EnclaveGameplayTags::Wielder_Action_Reload, EEnclaveWieldedItemActionPhase::Ended);
 		break;
 
 	default:
