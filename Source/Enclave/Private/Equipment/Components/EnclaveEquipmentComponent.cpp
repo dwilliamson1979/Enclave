@@ -58,15 +58,16 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 
 	if (IsValid(PreviousItem))
 	{
-		SetWieldedPresentation(PreviousItem, false);
+		UnwieldItemOnWielder(PreviousItem);
 	}
 
-	if (!AttachItemToOwner(Item))
+	if (!WieldItemOnWielder(Item))
 	{
-		if (IsValid(PreviousItem) && AttachItemToOwner(PreviousItem))
+		// The wielder couldn't wield the new item - put the previous one
+		// back in its hands and leave the wielded state unchanged.
+		if (IsValid(PreviousItem) && WieldItemOnWielder(PreviousItem))
 		{
-			SetWieldedPresentation(PreviousItem, true);
-			PresentedWieldedItem = PreviousItem;
+			LocallyWieldedItem = PreviousItem;
 		}
 
 		return false;
@@ -79,8 +80,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	CurrentWieldedItem = Item;
 	GrantAbilitiesForItem(CurrentWieldedItem);
 
-	SetWieldedPresentation(CurrentWieldedItem, true);
-	PresentedWieldedItem = CurrentWieldedItem;
+	LocallyWieldedItem = CurrentWieldedItem;
 
 	return true;
 }
@@ -491,95 +491,44 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority() &&
 		IsValid(CurrentWieldedItem) && !WieldableCache.Contains(CurrentWieldedItem))
 	{
-		SetWieldedPresentation(CurrentWieldedItem, false);
+		UnwieldItemOnWielder(CurrentWieldedItem);
 		CurrentWieldedItem = nullptr;
-		PresentedWieldedItem.Reset();
+		LocallyWieldedItem.Reset();
 	}
 }
 
-bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)
+IEnclaveItemWielderInterface* UEnclaveEquipmentComponent::GetWielder() const
 {
-	if (!IsValid(Item) || !IsValid(Item->GetFirstPersonMesh()) || !IsValid(Item->GetThirdPersonMesh()))
-	{
-		return false;
-	}
-
 	AActor* OwnerActor = GetOwner();
 
 	if (!IsValid(OwnerActor))
 	{
-		return false;
+		return nullptr;
 	}
 
-	IEnclaveItemWielderInterface* Wielder = Cast<IEnclaveItemWielderInterface>(OwnerActor);
-
-	if (!Wielder)
+	// Normally a UEnclaveWielderComponent - same lookup as the item source.
+	if (UActorComponent* WielderComponent = OwnerActor->FindComponentByInterface(UEnclaveItemWielderInterface::StaticClass()))
 	{
-		return false;
+		return Cast<IEnclaveItemWielderInterface>(WielderComponent);
 	}
 
-	const FGameplayTag ItemType = Item->GetItemType();
-
-	if (!ItemType.IsValid())
-	{
-		return false;
-	}
-
-	FEnclaveWieldedItemAttachmentTargets AttachmentTargets;
-
-	if (!Wielder->ResolveWieldedItemAttachmentTargets(ItemType, AttachmentTargets))
-	{
-		return false;
-	}
-
-	if (!IsValid(AttachmentTargets.FirstPerson.ParentComponent) ||
-		!IsValid(AttachmentTargets.ThirdPerson.ParentComponent))
-	{
-		return false;
-	}
-
-	Item->AttachToActor(OwnerActor, FAttachmentTransformRules::KeepWorldTransform);
-
-	const bool bFirstPersonAttached = Item->GetFirstPersonMesh()->AttachToComponent(
-		AttachmentTargets.FirstPerson.ParentComponent,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		AttachmentTargets.FirstPerson.SocketName);
-
-	const bool bThirdPersonAttached = Item->GetThirdPersonMesh()->AttachToComponent(
-		AttachmentTargets.ThirdPerson.ParentComponent,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		AttachmentTargets.ThirdPerson.SocketName);
-
-	return bFirstPersonAttached && bThirdPersonAttached;
+	return Cast<IEnclaveItemWielderInterface>(OwnerActor);
 }
 
-void UEnclaveEquipmentComponent::SetWieldedPresentation(AEnclaveItem* Item, bool bWielded)
+bool UEnclaveEquipmentComponent::WieldItemOnWielder(AEnclaveItem* Item)
 {
-	if (!IsValid(Item))
+	IEnclaveItemWielderInterface* Wielder = GetWielder();
+
+	return Wielder && IsValid(Item) && Wielder->WieldItem(Item);
+}
+
+void UEnclaveEquipmentComponent::UnwieldItemOnWielder(AEnclaveItem* Item)
+{
+	IEnclaveItemWielderInterface* Wielder = GetWielder();
+
+	if (Wielder && IsValid(Item))
 	{
-		return;
-	}
-
-	Item->SetActorHiddenInGame(!bWielded);
-
-	// Wielder animation layers follow the same wielded/unwielded transitions
-	// as visibility. This function already runs on every machine - server
-	// from WieldItem / HandleItemSourceChanged, clients from
-	// OnRep_CurrentWieldedItem - which is exactly where local presentation
-	// like anim layer linking has to happen. Only the item's type crosses
-	// the boundary; the wielder decides what that means for its skeleton.
-	if (IEnclaveItemWielderInterface* Wielder = Cast<IEnclaveItemWielderInterface>(GetOwner()))
-	{
-		const FGameplayTag ItemType = Item->GetItemType();
-
-		if (bWielded)
-		{
-			Wielder->LinkWieldedItemAnimLayers(ItemType);
-		}
-		else
-		{
-			Wielder->UnlinkWieldedItemAnimLayers(ItemType);
-		}
+		Wielder->UnwieldItem(Item);
 	}
 }
 
@@ -658,19 +607,18 @@ void UEnclaveEquipmentComponent::RemoveGrantedAbilities()
 
 void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()
 {
-	if (AEnclaveItem* PreviousPresentedItem = PresentedWieldedItem.Get();
-		IsValid(PreviousPresentedItem) && PreviousPresentedItem != CurrentWieldedItem)
+	if (AEnclaveItem* PreviousItem = LocallyWieldedItem.Get();
+		IsValid(PreviousItem) && PreviousItem != CurrentWieldedItem)
 	{
-		SetWieldedPresentation(PreviousPresentedItem, false);
+		UnwieldItemOnWielder(PreviousItem);
 	}
 
-	if (IsValid(CurrentWieldedItem) && AttachItemToOwner(CurrentWieldedItem))
+	if (IsValid(CurrentWieldedItem) && WieldItemOnWielder(CurrentWieldedItem))
 	{
-		SetWieldedPresentation(CurrentWieldedItem, true);
-		PresentedWieldedItem = CurrentWieldedItem;
+		LocallyWieldedItem = CurrentWieldedItem;
 	}
 	else
 	{
-		PresentedWieldedItem.Reset();
+		LocallyWieldedItem.Reset();
 	}
 }

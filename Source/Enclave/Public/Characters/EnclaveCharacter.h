@@ -6,7 +6,6 @@
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
-#include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
 #include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "EnclaveCharacter.generated.h"
@@ -19,12 +18,12 @@ class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
 class UEnclaveEquipmentComponent;
 class UEnclaveInventoryComponent;
-class UEnclaveItemPresentationDefinition;
+class UEnclaveWielderComponent;
 class AEnclaveItem;
 class UAbilitySystemComponent;
 
 UCLASS()
-class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveItemWielderInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
+class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
 {
 	GENERATED_BODY()
 
@@ -55,11 +54,6 @@ public:
 
 	// IEnclaveInputConfigProviderInterface
 	virtual const UEnclaveInputConfig* GetInputConfig() const override;
-
-	// IEnclaveItemWielderInterface
-	virtual bool ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const override;
-	virtual void LinkWieldedItemAnimLayers(const FGameplayTag& ItemType) override;
-	virtual void UnlinkWieldedItemAnimLayers(const FGameplayTag& ItemType) override;
 
 	// IEnclaveAnimDataProviderInterface
 	virtual FEnclaveAnimData GetAnimData() const override;
@@ -103,6 +97,7 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveItemPresentationDefinition> ItemPresentationDefinition = nullptr;
+	/** The body side of wielding (sockets, animation layers) - see UEnclaveWielderComponent. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveWielderComponent> WielderComp = nullptr;
 };

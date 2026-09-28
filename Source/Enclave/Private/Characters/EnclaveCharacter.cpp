@@ -19,7 +19,7 @@
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
-#include "Equipment/Data/EnclaveItemPresentationDefinition.h"
+#include "Characters/Components/EnclaveWielderComponent.h"
 #include "Equipment/Items/EnclaveItem.h"
 
 #include "Engine/Engine.h"
@@ -75,6 +75,11 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 
 	EquipmentComp = CreateDefaultSubobject<UEnclaveEquipmentComponent>(TEXT("EquipmentComp"));
 	EquipmentComp->SetIsReplicated(true);
+
+	// Not replicated: pure local presentation, driven by EquipmentComp on
+	// every machine. Gets this character's two meshes to wield items on.
+	WielderComp = CreateDefaultSubobject<UEnclaveWielderComponent>(TEXT("WielderComp"));
+	WielderComp->SetWielderMeshes(FirstPersonMesh, GetMesh());
 }
 
 void AEnclaveCharacter::PossessedBy(AController* NewController)
@@ -184,87 +189,6 @@ const UEnclaveInputConfig* AEnclaveCharacter::GetInputConfig() const
 UEnclaveCharacterMovementComponent* AEnclaveCharacter::GetEnclaveCharacterMovement() const
 {
 	return Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement());
-}
-
-bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const
-{
-	if (!ItemType.IsValid() || !IsValid(ItemPresentationDefinition))
-	{
-		return false;
-	}
-
-	const FEnclaveItemPresentationMapping* PresentationMapping = ItemPresentationDefinition->FindPresentationMapping(ItemType);
-
-	if (!PresentationMapping)
-	{
-		return false;
-	}
-
-	if (!IsValid(FirstPersonMesh) || !IsValid(GetMesh()))
-	{
-		return false;
-	}
-
-	if (PresentationMapping->FirstPersonWieldedSocket.IsNone() ||
-		PresentationMapping->ThirdPersonWieldedSocket.IsNone())
-	{
-		return false;
-	}
-
-	OutTargets.FirstPerson.ParentComponent = FirstPersonMesh;
-	OutTargets.FirstPerson.SocketName = PresentationMapping->FirstPersonWieldedSocket;
-
-	OutTargets.ThirdPerson.ParentComponent = GetMesh();
-	OutTargets.ThirdPerson.SocketName = PresentationMapping->ThirdPersonWieldedSocket;
-
-	return true;
-}
-
-void AEnclaveCharacter::LinkWieldedItemAnimLayers(const FGameplayTag& ItemType)
-{
-	const FEnclaveItemPresentationMapping* PresentationMapping =
-		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindPresentationMapping(ItemType) : nullptr;
-
-	if (!PresentationMapping)
-	{
-		return;
-	}
-
-	// Linking replaces whatever currently fills the same ALI layers, so a
-	// straight item swap (rifle -> pistol) needs no explicit unlink first.
-	if (IsValid(FirstPersonMesh) && PresentationMapping->FirstPersonAnimLayers)
-	{
-		FirstPersonMesh->LinkAnimClassLayers(PresentationMapping->FirstPersonAnimLayers);
-	}
-
-	if (IsValid(GetMesh()) && PresentationMapping->ThirdPersonAnimLayers)
-	{
-		GetMesh()->LinkAnimClassLayers(PresentationMapping->ThirdPersonAnimLayers);
-	}
-}
-
-void AEnclaveCharacter::UnlinkWieldedItemAnimLayers(const FGameplayTag& ItemType)
-{
-	const FEnclaveItemPresentationMapping* PresentationMapping =
-		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindPresentationMapping(ItemType) : nullptr;
-
-	if (!PresentationMapping)
-	{
-		return;
-	}
-
-	// Unlinking by class only resets layer nodes currently running that
-	// class - if a newer item already linked over them this is a no-op,
-	// otherwise the main ABP's own (default/unarmed) layers take back over.
-	if (IsValid(FirstPersonMesh) && PresentationMapping->FirstPersonAnimLayers)
-	{
-		FirstPersonMesh->UnlinkAnimClassLayers(PresentationMapping->FirstPersonAnimLayers);
-	}
-
-	if (IsValid(GetMesh()) && PresentationMapping->ThirdPersonAnimLayers)
-	{
-		GetMesh()->UnlinkAnimClassLayers(PresentationMapping->ThirdPersonAnimLayers);
-	}
 }
 
 FEnclaveAnimData AEnclaveCharacter::GetAnimData() const

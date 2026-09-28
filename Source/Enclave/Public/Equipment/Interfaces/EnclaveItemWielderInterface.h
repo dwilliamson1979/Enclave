@@ -3,37 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameplayTagContainer.h"
 #include "UObject/Interface.h"
 #include "EnclaveItemWielderInterface.generated.h"
 
-class USceneComponent;
-
-USTRUCT(BlueprintType)
-struct ENCLAVE_API FEnclaveItemAttachmentTarget
-{
-	GENERATED_BODY()
-
-public:
-	UPROPERTY(BlueprintReadOnly, Category = "Attachment")
-	TObjectPtr<USceneComponent> ParentComponent = nullptr;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Attachment")
-	FName SocketName = NAME_None;
-};
-
-USTRUCT(BlueprintType)
-struct ENCLAVE_API FEnclaveWieldedItemAttachmentTargets
-{
-	GENERATED_BODY()
-
-public:
-	UPROPERTY(BlueprintReadOnly, Category = "Attachment")
-	FEnclaveItemAttachmentTarget FirstPerson;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Attachment")
-	FEnclaveItemAttachmentTarget ThirdPerson;
-};
+class AEnclaveItem;
 
 UINTERFACE(MinimalAPI)
 class UEnclaveItemWielderInterface : public UInterface
@@ -42,33 +15,43 @@ class UEnclaveItemWielderInterface : public UInterface
 };
 
 /**
- * Contract for actors that can physically wield Enclave items.
+ * Contract for whatever physically wields Enclave items on an actor -
+ * normally a UEnclaveWielderComponent, found the same way as the item
+ * source (FindComponentByInterface); an actor implementing it directly also
+ * works.
  *
- * The wielder owns the rules that determine where a particular item type
- * should be presented. Consumers receive resolved attachment targets rather
- * than depending on the wielder's internal meshes or attachment definitions.
+ * Split of responsibility:
+ * - UEnclaveEquipmentComponent decides WHAT is wielded (authoritative,
+ *   replicated state, granted abilities, input routing, and later any
+ *   wield requirements) and tells the wielder when that changes.
+ * - The wielder decides HOW that looks on its body: which meshes/views
+ *   exist, where the item attaches on each, how it's held, which animation
+ *   layers apply, what happens to an item no longer in hand - everything
+ *   that depends on the body's skeleton(s).
+ * - The item only says what it is (GetItemType) and exposes its own
+ *   presentation components.
+ *
+ * Both calls are local presentation and run on every machine: server from
+ * UEnclaveEquipmentComponent::WieldItem, clients from
+ * OnRep_CurrentWieldedItem.
  */
 class ENCLAVE_API IEnclaveItemWielderInterface
 {
 	GENERATED_BODY()
 
 public:
-	virtual bool ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const = 0;
+	/**
+	 * Physically wield Item: attach it, show it, apply this item type's
+	 * animation layers. Returns false if this body can't wield it (no
+	 * presentation data for its type, a missing socket or mesh) - the
+	 * equipment component then rolls back to the previous item. A failed
+	 * call leaves Item not visibly wielded.
+	 */
+	virtual bool WieldItem(AEnclaveItem* Item) = 0;
 
 	/**
-	 * Start presenting the wielder as holding an item of ItemType - the
-	 * wielder resolves which animation layers (if any) that means for its
-	 * own skeleton(s) and links them. The item only ever says what it is.
-	 *
-	 * Called on every machine (server via WieldItem, clients via
-	 * OnRep_CurrentWieldedItem), since animation is local presentation.
+	 * Item is no longer the wielded item: remove its animation layers and
+	 * put it away (currently hidden in place; a stowed socket later).
 	 */
-	virtual void LinkWieldedItemAnimLayers(const FGameplayTag& ItemType) = 0;
-
-	/**
-	 * Stop presenting an item of ItemType. Unlinks only what that type's
-	 * layers provided, so the wielder falls back to its main ABPs' default
-	 * (e.g. unarmed) layers unless another item has already replaced them.
-	 */
-	virtual void UnlinkWieldedItemAnimLayers(const FGameplayTag& ItemType) = 0;
+	virtual void UnwieldItem(AEnclaveItem* Item) = 0;
 };

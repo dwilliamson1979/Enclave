@@ -11,12 +11,14 @@
 
 class AEnclaveItem;
 class UAbilitySystemComponent;
+class IEnclaveItemWielderInterface;
 
 /**
  * Manages the character's currently wielded item and item-action input.
  *
  * This component owns wielding operations, including selecting the next or
- * previous wieldable item from an item source and presenting the active item.
+ * previous wieldable item from an item source and having the owner's wielder
+ * physically wield the active item.
  *
  * It also routes generic item actions (Primary, Secondary, Tertiary, Reload)
  * to the currently wielded item. An action is first matched against the
@@ -90,8 +92,16 @@ private:
 	void HandleItemSourceChanged();
 	void RebuildWieldableCache();
 
-	bool AttachItemToOwner(AEnclaveItem* Item);
-	void SetWieldedPresentation(AEnclaveItem* Item, bool bWielded);
+	/**
+	 * The owner's wielder (IEnclaveItemWielderInterface) - a component found
+	 * by interface like the item source, or the owner actor itself. This
+	 * component decides what is wielded; the wielder decides how that looks.
+	 */
+	IEnclaveItemWielderInterface* GetWielder() const;
+
+	/** Hand the physical side to the wielder. WieldItemOnWielder returns false if there's no wielder or it can't wield Item. */
+	bool WieldItemOnWielder(AEnclaveItem* Item);
+	void UnwieldItemOnWielder(AEnclaveItem* Item);
 
 	// Ability granting - server-authoritative only, mirrors the existing
 	// authority gating on WieldItem. Clients learn about granted abilities
@@ -142,8 +152,8 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentWieldedItem)
 	TObjectPtr<AEnclaveItem> CurrentWieldedItem = nullptr;
 
-	/** Local presentation cache used to clean up the previously wielded item on replication. */
-	TWeakObjectPtr<AEnclaveItem> PresentedWieldedItem;
+	/** The item the wielder is currently wielding on this machine - used to unwield the previous item when CurrentWieldedItem replicates. */
+	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;
 
 	/** The owner's bound item source (e.g. an inventory component), accessed only through the interface. */
 	UPROPERTY(Transient)
