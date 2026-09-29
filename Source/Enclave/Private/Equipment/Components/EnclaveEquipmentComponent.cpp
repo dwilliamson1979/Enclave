@@ -486,15 +486,7 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 
 IEnclaveAvatarPresentationInterface* UEnclaveEquipmentComponent::GetAvatarPresentation() const
 {
-	AActor* OwnerActor = GetOwner();
-
-	if (!IsValid(OwnerActor))
-	{
-		return nullptr;
-	}
-
-	UActorComponent* PresentationComponent = OwnerActor->FindComponentByInterface(UEnclaveAvatarPresentationInterface::StaticClass());
-	return IsValid(PresentationComponent) ? Cast<IEnclaveAvatarPresentationInterface>(PresentationComponent) : nullptr;
+	return IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetOwner());
 }
 
 void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem)

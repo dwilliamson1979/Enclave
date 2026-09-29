@@ -27,9 +27,17 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 		return;
 	}
 
-	AttachItem(Item);
-	Item->SetActorHiddenInGame(false);
+	// Keep a failed presentation invisible rather than leaving the item at its
+	// previous/world transform. Presentation failure does not alter equipment state.
+	Item->SetActorHiddenInGame(true);
+
+	if (!AttachItem(Item))
+	{
+		return;
+	}
+
 	LinkAnimLayers(Item->GetItemType());
+	Item->SetActorHiddenInGame(false);
 }
 
 void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation(AEnclaveItem* Item)
@@ -68,7 +76,7 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 	}
 }
 
-void UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)
+bool UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)
 {
 	AActor* OwnerActor = GetOwner();
 
@@ -76,7 +84,7 @@ void UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)
 	{
 		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: unable to present %s because avatar presentation is not fully configured."),
 			*GetNameSafe(OwnerActor), *GetNameSafe(Item));
-		return;
+		return false;
 	}
 
 	USkeletalMeshComponent* ItemFirstPersonMesh = Item->GetFirstPersonMesh();
@@ -86,7 +94,7 @@ void UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)
 	{
 		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: unable to present %s because its presentation meshes are invalid."),
 			*GetNameSafe(OwnerActor), *GetNameSafe(Item));
-		return;
+		return false;
 	}
 
 	const FEnclaveItemPresentationMapping* PresentationMapping = ItemPresentationDefinition->FindPresentationMapping(Item->GetItemType());
@@ -95,22 +103,44 @@ void UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)
 	{
 		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: unable to present %s because no valid attachment mapping exists for item type %s."),
 			*GetNameSafe(OwnerActor), *GetNameSafe(Item), *Item->GetItemType().ToString());
-		return;
+		return false;
 	}
 
-	Item->AttachToActor(OwnerActor, FAttachmentTransformRules::KeepWorldTransform);
+	if (!FirstPersonMesh->DoesSocketExist(PresentationMapping->FirstPersonWieldedSocket) ||
+		!ThirdPersonMesh->DoesSocketExist(PresentationMapping->ThirdPersonWieldedSocket))
+	{
+		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: unable to present %s because one or more wielded sockets do not exist (FP=%s, TP=%s)."),
+			*GetNameSafe(OwnerActor), *GetNameSafe(Item), *PresentationMapping->FirstPersonWieldedSocket.ToString(),
+			*PresentationMapping->ThirdPersonWieldedSocket.ToString());
+		return false;
+	}
 
-	if (!ItemFirstPersonMesh->AttachToComponent(FirstPersonMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, PresentationMapping->FirstPersonWieldedSocket))
+	if (!Item->AttachToActor(OwnerActor, FAttachmentTransformRules::KeepWorldTransform))
+	{
+		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: failed to attach item actor %s to the avatar."),
+			*GetNameSafe(OwnerActor), *GetNameSafe(Item));
+		return false;
+	}
+
+	const bool bFirstPersonAttached = ItemFirstPersonMesh->AttachToComponent(
+		FirstPersonMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, PresentationMapping->FirstPersonWieldedSocket);
+
+	if (!bFirstPersonAttached)
 	{
 		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: failed to attach %s first-person mesh to socket %s."),
 			*GetNameSafe(OwnerActor), *GetNameSafe(Item), *PresentationMapping->FirstPersonWieldedSocket.ToString());
 	}
 
-	if (!ItemThirdPersonMesh->AttachToComponent(ThirdPersonMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, PresentationMapping->ThirdPersonWieldedSocket))
+	const bool bThirdPersonAttached = ItemThirdPersonMesh->AttachToComponent(
+		ThirdPersonMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, PresentationMapping->ThirdPersonWieldedSocket);
+
+	if (!bThirdPersonAttached)
 	{
 		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: failed to attach %s third-person mesh to socket %s."),
 			*GetNameSafe(OwnerActor), *GetNameSafe(Item), *PresentationMapping->ThirdPersonWieldedSocket.ToString());
 	}
+
+	return bFirstPersonAttached && bThirdPersonAttached;
 }
 
 void UEnclaveAvatarPresentationComponent::LinkAnimLayers(const FGameplayTag& ItemType)

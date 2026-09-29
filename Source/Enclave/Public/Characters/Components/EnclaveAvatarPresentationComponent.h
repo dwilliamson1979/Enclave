@@ -36,7 +36,7 @@ public:
 	virtual void HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event) override;
 
 private:
-	void AttachItem(AEnclaveItem* Item);
+	bool AttachItem(AEnclaveItem* Item);
 	void LinkAnimLayers(const FGameplayTag& ItemType);
 	void UnlinkAnimLayers(const FGameplayTag& ItemType);
 	void PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;

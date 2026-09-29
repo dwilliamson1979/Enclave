@@ -18,7 +18,7 @@ class IEnclaveAvatarPresentationInterface;
  *
  * This component owns wielding operations, including selecting the next or
  * previous wieldable item from an item source and notifying the owner's avatar presentation
- * physically wield the active item.
+ * to visually present the active item.
  *
  * It also routes generic item actions (Primary, Secondary, Tertiary, Reload)
  * to the currently wielded item. An action is first matched against the

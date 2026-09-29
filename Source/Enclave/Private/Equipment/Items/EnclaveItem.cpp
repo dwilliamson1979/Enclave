@@ -42,7 +42,7 @@ FGameplayTag AEnclaveItem::GetItemType() const
 void AEnclaveItem::NotifyAvatarPresentationOfAction(const FGameplayTag& Action, EEnclaveItemPresentationActionPhase Phase, float Duration) const
 {
 	IEnclaveAvatarPresentationInterface* AvatarPresentation =
-		IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetAttachParentActor());
+		IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetOwner());
 
 	if (!AvatarPresentation)
 	{
