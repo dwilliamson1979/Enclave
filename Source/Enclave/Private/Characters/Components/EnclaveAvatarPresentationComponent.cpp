@@ -46,8 +46,8 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation(AEnclaveI
 
 void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event)
 {
-	const FEnclaveWielderMontages* Montages =
-		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindWielderMontages(Event.ItemType, Event.Action) : nullptr;
+	const FEnclaveItemPresentationMontages* Montages =
+		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindItemPresentationMontages(Event.ItemType, Event.Action) : nullptr;
 
 	if (!Montages)
 	{

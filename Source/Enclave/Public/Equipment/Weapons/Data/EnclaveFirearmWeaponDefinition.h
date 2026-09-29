@@ -125,7 +125,7 @@ private:
 	 * Weapon-mesh reload montage (slide/magazine motion), played on both the
 	 * first- and third-person weapon meshes while GameplayCue.Weapon.Reload
 	 * is active, play-rate-scaled to fit ReloadDuration. Arm/body montages
-	 * for the wielder are a later step. Clip-out/clip-in sounds belong on
+	 * for the avatar are handled separately. Clip-out/clip-in sounds belong on
 	 * this montage as Play Sound anim notifies so they stay in sync with the
 	 * scaled play rate. Optional.
 	 */

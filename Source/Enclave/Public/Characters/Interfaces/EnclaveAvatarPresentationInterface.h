@@ -38,7 +38,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Presentation|Equipment")
 	FGameplayTag ItemType;
 
-	/** Semantic action tag. Currently uses the existing Wielder.Action.* tags. */
+	/** Semantic presentation action tag (Presentation.Item.Action.*). */
 	UPROPERTY(BlueprintReadOnly, Category = "Presentation|Equipment")
 	FGameplayTag Action;
 

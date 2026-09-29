@@ -182,7 +182,7 @@ void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilitySpecHandle& Hand
 	// hit's own damage/damage effect (FEnclaveHitResult) is entirely the
 	// triggering source's concern now - this ability supplies nothing but
 	// "who's doing the shooting" (AvatarActor, so a Fireable doesn't hit its
-	// own wielder) and consumes whatever comes back. Deliberately does not
+	// own avatar presentation) and consumes whatever comes back. Deliberately does not
 	// resolve or hand in a ViewLocation/ViewRotation - that would presume
 	// every Fireable aims from AvatarActor's eyes, which won't hold for a
 	// future non-eye-based one (a deployed turret tracking its own target).

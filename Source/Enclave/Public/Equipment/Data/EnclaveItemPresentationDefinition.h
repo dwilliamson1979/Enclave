@@ -11,7 +11,7 @@
 class UAnimMontage;
 
 /**
- * This body's own montages for one wielder action (Wielder.Action.*) with
+ * This body's own montages for one item presentation action (Presentation.Item.Action.*) with
  * one item type - e.g. Fire with a rifle: FP_AM_Rifle_Fire on the arms,
  * AM_MM_Rifle_Fire on the body. Either may be empty.
  *
@@ -19,7 +19,7 @@ class UAnimMontage;
  * the legs keep moving underneath; first-person ones on DefaultSlot.
  */
 USTRUCT(BlueprintType)
-struct ENCLAVE_API FEnclaveWielderMontages
+struct ENCLAVE_API FEnclaveItemPresentationMontages
 {
 	GENERATED_BODY()
 
@@ -33,7 +33,7 @@ public:
 
 /**
  * How one avatar presents one item type: where it attaches (sockets) and -
- * as the avatar-animation work lands - which animation layers and wielder
+ * as the avatar-animation work lands - which animation layers and item-action
  * montages it uses. Everything in a row is specific to the avatar's
  * skeleton, which is why it lives here and not on the item.
  */
@@ -66,12 +66,12 @@ public:
 	TSubclassOf<UAnimInstance> ThirdPersonAnimLayers;
 
 	/**
-	 * This body's montages per wielder action (Wielder.Action.Draw, .Fire,
+	 * This body's montages per item presentation action (Presentation.Item.Action.Draw, .Fire,
 	 * .DryFire, .Reload) for this item type. An action with no entry plays
-	 * nothing on the wielder - the item's own weapon-mesh montage still plays.
+	 * nothing on the avatar - the item's own weapon-mesh montage still plays.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation", meta = (Categories = "Wielder.Action", ForceInlineRow))
-	TMap<FGameplayTag, FEnclaveWielderMontages> WielderMontages;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation", meta = (Categories = "Presentation.Item.Action", ForceInlineRow))
+	TMap<FGameplayTag, FEnclaveItemPresentationMontages> ItemActionMontages;
 };
 
 /**
@@ -104,7 +104,7 @@ public:
 	 * exists but has no entry for Action plays nothing rather than borrowing
 	 * a parent row's.
 	 */
-	const FEnclaveWielderMontages* FindWielderMontages(const FGameplayTag& ItemType, const FGameplayTag& Action) const;
+	const FEnclaveItemPresentationMontages* FindItemPresentationMontages(const FGameplayTag& ItemType, const FGameplayTag& Action) const;
 
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation", meta = (AllowPrivateAccess = "true"))
