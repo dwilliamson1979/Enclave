@@ -18,7 +18,6 @@ class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
 class UEnclaveEquipmentComponent;
 class UEnclaveInventoryComponent;
-class UEnclaveWielderComponent;
 class AEnclaveItem;
 class UEnclaveAvatarPresentationComponent;
 class UAbilitySystemComponent;
@@ -99,7 +98,4 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Avatar Presentation", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveAvatarPresentationComponent> AvatarPresentationComp;
 
-	/** The body side of wielding (sockets, animation layers) - see UEnclaveWielderComponent. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveWielderComponent> WielderComp = nullptr;
 };

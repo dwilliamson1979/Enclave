@@ -20,7 +20,6 @@
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
-#include "Characters/Components/EnclaveWielderComponent.h"
 #include "Equipment/Items/EnclaveItem.h"
 
 #include "Engine/Engine.h"
@@ -76,11 +75,6 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 
 	EquipmentComp = CreateDefaultSubobject<UEnclaveEquipmentComponent>(TEXT("EquipmentComp"));
 	EquipmentComp->SetIsReplicated(true);
-
-	// Not replicated: pure local presentation, driven by EquipmentComp on
-	// every machine. Gets this character's two meshes to wield items on.
-	WielderComp = CreateDefaultSubobject<UEnclaveWielderComponent>(TEXT("WielderComp"));
-	WielderComp->SetWielderMeshes(FirstPersonMesh, GetMesh());
 
 	AvatarPresentationComp = CreateDefaultSubobject<UEnclaveAvatarPresentationComponent>(TEXT("AvatarPresentationComp"));
 	AvatarPresentationComp->SetPresentationMeshes(FirstPersonMesh, GetMesh());
