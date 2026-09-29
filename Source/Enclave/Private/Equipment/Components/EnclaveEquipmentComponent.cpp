@@ -5,6 +5,7 @@
 #include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "GameplayTags/EnclavePresentationTags.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
@@ -513,6 +514,17 @@ void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* Pre
 	if (IsValid(NewItem))
 	{
 		AvatarPresentation->PresentWieldedItem(NewItem);
+
+		// Equipment owns the semantic wield transition. Once the new item's
+		// persistent presentation is established, explicitly report the Draw
+		// action rather than making AvatarPresentation infer it from state.
+		if (PreviousItem != NewItem)
+		{
+			FEnclaveItemPresentationActionEvent DrawEvent;
+			DrawEvent.ItemType = NewItem->GetItemType();
+			DrawEvent.Action = EnclaveGameplayTags::Presentation_Item_Action_Draw;
+			AvatarPresentation->HandleItemPresentationAction(DrawEvent);
+		}
 	}
 }
 
