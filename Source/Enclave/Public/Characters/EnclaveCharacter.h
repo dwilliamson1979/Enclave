@@ -20,6 +20,7 @@ class UEnclaveEquipmentComponent;
 class UEnclaveInventoryComponent;
 class UEnclaveWielderComponent;
 class AEnclaveItem;
+class UEnclaveAvatarPresentationComponent;
 class UAbilitySystemComponent;
 
 UCLASS()
@@ -58,8 +59,6 @@ public:
 	// IEnclaveAnimDataProviderInterface
 	virtual FEnclaveAnimData GetAnimData() const override;
 
-	UEnclaveCharacterMovementComponent* GetEnclaveCharacterMovement() const;
-
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -96,6 +95,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Avatar Presentation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveAvatarPresentationComponent> AvatarPresentationComp;
 
 	/** The body side of wielding (sockets, animation layers) - see UEnclaveWielderComponent. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))

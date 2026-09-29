@@ -35,6 +35,7 @@ class AActor;
 // Log categories, one per gameplay system, so the Output Log can be filtered
 // (and verbosity raised per system, e.g. `Log LogEnclaveWeapon Verbose`).
 DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveCharacter, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveAvatarPresentation, Log, All);
 DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveInput, Log, All);
 DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveAbilities, Log, All);
 DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveGameplayCue, Log, All);

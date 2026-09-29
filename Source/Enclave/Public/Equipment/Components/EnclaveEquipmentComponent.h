@@ -11,7 +11,7 @@
 
 class AEnclaveItem;
 class UAbilitySystemComponent;
-class IEnclaveItemWielderInterface;
+class IEnclaveAvatarPresentationInterface;
 
 /**
  * Manages the character's currently wielded item and item-action input.
@@ -92,16 +92,11 @@ private:
 	void HandleItemSourceChanged();
 	void RebuildWieldableCache();
 
-	/**
-	 * The owner's wielder (IEnclaveItemWielderInterface) - a component found
-	 * by interface like the item source, or the owner actor itself. This
-	 * component decides what is wielded; the wielder decides how that looks.
-	 */
-	IEnclaveItemWielderInterface* GetWielder() const;
+	/** The owner's avatar-presentation implementation, discovered by interface. */
+	IEnclaveAvatarPresentationInterface* GetAvatarPresentation() const;
 
-	/** Hand the physical side to the wielder. WieldItemOnWielder returns false if there's no wielder or it can't wield Item. */
-	bool WieldItemOnWielder(AEnclaveItem* Item);
-	void UnwieldItemOnWielder(AEnclaveItem* Item);
+	/** Reports an already-established wielded-item state change to avatar presentation. */
+	void UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
 
 	// Ability granting - server-authoritative only, mirrors the existing
 	// authority gating on WieldItem. Clients learn about granted abilities
@@ -152,7 +147,7 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentWieldedItem)
 	TObjectPtr<AEnclaveItem> CurrentWieldedItem = nullptr;
 
-	/** The item the wielder is currently wielding on this machine - used to unwield the previous item when CurrentWieldedItem replicates. */
+	/** The wielded item whose presentation has most recently been reconciled on this machine. */
 	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;
 
 	/** The owner's bound item source (e.g. an inventory component), accessed only through the interface. */

@@ -15,6 +15,7 @@
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
+#include "Characters/Components/EnclaveAvatarPresentationComponent.h"
 
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
@@ -80,6 +81,9 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	// every machine. Gets this character's two meshes to wield items on.
 	WielderComp = CreateDefaultSubobject<UEnclaveWielderComponent>(TEXT("WielderComp"));
 	WielderComp->SetWielderMeshes(FirstPersonMesh, GetMesh());
+
+	AvatarPresentationComp = CreateDefaultSubobject<UEnclaveAvatarPresentationComponent>(TEXT("AvatarPresentationComp"));
+	AvatarPresentationComp->SetPresentationMeshes(FirstPersonMesh, GetMesh());
 }
 
 void AEnclaveCharacter::PossessedBy(AController* NewController)
@@ -149,7 +153,7 @@ void AEnclaveCharacter::BeginPlay()
 
 	if (InputRouterComp)
 	{
-		InputRouterComp->RegisterInputHandler(GetEnclaveCharacterMovement());
+		InputRouterComp->RegisterInputHandler(Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement()));
 		InputRouterComp->RegisterInputHandler(ViewComp);
 		InputRouterComp->RegisterInputHandler(EquipmentComp);
 	}
@@ -184,11 +188,6 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 const UEnclaveInputConfig* AEnclaveCharacter::GetInputConfig() const
 {
 	return InputConfig;
-}
-
-UEnclaveCharacterMovementComponent* AEnclaveCharacter::GetEnclaveCharacterMovement() const
-{
-	return Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement());
 }
 
 FEnclaveAnimData AEnclaveCharacter::GetAnimData() const

@@ -169,8 +169,8 @@ bool AEnclaveFirearmWeapon::HandleWeaponFire(const FGameplayCueParameters& Param
 	// method's concern.
 	PlayMontageOnWeaponMeshes(FirearmWeaponDefinition->GetFireMontage());
 
-	// Tell the wielder a shot happened; its arms/body response is its call.
-	NotifyWielderOfAction(EnclaveGameplayTags::Wielder_Action_Fire, EEnclaveWieldedItemActionPhase::Started);
+	// Report the shot to avatar presentation; it decides how the arms/body respond.
+	NotifyAvatarPresentationOfAction(EnclaveGameplayTags::Wielder_Action_Fire, EEnclaveItemPresentationActionPhase::Started);
 
 	// Muzzle flash (Phase 3.b) - the components are persistent and
 	// pre-attached (asset, socket, and owner-visibility flags all resolved
@@ -214,7 +214,7 @@ bool AEnclaveFirearmWeapon::HandleWeaponDryFire(const FGameplayCueParameters& Pa
 		PlaySoundAtMuzzle(FirearmWeaponDefinition->GetDryFireSound());
 	}
 
-	NotifyWielderOfAction(EnclaveGameplayTags::Wielder_Action_DryFire, EEnclaveWieldedItemActionPhase::Started);
+	NotifyAvatarPresentationOfAction(EnclaveGameplayTags::Wielder_Action_DryFire, EEnclaveItemPresentationActionPhase::Started);
 
 	return true;
 }
@@ -248,9 +248,9 @@ bool AEnclaveFirearmWeapon::HandleWeaponReload(EGameplayCueEvent::Type EventType
 			PlayMontageOnWeaponMeshes(ReloadMontage, PlayRate);
 		}
 
-		// Tell the wielder a reload of this length started; it scales its
-		// own arms/body response to the same duration.
-		NotifyWielderOfAction(EnclaveGameplayTags::Wielder_Action_Reload, EEnclaveWieldedItemActionPhase::Started, ReloadDuration);
+		// Report the reload to avatar presentation; it scales any arms/body
+		// response to the same gameplay duration.
+		NotifyAvatarPresentationOfAction(EnclaveGameplayTags::Wielder_Action_Reload, EEnclaveItemPresentationActionPhase::Started, ReloadDuration);
 		break;
 	}
 
@@ -259,7 +259,7 @@ bool AEnclaveFirearmWeapon::HandleWeaponReload(EGameplayCueEvent::Type EventType
 		// a completed one's montages have already finished (they were scaled
 		// to the duration), and stopping a finished montage is a no-op.
 		StopMontageOnWeaponMeshes(ReloadMontage, /*BlendOutTime=*/ 0.1f);
-		NotifyWielderOfAction(EnclaveGameplayTags::Wielder_Action_Reload, EEnclaveWieldedItemActionPhase::Ended);
+		NotifyAvatarPresentationOfAction(EnclaveGameplayTags::Wielder_Action_Reload, EEnclaveItemPresentationActionPhase::Ended);
 		break;
 
 	default:

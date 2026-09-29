@@ -2,7 +2,7 @@
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 
-#include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
+#include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
 
@@ -56,30 +56,14 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 
 	AEnclaveItem* PreviousItem = CurrentWieldedItem;
 
-	if (IsValid(PreviousItem))
-	{
-		UnwieldItemOnWielder(PreviousItem);
-	}
-
-	if (!WieldItemOnWielder(Item))
-	{
-		// The wielder couldn't wield the new item - put the previous one
-		// back in its hands and leave the wielded state unchanged.
-		if (IsValid(PreviousItem) && WieldItemOnWielder(PreviousItem))
-		{
-			LocallyWieldedItem = PreviousItem;
-		}
-
-		return false;
-	}
-
-	// Authority-only, matches the HasAuthority() gate already at the top of
-	// this function: swap granted abilities before flipping CurrentWieldedItem
-	// so RemoveGrantedAbilities() still targets the item being replaced.
+	// Authority owns the gameplay transition. Presentation is notified only
+	// after the authoritative equipment state has been committed and cannot
+	// reject or roll it back.
 	RemoveGrantedAbilities();
 	CurrentWieldedItem = Item;
 	GrantAbilitiesForItem(CurrentWieldedItem);
 
+	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
 	LocallyWieldedItem = CurrentWieldedItem;
 
 	return true;
@@ -491,32 +475,44 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority() &&
 		IsValid(CurrentWieldedItem) && !WieldableCache.Contains(CurrentWieldedItem))
 	{
-		UnwieldItemOnWielder(CurrentWieldedItem);
+		AEnclaveItem* PreviousItem = CurrentWieldedItem;
+		RemoveGrantedAbilities();
 		CurrentWieldedItem = nullptr;
+		UpdateWieldedItemPresentation(PreviousItem, nullptr);
 		LocallyWieldedItem.Reset();
 	}
 }
 
-IEnclaveItemWielderInterface* UEnclaveEquipmentComponent::GetWielder() const
+IEnclaveAvatarPresentationInterface* UEnclaveEquipmentComponent::GetAvatarPresentation() const
 {
-	// Normally a UEnclaveWielderComponent on the owner - same lookup items use.
-	return IEnclaveItemWielderInterface::FindWielder(GetOwner());
-}
+	AActor* OwnerActor = GetOwner();
 
-bool UEnclaveEquipmentComponent::WieldItemOnWielder(AEnclaveItem* Item)
-{
-	IEnclaveItemWielderInterface* Wielder = GetWielder();
-
-	return Wielder && IsValid(Item) && Wielder->WieldItem(Item);
-}
-
-void UEnclaveEquipmentComponent::UnwieldItemOnWielder(AEnclaveItem* Item)
-{
-	IEnclaveItemWielderInterface* Wielder = GetWielder();
-
-	if (Wielder && IsValid(Item))
+	if (!IsValid(OwnerActor))
 	{
-		Wielder->UnwieldItem(Item);
+		return nullptr;
+	}
+
+	UActorComponent* PresentationComponent = OwnerActor->FindComponentByInterface(UEnclaveAvatarPresentationInterface::StaticClass());
+	return IsValid(PresentationComponent) ? Cast<IEnclaveAvatarPresentationInterface>(PresentationComponent) : nullptr;
+}
+
+void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem)
+{
+	IEnclaveAvatarPresentationInterface* AvatarPresentation = GetAvatarPresentation();
+
+	if (!AvatarPresentation)
+	{
+		return;
+	}
+
+	if (IsValid(PreviousItem) && PreviousItem != NewItem)
+	{
+		AvatarPresentation->ClearWieldedItemPresentation(PreviousItem);
+	}
+
+	if (IsValid(NewItem))
+	{
+		AvatarPresentation->PresentWieldedItem(NewItem);
 	}
 }
 
@@ -595,18 +591,8 @@ void UEnclaveEquipmentComponent::RemoveGrantedAbilities()
 
 void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()
 {
-	if (AEnclaveItem* PreviousItem = LocallyWieldedItem.Get();
-		IsValid(PreviousItem) && PreviousItem != CurrentWieldedItem)
-	{
-		UnwieldItemOnWielder(PreviousItem);
-	}
+	AEnclaveItem* PreviousItem = LocallyWieldedItem.Get();
 
-	if (IsValid(CurrentWieldedItem) && WieldItemOnWielder(CurrentWieldedItem))
-	{
-		LocallyWieldedItem = CurrentWieldedItem;
-	}
-	else
-	{
-		LocallyWieldedItem.Reset();
-	}
+	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
+	LocallyWieldedItem = CurrentWieldedItem;
 }

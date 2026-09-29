@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 
 DEFINE_LOG_CATEGORY(LogEnclaveCharacter);
+DEFINE_LOG_CATEGORY(LogEnclaveAvatarPresentation);
 DEFINE_LOG_CATEGORY(LogEnclaveInput);
 DEFINE_LOG_CATEGORY(LogEnclaveAbilities);
 DEFINE_LOG_CATEGORY(LogEnclaveGameplayCue);

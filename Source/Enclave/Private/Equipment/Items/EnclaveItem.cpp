@@ -39,22 +39,21 @@ FGameplayTag AEnclaveItem::GetItemType() const
 	return FGameplayTag();
 }
 
-void AEnclaveItem::NotifyWielderOfAction(const FGameplayTag& Action, EEnclaveWieldedItemActionPhase Phase, float Duration) const
+void AEnclaveItem::NotifyAvatarPresentationOfAction(const FGameplayTag& Action, EEnclaveItemPresentationActionPhase Phase, float Duration) const
 {
-	// The wielder attaches this item's actor to its own actor when it wields
-	// it, so the attach parent is where the wielder lives.
-	IEnclaveItemWielderInterface* Wielder = IEnclaveItemWielderInterface::FindWielder(GetAttachParentActor());
+	IEnclaveAvatarPresentationInterface* AvatarPresentation =
+		IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetAttachParentActor());
 
-	if (!Wielder)
+	if (!AvatarPresentation)
 	{
 		return;
 	}
 
-	FEnclaveWieldedItemActionEvent Event;
+	FEnclaveItemPresentationActionEvent Event;
 	Event.ItemType = GetItemType();
 	Event.Action = Action;
 	Event.Phase = Phase;
 	Event.Duration = Duration;
 
-	Wielder->HandleWieldedItemAction(Event);
+	AvatarPresentation->HandleItemPresentationAction(Event);
 }

@@ -6,7 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/EnclaveAbilityGrant.h"
-#include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
+#include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "EnclaveItem.generated.h"
 
 class USceneComponent;
@@ -42,11 +42,11 @@ public:
 
 protected:
 	/**
-	 * Announce to whoever is wielding this item (its attach parent's
-	 * wielder) that it is performing Action (Wielder.Action.*). No-op when
-	 * not wielded. The wielder decides what, if anything, that looks like.
+	 * Report an already-established item action to the avatar presenting this
+	 * item. No-op when the item is not attached to an avatar with a
+	 * presentation implementation.
 	 */
-	void NotifyWielderOfAction(const FGameplayTag& Action, EEnclaveWieldedItemActionPhase Phase, float Duration = 0.0f) const;
+	void NotifyAvatarPresentationOfAction(const FGameplayTag& Action, EEnclaveItemPresentationActionPhase Phase, float Duration = 0.0f) const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<USceneComponent> SceneRoot;
