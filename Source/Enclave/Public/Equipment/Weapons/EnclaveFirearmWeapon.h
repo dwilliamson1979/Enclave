@@ -150,7 +150,7 @@ private:
 	/** GameplayCue.Weapon.Fire response: fire montage, muzzle flash, fire sound - this weapon's own cosmetic reaction to being fired. Returns true (handled) unconditionally; nothing about a weapon not currently having a montage/effect/sound assigned makes this cue "unhandled". */
 	bool HandleWeaponFire(const FGameplayCueParameters& Parameters);
 
-	/** GameplayCue.Weapon.DryFire response: dry-fire click from the muzzle, and notifies avatar presentation (Presentation.Item.Action.DryFire). */
+	/** GameplayCue.Weapon.DryFire response: item-local dry-fire click from the muzzle. */
 	bool HandleWeaponDryFire(const FGameplayCueParameters& Parameters);
 
 	/**
@@ -158,8 +158,8 @@ private:
 	 * UEnclaveGA_Reload). WhileActive starts the weapon-mesh reload montage
 	 * (play-rate-scaled so it ends when the reload does -
 	 * Parameters.RawMagnitude carries the duration the ability is waiting
-	 * on) and notifies avatar presentation with Presentation.Item.Action.Reload Started and that
-	 * duration; Removed stops the montage and sends Ended.
+	 * on); Removed stops the montage. Avatar presentation receives the same
+	 * cue directly from UEnclaveGameplayCueNotify.
 	 */
 	bool HandleWeaponReload(EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters);
 

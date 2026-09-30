@@ -8,13 +8,12 @@
 /**
  * Gameplay Cue tags - Phase 3.
  *
- * These drive purely cosmetic responses (montage, muzzle flash, fire sound)
- * triggered off an ability's activation without that ability knowing
- * anything about what, if anything, responds to the cue. See
- * UEnclaveGA_Fire (trigger side) and UEnclaveGameplayCueNotify /
- * IEnclaveGameplayCueResponderInterface (response side - a Blueprint child
- * of UEnclaveGameplayCueNotify per tag forwards to whatever implements the
- * interface, e.g. AEnclaveWeapon).
+ * These drive purely cosmetic responses (avatar/item montages, muzzle flash,
+ * fire sound) triggered off an ability's activation without that ability
+ * knowing how they are rendered. UEnclaveGameplayCueNotify translates the
+ * recognized item-action cues into semantic avatar presentation events and
+ * also forwards the original cue to IEnclaveGameplayCueResponderInterface
+ * for item-local presentation.
  */
 namespace EnclaveGameplayTags
 {

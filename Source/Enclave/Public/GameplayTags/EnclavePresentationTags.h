@@ -11,9 +11,9 @@
  * and used as keys in the per-item-type montage table on UEnclaveItemPresentationDefinition.
  *
  * Deliberately separate from GameplayCue.* (the gameplay events behind
- * them) and Input.Item.* (the buttons pressed): an item translates its own
- * events into these, so a body's data never depends on how a particular
- * item's abilities or cues are named.
+ * them) and Input.Item.* (the buttons pressed): the Gameplay Cue presentation
+ * boundary translates established gameplay events into these semantic actions,
+ * so a body's data never depends on how a particular ability or cue is named.
  */
 namespace EnclaveGameplayTags
 {

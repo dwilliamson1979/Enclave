@@ -31,10 +31,11 @@ class UAbilitySystemComponent;
  * item, deployed equipment) just implements the same interface - this
  * class doesn't need to know or care which.
  *
- * Fire feedback (montage, muzzle flash, fire sound - see
- * AEnclaveWeapon::HandleWeaponFire, reached via a Blueprint child of
- * UEnclaveGameplayCueNotify forwarding through
- * IEnclaveGameplayCueResponderInterface) is a Gameplay Cue executed
+ * Fire feedback is a Gameplay Cue executed
+ * through UEnclaveGameplayCueNotify. The notify sends the semantic item
+ * action directly to avatar presentation and also forwards the original cue
+ * to IEnclaveGameplayCueResponderInterface for item-local presentation
+ * (weapon montage, muzzle flash, fire sound). The cue is executed
  * unconditionally on every successful activation, including a miss, and
  * including on the predicting owning client for instant local feedback.
  * The hit marker is deliberately NOT a Gameplay Cue - a Cue executed on
@@ -90,7 +91,7 @@ private:
 	/** SourceASC/AvatarActor are resolved once in ActivateAbility and passed in here, rather than each callee re-deriving them from ActorInfo on its own. */
 	void PerformHitDetection(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
 
-	/** Executes CueTag (GameplayCue.Weapon.Fire, or .DryFire on an empty magazine) against the triggering source (GetCurrentSourceObject(), cast to AActor - the cue system only needs an actor implementing IEnclaveGameplayCueResponderInterface, not specifically a weapon). Runs on the predicting owning client as well as the server. Presentation only; does not know or care whether anything is bound to the cue. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
+	/** Executes CueTag (GameplayCue.Weapon.Fire, or .DryFire on an empty magazine) with the triggering source in EffectCauser/SourceObject and the ASC avatar as the cue target. UEnclaveGameplayCueNotify fans the cue out to avatar presentation and item-local cue response. Runs on the predicting owning client as well as the server. Presentation only. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
 	void ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
 
 	/** Server only: this activation spent no ammo (dry fire / failed commit) - acknowledge its prediction key anyway so the owning client drops any spend it predicted for it. No-op for a source that doesn't consume ammo. */

@@ -5,6 +5,7 @@
 #include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "GameplayTags/EnclaveInputTags.h"
 #include "GameplayTags/EnclavePresentationTags.h"
 
 #include "AbilitySystemComponent.h"
@@ -87,24 +88,9 @@ bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEven
 		return HandlePreviousWieldableInput(InputEvent);
 	}
 
-	if (ItemPrimaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemPrimaryActionInputTag))
+	if (InputEvent.InputTag.MatchesTag(EnclaveGameplayTags::Input_Item_Action))
 	{
-		return HandleItemPrimaryInput(InputEvent);
-	}
-
-	if (ItemSecondaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemSecondaryActionInputTag))
-	{
-		return HandleItemSecondaryInput(InputEvent);
-	}
-
-	if (ItemTertiaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemTertiaryActionInputTag))
-	{
-		return HandleItemTertiaryInput(InputEvent);
-	}
-
-	if (ItemReloadActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemReloadActionInputTag))
-	{
-		return HandleItemReloadInput(InputEvent);
+		return HandleItemInput(InputEvent);
 	}
 
 	return false;
@@ -151,9 +137,17 @@ bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 	return IsValid(CurrentWieldedItem) ? WieldableCache.Num() > 1 : WieldableCache.Num() > 0;
 }
 
-bool UEnclaveEquipmentComponent::TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& InputEvent)
 {
-	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(ItemPrimaryActionInputTag);
+	// For now, item abilities are press-to-activate. A later GAS input pass can
+	// forward pressed/released state generically for held, charged, automatic,
+	// or release-driven abilities without restoring action-specific handlers.
+	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
+	{
+		return false;
+	}
+
+	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(InputEvent.InputTag);
 	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
 
 	if (!SpecHandle.IsValid() || !IsValid(ASC))
@@ -161,73 +155,9 @@ bool UEnclaveEquipmentComponent::TryPerformItemPrimary(const FEnclaveInputEvent&
 		return false;
 	}
 
-	return ASC->TryActivateAbility(SpecHandle);
-}
-
-bool UEnclaveEquipmentComponent::TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent)
-{
-	if (!IsValid(CurrentWieldedItem))
-	{
-		return false;
-	}
-
-	// An ability the item bound to this input wins; only items that granted
-	// nothing for it fall back to the wieldable interface. Ability
-	// activation only on Started - secondary input also routes Triggered/
-	// Completed events for the interface path (hold-to-aim), and those must
-	// not re-activate an ability every frame.
-	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(ItemSecondaryActionInputTag);
-
-	if (SpecHandle.IsValid())
-	{
-		UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
-		return InputEvent.TriggerEvent == ETriggerEvent::Started && IsValid(ASC) && ASC->TryActivateAbility(SpecHandle);
-	}
-
-	if (!CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
-	{
-		return false;
-	}
-
-	return IEnclaveWieldableInterface::Execute_HandleSecondaryAction(CurrentWieldedItem, InputEvent);
-}
-
-bool UEnclaveEquipmentComponent::TryPerformItemTertiary(const FEnclaveInputEvent& InputEvent)
-{
-	if (!IsValid(CurrentWieldedItem))
-	{
-		return false;
-	}
-
-	// Same ability-first, interface-fallback rule as TryPerformItemSecondary.
-	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(ItemTertiaryActionInputTag);
-
-	if (SpecHandle.IsValid())
-	{
-		UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
-		return InputEvent.TriggerEvent == ETriggerEvent::Started && IsValid(ASC) && ASC->TryActivateAbility(SpecHandle);
-	}
-
-	if (!CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
-	{
-		return false;
-	}
-
-	return IEnclaveWieldableInterface::Execute_HandleTertiaryAction(CurrentWieldedItem, InputEvent);
-}
-
-bool UEnclaveEquipmentComponent::TryPerformItemReload(const FEnclaveInputEvent& InputEvent)
-{
-	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(ItemReloadActionInputTag);
-	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
-
-	if (!SpecHandle.IsValid() || !IsValid(ASC))
-	{
-		return false;
-	}
-
-	// Whether a reload makes sense right now (magazine already full, etc.)
-	// is UEnclaveGA_Reload::CanActivateAbility's call, not this component's.
+	// A matching spec is the wielded item's declaration that it supports this
+	// input. Whether the action is currently legal belongs to the ability's
+	// CanActivateAbility/CommitAbility path, not Equipment.
 	return ASC->TryActivateAbility(SpecHandle);
 }
 
@@ -279,25 +209,7 @@ void UEnclaveEquipmentComponent::RebuildInputFilters()
 		InputFilters.AddTag(PreviousWieldableInputTag);
 	}
 
-	if (ItemPrimaryActionInputTag.IsValid())
-	{
-		InputFilters.AddTag(ItemPrimaryActionInputTag);
-	}
-
-	if (ItemSecondaryActionInputTag.IsValid())
-	{
-		InputFilters.AddTag(ItemSecondaryActionInputTag);
-	}
-
-	if (ItemTertiaryActionInputTag.IsValid())
-	{
-		InputFilters.AddTag(ItemTertiaryActionInputTag);
-	}
-
-	if (ItemReloadActionInputTag.IsValid())
-	{
-		InputFilters.AddTag(ItemReloadActionInputTag);
-	}
+	InputFilters.AddTag(EnclaveGameplayTags::Input_Item_Action);
 }
 
 bool UEnclaveEquipmentComponent::HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent)
@@ -318,39 +230,6 @@ bool UEnclaveEquipmentComponent::HandlePreviousWieldableInput(const FEnclaveInpu
 	}
 
 	return TryWieldPrevious();
-}
-
-bool UEnclaveEquipmentComponent::HandleItemPrimaryInput(const FEnclaveInputEvent& InputEvent)
-{
-	//Hard-coded for primary fire at the moment, but this will be updated to support other trigger events in the future: charged, auto, burst.
-	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
-	{
-		return false;
-	}
-
-	return TryPerformItemPrimary(InputEvent);
-}
-
-bool UEnclaveEquipmentComponent::HandleItemSecondaryInput(const FEnclaveInputEvent& InputEvent)
-{
-	return TryPerformItemSecondary(InputEvent);
-}
-
-bool UEnclaveEquipmentComponent::HandleItemTertiaryInput(const FEnclaveInputEvent& InputEvent)
-{
-	return TryPerformItemTertiary(InputEvent);
-}
-
-bool UEnclaveEquipmentComponent::HandleItemReloadInput(const FEnclaveInputEvent& InputEvent)
-{	
-	// Press-to-reload. A future "hold to inspect / tap to reload" split
-	// would branch on TriggerEvent here.
-	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
-	{
-		return false;
-	}
-
-	return TryPerformItemReload(InputEvent);
 }
 
 bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)

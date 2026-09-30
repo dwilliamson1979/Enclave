@@ -6,7 +6,6 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/EnclaveAbilityGrant.h"
-#include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "EnclaveItem.generated.h"
 
 class USceneComponent;
@@ -41,13 +40,6 @@ public:
 	USkeletalMeshComponent* GetThirdPersonMesh() const { return ThirdPersonMesh; }
 
 protected:
-	/**
-	 * Report an already-established item action to the avatar presenting this
-	 * item. No-op when the item is not attached to an avatar with a
-	 * presentation implementation.
-	 */
-	void NotifyAvatarPresentationOfAction(const FGameplayTag& Action, EEnclaveItemPresentationActionPhase Phase, float Duration = 0.0f) const;
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<USceneComponent> SceneRoot;
 

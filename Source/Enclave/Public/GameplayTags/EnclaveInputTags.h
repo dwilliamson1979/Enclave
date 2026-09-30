@@ -30,6 +30,7 @@ namespace EnclaveGameplayTags
 	// ---------------------------------------------------------------------
 
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action);
 
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Primary);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Item_Action_Secondary);

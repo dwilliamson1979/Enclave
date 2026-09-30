@@ -18,6 +18,7 @@ namespace EnclaveGameplayTags
 
 	// Input ItemActions
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item, "Input.Item", "Root tag for currently equipped item input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action, "Input.Item.Action", "Root tag for actions performed by the currently equipped item.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Primary, "Input.Item.Action.Primary", "Primary action for the currently equipped item.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Secondary, "Input.Item.Action.Secondary", "Secondary action for the currently equipped item.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Tertiary, "Input.Item.Action.Tertiary", "Tertiary action for the currently equipped item.");

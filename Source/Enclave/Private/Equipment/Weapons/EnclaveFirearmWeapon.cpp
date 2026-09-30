@@ -10,7 +10,6 @@
 
 #include "Equipment/Weapons/Data/EnclaveFirearmWeaponDefinition.h"
 #include "GameplayTags/EnclaveGameplayCueTags.h"
-#include "GameplayTags/EnclavePresentationTags.h"
 #include "Collision/EnclaveCollisionChannels.h"
 
 #include "Engine/World.h"
@@ -169,9 +168,6 @@ bool AEnclaveFirearmWeapon::HandleWeaponFire(const FGameplayCueParameters& Param
 	// method's concern.
 	PlayMontageOnWeaponMeshes(FirearmWeaponDefinition->GetFireMontage());
 
-	// Report the shot to avatar presentation; it decides how the arms/body respond.
-	NotifyAvatarPresentationOfAction(EnclaveGameplayTags::Presentation_Item_Action_Fire, EEnclaveItemPresentationActionPhase::Started);
-
 	// Muzzle flash (Phase 3.b) - the components are persistent and
 	// pre-attached (asset, socket, and owner-visibility flags all resolved
 	// once by ApplyMuzzleFlashSocket when the weapon definition is applied),
@@ -214,8 +210,6 @@ bool AEnclaveFirearmWeapon::HandleWeaponDryFire(const FGameplayCueParameters& Pa
 		PlaySoundAtMuzzle(FirearmWeaponDefinition->GetDryFireSound());
 	}
 
-	NotifyAvatarPresentationOfAction(EnclaveGameplayTags::Presentation_Item_Action_DryFire, EEnclaveItemPresentationActionPhase::Started);
-
 	return true;
 }
 
@@ -247,10 +241,6 @@ bool AEnclaveFirearmWeapon::HandleWeaponReload(EGameplayCueEvent::Type EventType
 
 			PlayMontageOnWeaponMeshes(ReloadMontage, PlayRate);
 		}
-
-		// Report the reload to avatar presentation; it scales any arms/body
-		// response to the same gameplay duration.
-		NotifyAvatarPresentationOfAction(EnclaveGameplayTags::Presentation_Item_Action_Reload, EEnclaveItemPresentationActionPhase::Started, ReloadDuration);
 		break;
 	}
 
@@ -259,7 +249,6 @@ bool AEnclaveFirearmWeapon::HandleWeaponReload(EGameplayCueEvent::Type EventType
 		// a completed one's montages have already finished (they were scaled
 		// to the duration), and stopping a finished montage is a no-op.
 		StopMontageOnWeaponMeshes(ReloadMontage, /*BlendOutTime=*/ 0.1f);
-		NotifyAvatarPresentationOfAction(EnclaveGameplayTags::Presentation_Item_Action_Reload, EEnclaveItemPresentationActionPhase::Ended);
 		break;
 
 	default:

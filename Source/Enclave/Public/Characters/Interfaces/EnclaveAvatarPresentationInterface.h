@@ -34,6 +34,10 @@ struct ENCLAVE_API FEnclaveItemPresentationActionEvent
 	GENERATED_BODY()
 
 public:
+	/** The concrete item that originated the presentation action, when available. */
+	UPROPERTY(BlueprintReadOnly, Category = "Presentation|Equipment")
+	TObjectPtr<AEnclaveItem> Item = nullptr;
+
 	/** What kind of item performed the action, e.g. Weapon.Type.Firearm.Rifle. */
 	UPROPERTY(BlueprintReadOnly, Category = "Presentation|Equipment")
 	FGameplayTag ItemType;

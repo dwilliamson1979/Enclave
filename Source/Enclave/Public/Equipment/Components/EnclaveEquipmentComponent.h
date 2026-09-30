@@ -20,11 +20,11 @@ class IEnclaveAvatarPresentationInterface;
  * previous wieldable item from an item source and notifying the owner's avatar presentation
  * to visually present the active item.
  *
- * It also routes generic item actions (Primary, Secondary, Tertiary, Reload)
- * to the currently wielded item. An action is first matched against the
- * abilities the wielded item granted (by the input tag each
- * FEnclaveAbilityGrant carries); Secondary/Tertiary fall back to
- * IEnclaveWieldableInterface when the item granted no ability for that input.
+ * It also bridges generic Input.Item.Action.* input to Gameplay Ability
+ * System abilities granted by the currently wielded item. The input tag on
+ * the event is matched against the dynamic source tag carried by each granted
+ * FEnclaveAbilityGrant spec; the ability itself owns action-specific gameplay
+ * validation and behavior.
  *
  * Equipment depends only on IEnclaveItemSourceInterface, not on any concrete
  * storage component. It binds to the owner's item source once, caches the
@@ -57,21 +57,13 @@ public:
 	bool TryWieldPrevious();
 	bool CanCycleWieldables() const;
 
-	bool TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent);
-	bool TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent);
-	bool TryPerformItemTertiary(const FEnclaveInputEvent& InputEvent);
-	bool TryPerformItemReload(const FEnclaveInputEvent& InputEvent);
-
 private:
 	void RebuildInputFilters();
 
 	bool HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent);
 	bool HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent);
 
-	bool HandleItemPrimaryInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleItemSecondaryInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleItemTertiaryInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleItemReloadInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemInput(const FEnclaveInputEvent& InputEvent);
 
 	/**
 	 * The granted ability spec (on the owner's ASC) whose SourceObject is
@@ -121,22 +113,6 @@ private:
 	/** Semantic input tag used to request the previous available wieldable item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
 	FGameplayTag PreviousWieldableInputTag;
-
-	/** Semantic input tag used for the currently wielded item's primary action. */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag ItemPrimaryActionInputTag;
-
-	/** Semantic input tag used for the currently wielded item's secondary action. */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag ItemSecondaryActionInputTag;
-
-	/** Semantic input tag used for the currently wielded item's tertiary action. */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag ItemTertiaryActionInputTag;
-
-	/** Semantic input tag used to reload the currently wielded item (Input.Item.Action.Reload). */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Item"))
-	FGameplayTag ItemReloadActionInputTag;
 
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;

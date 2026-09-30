@@ -39,21 +39,3 @@ FGameplayTag AEnclaveItem::GetItemType() const
 	return FGameplayTag();
 }
 
-void AEnclaveItem::NotifyAvatarPresentationOfAction(const FGameplayTag& Action, EEnclaveItemPresentationActionPhase Phase, float Duration) const
-{
-	IEnclaveAvatarPresentationInterface* AvatarPresentation =
-		IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetOwner());
-
-	if (!AvatarPresentation)
-	{
-		return;
-	}
-
-	FEnclaveItemPresentationActionEvent Event;
-	Event.ItemType = GetItemType();
-	Event.Action = Action;
-	Event.Phase = Phase;
-	Event.Duration = Duration;
-
-	AvatarPresentation->HandleItemPresentationAction(Event);
-}
