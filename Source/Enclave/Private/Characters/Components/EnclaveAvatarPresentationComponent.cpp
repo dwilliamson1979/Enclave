@@ -8,7 +8,6 @@
 #include "Debug/EnclaveDebug.h"
 #include "Equipment/Data/EnclaveItemPresentationDefinition.h"
 #include "Equipment/Items/EnclaveItem.h"
-#include "GameplayTags/EnclavePresentationTags.h"
 #include "Engine/World.h"
 
 UEnclaveAvatarPresentationComponent::UEnclaveAvatarPresentationComponent()
@@ -56,43 +55,46 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation(AEnclaveI
 
 void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event)
 {
-	const FEnclaveItemPresentationMontages* Montages =
+	const FEnclaveItemPresentationMontages* Presentation =
 		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindItemPresentationMontages(Event.ItemType, Event.Action) : nullptr;
+
+	const bool bChoreographedItemPresentation =
+		Presentation && Presentation->ItemPresentationTiming == EEnclaveItemPresentationTiming::Choreographed;
 
 	switch (Event.Phase)
 	{
 	case EEnclaveItemPresentationActionPhase::Started:
-		// Register any notify-driven item choreography before starting the avatar
+		// Register notify-driven item choreography before starting the avatar
 		// montage. A notify authored at montage time 0 can then safely resolve the
 		// active item/action on its first animation update.
-		if (ShouldDeferItemPresentationToChoreography(Event.Action))
+		if (bChoreographedItemPresentation)
 		{
 			BeginChoreographedItemAction(Event);
 		}
 
-		if (Montages)
+		if (Presentation)
 		{
-			PlayMontageOnMesh(FirstPersonMesh, Montages->FirstPerson, Event.Duration);
-			PlayMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson, Event.Duration);
+			PlayMontageOnMesh(FirstPersonMesh, Presentation->FirstPerson, Event.Duration);
+			PlayMontageOnMesh(ThirdPersonMesh, Presentation->ThirdPerson, Event.Duration);
 		}
 
-		// Instant/non-choreographed actions still start their item-local
-		// presentation immediately. Reload is deliberately excluded here: its
-		// weapon animation now begins from an authored avatar AnimNotify.
-		if (!ShouldDeferItemPresentationToChoreography(Event.Action) && IsValid(Event.Item))
+		// Immediate actions start their item-local presentation with the semantic
+		// action. Choreographed actions wait for the avatar animation to emit the
+		// authored presentation point.
+		if (!bChoreographedItemPresentation && IsValid(Event.Item))
 		{
 			Event.Item->StartPresentationAction(Event.Action, Event.Duration);
 		}
 		break;
 
 	case EEnclaveItemPresentationActionPhase::Ended:
-		if (Montages)
+		if (Presentation)
 		{
-			StopMontageOnMesh(FirstPersonMesh, Montages->FirstPerson);
-			StopMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson);
+			StopMontageOnMesh(FirstPersonMesh, Presentation->FirstPerson);
+			StopMontageOnMesh(ThirdPersonMesh, Presentation->ThirdPerson);
 		}
 
-		if (ShouldDeferItemPresentationToChoreography(Event.Action))
+		if (bChoreographedItemPresentation)
 		{
 			EndChoreographedItemAction(Event.Action);
 		}
@@ -146,13 +148,6 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationChoreography(con
 	Item->StartPresentationAction(Action, RemainingDuration);
 }
 
-bool UEnclaveAvatarPresentationComponent::ShouldDeferItemPresentationToChoreography(const FGameplayTag& Action) const
-{
-	// Phase 3 intentionally proves the choreography path with Reload only.
-	// Fire/DryFire remain immediate, and future coordinated actions can opt in
-	// deliberately rather than making every item action depend on a notify.
-	return Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_Reload);
-}
 
 void UEnclaveAvatarPresentationComponent::BeginChoreographedItemAction(const FEnclaveItemPresentationActionEvent& Event)
 {

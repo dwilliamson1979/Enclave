@@ -50,7 +50,6 @@ private:
 	void UnlinkAnimLayers(const FGameplayTag& ItemType);
 	void PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
 	void StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const;
-	bool ShouldDeferItemPresentationToChoreography(const FGameplayTag& Action) const;
 	void BeginChoreographedItemAction(const FEnclaveItemPresentationActionEvent& Event);
 	void EndChoreographedItemAction(const FGameplayTag& Action);
 

@@ -11,9 +11,23 @@
 class UAnimMontage;
 
 /**
- * This body's own montages for one item presentation action (Presentation.Item.Action.*) with
+ * Determines when the item-local portion of a semantic presentation action begins.
+ *
+ * Immediate starts the item as soon as the presentation action starts.
+ * Choreographed waits until the avatar animation reaches an authored semantic
+ * choreography point (currently emitted by UEnclaveAnimNotify_ItemPresentationAction).
+ */
+UENUM(BlueprintType)
+enum class EEnclaveItemPresentationTiming : uint8
+{
+	Immediate,
+	Choreographed
+};
+
+/**
+ * Avatar presentation data for one item action (Presentation.Item.Action.*) with
  * one item type - e.g. Fire with a rifle: FP_AM_Rifle_Fire on the arms,
- * AM_MM_Rifle_Fire on the body. Either may be empty.
+ * AM_MM_Rifle_Fire on the body. Either montage may be empty.
  *
  * Third-person montages are expected on the DefaultGroup.UpperBody slot so
  * the legs keep moving underneath; first-person ones on DefaultSlot.
@@ -29,6 +43,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UAnimMontage> ThirdPerson = nullptr;
+
+	/** When the participating item's own presentation should begin for this action. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	EEnclaveItemPresentationTiming ItemPresentationTiming = EEnclaveItemPresentationTiming::Immediate;
 };
 
 /**
