@@ -28,6 +28,20 @@ public:
 	virtual FGameplayTag GetItemType() const;
 
 	/**
+	 * Starts this item's local cosmetic response for a semantic presentation
+	 * action. AvatarPresentation coordinates the overall avatar/item sequence
+	 * and calls this only after gameplay has already established the action.
+	 * Base items have no local response.
+	 */
+	virtual void StartPresentationAction(const FGameplayTag& Action, float Duration);
+
+	/**
+	 * Ends this item's local cosmetic response for a lasting semantic
+	 * presentation action. Base items have no local response.
+	 */
+	virtual void EndPresentationAction(const FGameplayTag& Action);
+
+	/**
 	 * Abilities (each paired with the input tag that activates it)
 	 * EquipmentComponent should grant to the wielder's ASC while this item
 	 * is wielded, and remove the moment it stops being wielded. Base

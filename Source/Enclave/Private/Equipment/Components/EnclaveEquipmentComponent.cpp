@@ -392,6 +392,7 @@ void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* Pre
 		if (PreviousItem != NewItem)
 		{
 			FEnclaveItemPresentationActionEvent DrawEvent;
+			DrawEvent.Item = NewItem;
 			DrawEvent.ItemType = NewItem->GetItemType();
 			DrawEvent.Action = EnclaveGameplayTags::Presentation_Item_Action_Draw;
 			AvatarPresentation->HandleItemPresentationAction(DrawEvent);

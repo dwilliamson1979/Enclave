@@ -9,7 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 
 #include "Equipment/Weapons/Data/EnclaveFirearmWeaponDefinition.h"
-#include "GameplayTags/EnclaveGameplayCueTags.h"
+#include "GameplayTags/EnclavePresentationTags.h"
 #include "Collision/EnclaveCollisionChannels.h"
 
 #include "Engine/World.h"
@@ -123,43 +123,41 @@ void AEnclaveFirearmWeapon::ApplyMuzzleFlashSocket(UNiagaraComponent* MuzzleFlas
 	MuzzleFlashComponent->SetOwnerNoSee(!bIsFirstPersonMesh);
 }
 
-bool AEnclaveFirearmWeapon::HandleGameplayCue(FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters)
+void AEnclaveFirearmWeapon::StartPresentationAction(const FGameplayTag& Action, float Duration)
 {
-	// Fire and DryFire are one-shot (executed) cues; any other event for
-	// them is recognized-but-ignored rather than "unhandled".
-	if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_Fire))
+	if (Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_Fire))
 	{
-		return EventType == EGameplayCueEvent::Executed ? HandleWeaponFire(Parameters) : true;
+		HandleWeaponFire();
+		return;
 	}
 
-	if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_DryFire))
+	if (Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_DryFire))
 	{
-		return EventType == EGameplayCueEvent::Executed ? HandleWeaponDryFire(Parameters) : true;
+		HandleWeaponDryFire();
+		return;
 	}
 
-	if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_Reload))
+	if (Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_Reload))
 	{
-		return HandleWeaponReload(EventType, Parameters);
+		StartWeaponReloadPresentation(Duration);
 	}
-
-	// Not silent: a tag reaching here with no branch above means a cue was
-	// registered (and is presumably executing against this weapon) without
-	// this dispatch being updated to match - exactly the kind of "silently
-	// does nothing" bug a missing AnimInstance or a missing socket already
-	// cost real debugging time on elsewhere in this class's history.
-	// Plain UE_LOG, not ENCLAVE_LOG: a missing handler is a real bug and
-	// should still show up in Test builds.
-	UE_LOG(LogEnclaveGameplayCue, Warning, TEXT("%s: no handler for gameplay cue %s"), *GetName(), *CueTag.ToString());
-	return false;
 }
 
-bool AEnclaveFirearmWeapon::HandleWeaponFire(const FGameplayCueParameters& Parameters)
+void AEnclaveFirearmWeapon::EndPresentationAction(const FGameplayTag& Action)
+{
+	if (Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_Reload))
+	{
+		EndWeaponReloadPresentation();
+	}
+}
+
+void AEnclaveFirearmWeapon::HandleWeaponFire()
 {
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 
 	if (!FirearmWeaponDefinition)
 	{
-		return true;
+		return;
 	}
 
 	// Fire montage - plays on both meshes; which one is actually visible to
@@ -199,63 +197,44 @@ bool AEnclaveFirearmWeapon::HandleWeaponFire(const FGameplayCueParameters& Param
 	}
 
 	PlaySoundAtMuzzle(FirearmWeaponDefinition->GetFireSound());
-
-	return true;
 }
 
-bool AEnclaveFirearmWeapon::HandleWeaponDryFire(const FGameplayCueParameters& Parameters)
+void AEnclaveFirearmWeapon::HandleWeaponDryFire()
 {
 	if (const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition())
 	{
 		PlaySoundAtMuzzle(FirearmWeaponDefinition->GetDryFireSound());
 	}
-
-	return true;
 }
 
-bool AEnclaveFirearmWeapon::HandleWeaponReload(EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters)
+void AEnclaveFirearmWeapon::StartWeaponReloadPresentation(float Duration)
 {
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 	UAnimMontage* ReloadMontage = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetReloadMontage() : nullptr;
 
-	switch (EventType)
+	if (!ReloadMontage)
 	{
-	case EGameplayCueEvent::WhileActive:
-	{
-		// WhileActive, not OnActive: every machine receives both for one
-		// add, and only WhileActive also fires when the cue becomes relevant
-		// mid-reload (see IEnclaveGameplayCueResponderInterface).
-		//
-		// The reload duration is the gameplay number; every montage bends to
-		// fit it. RawMagnitude is what UEnclaveGA_Reload is actually waiting
-		// on (GetReloadDuration() at activation, attachment modifiers
-		// included), so a "hot-swap magazine" speeds the animation up with
-		// no extra wiring.
-		const float ReloadDuration = Parameters.RawMagnitude;
-
-		// Weapon mesh (magazine, bolt...) - this weapon's own montage.
-		if (ReloadMontage)
-		{
-			const float MontageLength = ReloadMontage->GetPlayLength();
-			const float PlayRate = (ReloadDuration > KINDA_SMALL_NUMBER && MontageLength > KINDA_SMALL_NUMBER) ? MontageLength / ReloadDuration : 1.0f;
-
-			PlayMontageOnWeaponMeshes(ReloadMontage, PlayRate);
-		}
-		break;
+		return;
 	}
 
-	case EGameplayCueEvent::Removed:
-		// Completed or cancelled alike. Only visible for a cancelled reload -
-		// a completed one's montages have already finished (they were scaled
-		// to the duration), and stopping a finished montage is a no-op.
-		StopMontageOnWeaponMeshes(ReloadMontage, /*BlendOutTime=*/ 0.1f);
-		break;
+	// The duration comes from the semantic presentation event, which was
+	// translated from the reload Gameplay Cue's RawMagnitude. Gameplay owns
+	// that number; this montage bends to fit it.
+	const float MontageLength = ReloadMontage->GetPlayLength();
+	const float PlayRate = (Duration > KINDA_SMALL_NUMBER && MontageLength > KINDA_SMALL_NUMBER) ? MontageLength / Duration : 1.0f;
 
-	default:
-		break;
-	}
+	PlayMontageOnWeaponMeshes(ReloadMontage, PlayRate);
+}
 
-	return true;
+void AEnclaveFirearmWeapon::EndWeaponReloadPresentation()
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+	UAnimMontage* ReloadMontage = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetReloadMontage() : nullptr;
+
+	// Completed or cancelled alike. Only visible for a cancelled reload - a
+	// completed montage should already have finished because it was scaled to
+	// the gameplay duration. Stopping a finished montage is a no-op.
+	StopMontageOnWeaponMeshes(ReloadMontage, /*BlendOutTime=*/ 0.1f);
 }
 
 void AEnclaveFirearmWeapon::PlayMontageOnWeaponMeshes(UAnimMontage* Montage, float PlayRate)

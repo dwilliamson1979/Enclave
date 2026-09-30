@@ -25,9 +25,9 @@ class UEnclaveFireableInterface : public UInterface
  * this interface fresh each activation via
  * UEnclaveGameplayAbility::GetTriggeringSourceAs() and talks only to it.
  *
- * Same shape as IEnclaveHitFeedbackInterface/IEnclaveGameplayCueResponderInterface
- * elsewhere in the project: one stable contract, implementations resolved by
- * interface rather than concrete cast.
+ * Same interface-first pattern used elsewhere in the project: one stable
+ * gameplay capability contract, with implementations resolved by interface
+ * rather than concrete cast.
  */
 class ENCLAVE_API IEnclaveFireableInterface
 {

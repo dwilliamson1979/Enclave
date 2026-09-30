@@ -57,21 +57,36 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 	const FEnclaveItemPresentationMontages* Montages =
 		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindItemPresentationMontages(Event.ItemType, Event.Action) : nullptr;
 
-	if (!Montages)
-	{
-		return;
-	}
-
 	switch (Event.Phase)
 	{
 	case EEnclaveItemPresentationActionPhase::Started:
-		PlayMontageOnMesh(FirstPersonMesh, Montages->FirstPerson, Event.Duration);
-		PlayMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson, Event.Duration);
+		// Phase 2: AvatarPresentation is now the single coordinator for both
+		// sides of an item action. Item-local presentation still starts
+		// immediately for now; a later choreography phase can move this call
+		// behind an authored AnimNotify without changing the gameplay cue path.
+		if (Montages)
+		{
+			PlayMontageOnMesh(FirstPersonMesh, Montages->FirstPerson, Event.Duration);
+			PlayMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson, Event.Duration);
+		}
+
+		if (IsValid(Event.Item))
+		{
+			Event.Item->StartPresentationAction(Event.Action, Event.Duration);
+		}
 		break;
 
 	case EEnclaveItemPresentationActionPhase::Ended:
-		StopMontageOnMesh(FirstPersonMesh, Montages->FirstPerson);
-		StopMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson);
+		if (Montages)
+		{
+			StopMontageOnMesh(FirstPersonMesh, Montages->FirstPerson);
+			StopMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson);
+		}
+
+		if (IsValid(Event.Item))
+		{
+			Event.Item->EndPresentationAction(Event.Action);
+		}
 		break;
 	}
 }

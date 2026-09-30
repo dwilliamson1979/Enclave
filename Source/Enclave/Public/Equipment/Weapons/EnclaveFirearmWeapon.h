@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Equipment/Weapons/EnclaveWeapon.h"
-#include "GameplayCues/Interfaces/EnclaveGameplayCueResponderInterface.h"
 #include "Abilities/Interfaces/EnclaveFireableInterface.h"
 #include "Abilities/Interfaces/EnclaveAmmoConsumerInterface.h"
 #include "Abilities/Interfaces/EnclaveReloadableInterface.h"
@@ -67,8 +66,10 @@ class USoundBase;
  *   (PerformFireHitDetection owns the line trace itself, including its own
  *   debug visualization and its own choice of aim source; GetFireCooldownEffectClass
  *   exposes this weapon's fire-rate cooldown GE).
- * - IEnclaveGameplayCueResponderInterface, dispatching GameplayCue.Weapon.Fire,
- *   .DryFire and .Reload to this weapon's own cosmetic response.
+ * - Item-local presentation for semantic Presentation.Item.Action.* events,
+ *   coordinated by UEnclaveAvatarPresentationComponent. The firearm owns its
+ *   own mesh montage, muzzle flash, and weapon audio; it does not receive
+ *   Gameplay Cues directly.
  * - IEnclaveAmmoConsumerInterface/IEnclaveReloadableInterface (Phase 4), this
  *   weapon's contracts with UEnclaveGA_Fire's ammo cost and UEnclaveGA_Reload.
  *   Ammo is client-predicted: the owning client applies its own spends and
@@ -90,7 +91,7 @@ class USoundBase;
  * either.
  */
 UCLASS(Abstract, Blueprintable)
-class ENCLAVE_API AEnclaveFirearmWeapon : public AEnclaveWeapon, public IEnclaveGameplayCueResponderInterface, public IEnclaveFireableInterface,
+class ENCLAVE_API AEnclaveFirearmWeapon : public AEnclaveWeapon, public IEnclaveFireableInterface,
 	public IEnclaveAmmoConsumerInterface, public IEnclaveReloadableInterface
 {
 	GENERATED_BODY()
@@ -101,9 +102,9 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	// IEnclaveGameplayCueResponderInterface
-	/** Dispatches by exact tag match to this weapon's own HandleWeaponFire/HandleWeaponDryFire/HandleWeaponReload. Logs and returns false for a tag this weapon doesn't recognize, rather than silently doing nothing. */
-	virtual bool HandleGameplayCue(FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) override;
+	// AEnclaveItem - item-local presentation coordinated by AvatarPresentation.
+	virtual void StartPresentationAction(const FGameplayTag& Action, float Duration) override;
+	virtual void EndPresentationAction(const FGameplayTag& Action) override;
 
 	// IEnclaveFireableInterface - this weapon's contract with UEnclaveGA_Fire.
 	// PerformFireHitDetection is handed only InstigatorToIgnore - it resolves
@@ -147,21 +148,17 @@ private:
 	/** Assigns the muzzle flash asset to MuzzleFlashComponent and snaps it onto MeshComp's muzzle socket, matching MeshComp's own owner-visibility flags. Leaves the component with no asset (inactive) if InWeaponDefinition has no muzzle flash effect or the socket doesn't exist on MeshComp. */
 	void ApplyMuzzleFlashSocket(UNiagaraComponent* MuzzleFlashComponent, USkeletalMeshComponent* MeshComp, const UEnclaveFirearmWeaponDefinition* InWeaponDefinition);
 
-	/** GameplayCue.Weapon.Fire response: fire montage, muzzle flash, fire sound - this weapon's own cosmetic reaction to being fired. Returns true (handled) unconditionally; nothing about a weapon not currently having a montage/effect/sound assigned makes this cue "unhandled". */
-	bool HandleWeaponFire(const FGameplayCueParameters& Parameters);
+	/** Presentation.Item.Action.Fire response: weapon montage, muzzle flash, and fire sound. */
+	void HandleWeaponFire();
 
-	/** GameplayCue.Weapon.DryFire response: item-local dry-fire click from the muzzle. */
-	bool HandleWeaponDryFire(const FGameplayCueParameters& Parameters);
+	/** Presentation.Item.Action.DryFire response: item-local dry-fire click from the muzzle. */
+	void HandleWeaponDryFire();
 
-	/**
-	 * GameplayCue.Weapon.Reload response (a duration cue, added/removed by
-	 * UEnclaveGA_Reload). WhileActive starts the weapon-mesh reload montage
-	 * (play-rate-scaled so it ends when the reload does -
-	 * Parameters.RawMagnitude carries the duration the ability is waiting
-	 * on); Removed stops the montage. Avatar presentation receives the same
-	 * cue directly from UEnclaveGameplayCueNotify.
-	 */
-	bool HandleWeaponReload(EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters);
+	/** Starts the weapon-mesh reload presentation, scaled to the gameplay-owned duration. */
+	void StartWeaponReloadPresentation(float Duration);
+
+	/** Stops the weapon-mesh reload presentation when the semantic Reload action ends. */
+	void EndWeaponReloadPresentation();
 
 	/** Plays Montage on both weapon meshes' anim instances. Which one a given viewer sees is the meshes' own owner-visibility setup. */
 	void PlayMontageOnWeaponMeshes(UAnimMontage* Montage, float PlayRate = 1.0f);

@@ -12,7 +12,7 @@ class UNiagaraSystem;
 class USoundBase;
 
 /**
- * Firearm-specific weapon data: muzzle/fire-cue presentation and
+ * Firearm-specific weapon data: item-local fire/reload presentation and
  * ranged-combat tuning (damage, trace range, cooldown/damage effects).
  *
  * Split out of the generic UEnclaveWeaponDefinition (2026-09-23) because
@@ -27,18 +27,16 @@ class ENCLAVE_API UEnclaveFirearmWeaponDefinition : public UEnclaveWeaponDefinit
 
 public:
 
-	// Phase 3: read by AEnclaveFirearmWeapon::HandleWeaponFire in response to
-	// GameplayCue.Weapon.Fire - this class has no idea a cue or a cue
-	// notify exists, it just exposes weapon presentation data the same way
-	// the base class already exposes meshes and abilities.
+	// Read by AEnclaveFirearmWeapon's item-local presentation response. This
+	// data asset has no idea a Gameplay Cue or AvatarPresentation exists; it
+	// simply exposes the firearm's own cosmetic data.
 	UAnimMontage* GetFireMontage() const { return FireMontage; }
 	UNiagaraSystem* GetMuzzleFlashEffect() const { return MuzzleFlashEffect; }
 	USoundBase* GetFireSound() const { return FireSound; }
 	FName GetMuzzleSocketName() const { return MuzzleSocketName; }
 
 	// Per-weapon combat tuning, read by AEnclaveFirearmWeapon at trace time
-	// (resolved off GetCurrentSourceObject(), the same idiom already used to
-	// find the weapon for GameplayCue.Weapon.Fire). Living here means one
+	// (resolved off GetCurrentSourceObject()). Living here means one
 	// weapon = one data asset, full stop - a new ability or actor subclass
 	// is only needed when a weapon's *firing behavior* genuinely differs
 	// (e.g. a multi-trace shotgun), not for tuning.
@@ -72,15 +70,15 @@ public:
 
 private:
 
-	/** Played on both the first- and third-person meshes when GameplayCue.Weapon.Fire executes. Optional. */
+	/** Played on both weapon meshes for Presentation.Item.Action.Fire. Optional. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Fire Cue", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAnimMontage> FireMontage;
 
-	/** Spawned at MuzzleSocketName on both meshes when GameplayCue.Weapon.Fire executes. Optional. */
+	/** Re-triggered at MuzzleSocketName on both weapon meshes for Presentation.Item.Action.Fire. Optional. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Fire Cue", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UNiagaraSystem> MuzzleFlashEffect;
 
-	/** Played from the muzzle when GameplayCue.Weapon.Fire executes. Optional. */
+	/** Played from the muzzle for Presentation.Item.Action.Fire. Optional. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Fire Cue", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USoundBase> FireSound;
 
@@ -123,8 +121,9 @@ private:
 
 	/**
 	 * Weapon-mesh reload montage (slide/magazine motion), played on both the
-	 * first- and third-person weapon meshes while GameplayCue.Weapon.Reload
-	 * is active, play-rate-scaled to fit ReloadDuration. Arm/body montages
+	 * first- and third-person weapon meshes while the semantic Reload
+	 * presentation action is active, play-rate-scaled to fit ReloadDuration.
+	 * Arm/body montages
 	 * for the avatar are handled separately. Clip-out/clip-in sounds belong on
 	 * this montage as Play Sound anim notifies so they stay in sync with the
 	 * scaled play rate. Optional.
@@ -132,7 +131,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Reload Cue", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAnimMontage> ReloadMontage;
 
-	/** Played from the muzzle when firing with an empty magazine (GameplayCue.Weapon.DryFire). Optional. */
+	/** Played from the muzzle for Presentation.Item.Action.DryFire. Optional. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Dry Fire Cue", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USoundBase> DryFireSound;
 };

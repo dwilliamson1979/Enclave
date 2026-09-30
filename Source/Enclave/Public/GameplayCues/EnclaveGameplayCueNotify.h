@@ -9,17 +9,14 @@
 /**
  * Shared base for Gameplay Cue notifies.
  *
- * One cue event now fans out to the two presentation concerns that need it:
- * - Avatar presentation receives a semantic FEnclaveItemPresentationActionEvent
- *   directly (Fire, DryFire, Reload Started/Ended).
- * - The cue's EffectCauser still receives the original cue through
- *   IEnclaveGameplayCueResponderInterface for item-local presentation such as
- *   weapon-mesh montages, muzzle flash, and weapon audio.
+ * Recognized item-action cues are translated into one semantic
+ * FEnclaveItemPresentationActionEvent and sent to avatar presentation.
+ * AvatarPresentation is the single presentation coordinator: it presents the
+ * avatar and routes item-local presentation to the originating AEnclaveItem.
  *
- * This removes the old Item -> AvatarPresentation forwarding dependency while
- * deliberately preserving current item-local presentation timing. A later
- * phase can move item choreography under AvatarPresentation without changing
- * the gameplay/ability side again.
+ * Item-local presentation still starts immediately in Phase 2. A later
+ * choreography phase can move that item start behind an authored AnimNotify
+ * without changing this gameplay/ability boundary again.
  *
  * The Gameplay Cue Manager dispatches by exact tag match, with no built-in
  * wildcard/parent-tag routing, so a distinct notify is still required per tag.
@@ -38,7 +35,7 @@ public:
 	virtual bool OnRemove_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const override;
 
 protected:
-	/** Routes one cue event to avatar presentation and the cue responder. */
+	/** Translates one cue event into semantic avatar/item presentation. */
 	bool ForwardCue(AActor* MyTarget, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const;
 
 	/**
@@ -47,16 +44,5 @@ protected:
 	 */
 	bool ForwardToAvatarPresentation(AActor* MyTarget, FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const;
 
-	/**
-	 * Resolves the actor this cue is actually about from Parameters.EffectCauser
-	 * and forwards the original cue to IEnclaveGameplayCueResponderInterface.
-	 * Falls back to MyTarget only if EffectCauser is not set.
-	 *
-	 * Deliberately does not fall back to Parameters.SourceObject: responder
-	 * handling is non-const, while SourceObject is const.
-	 */
-	bool ForwardToResponder(AActor* MyTarget, FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const;
-
-	static AActor* ResolveCueResponder(AActor* MyTarget, const FGameplayCueParameters& Parameters);
 	FGameplayTag GetCueTag(const FGameplayCueParameters& Parameters) const;
 };

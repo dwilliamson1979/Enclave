@@ -20,10 +20,10 @@
  * - ActivationOwnedTags: State.Weapon.Reloading while active, which
  *   UEnclaveGA_Fire lists in its ActivationBlockedTags.
  * - GameplayCue.Weapon.Reload is ADDED (not executed) with
- *   bRemoveOnAbilityEnd, carrying the reload duration in RawMagnitude, so
- *   the responder can start a play-rate-scaled montage on WhileActive and
- *   stop it on Removed - which GAS fires whether the ability completed or
- *   was cancelled (weapon swapped away, later: death, sprint).
+ *   bRemoveOnAbilityEnd, carrying the reload duration in RawMagnitude.
+ *   UEnclaveGameplayCueNotify translates WhileActive/Removed into semantic
+ *   Reload Started/Ended events; AvatarPresentation coordinates both the
+ *   avatar and originating item's cosmetic response.
  * - Timing is data-driven: the server waits GetReloadDuration() seconds,
  *   then calls CompleteReload() and ends the ability. The animation bends
  *   to fit the number, never the other way around, so reload speed

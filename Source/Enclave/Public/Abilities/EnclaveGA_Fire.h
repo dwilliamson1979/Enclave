@@ -31,11 +31,11 @@ class UAbilitySystemComponent;
  * item, deployed equipment) just implements the same interface - this
  * class doesn't need to know or care which.
  *
- * Fire feedback is a Gameplay Cue executed
- * through UEnclaveGameplayCueNotify. The notify sends the semantic item
- * action directly to avatar presentation and also forwards the original cue
- * to IEnclaveGameplayCueResponderInterface for item-local presentation
- * (weapon montage, muzzle flash, fire sound). The cue is executed
+ * Fire feedback is a Gameplay Cue executed through
+ * UEnclaveGameplayCueNotify. The notify translates the cue into one semantic
+ * item action for AvatarPresentation, which coordinates both the avatar and
+ * the originating item's local presentation (weapon montage, muzzle flash,
+ * fire sound). The cue is executed
  * unconditionally on every successful activation, including a miss, and
  * including on the predicting owning client for instant local feedback.
  * The hit marker is deliberately NOT a Gameplay Cue - a Cue executed on

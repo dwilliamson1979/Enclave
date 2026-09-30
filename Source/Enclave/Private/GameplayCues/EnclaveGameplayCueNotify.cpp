@@ -4,10 +4,8 @@
 
 #include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
-#include "GameplayCues/Interfaces/EnclaveGameplayCueResponderInterface.h"
 #include "GameplayTags/EnclaveGameplayCueTags.h"
 #include "GameplayTags/EnclavePresentationTags.h"
-#include "Debug/EnclaveDebug.h"
 
 bool UEnclaveGameplayCueNotify::OnExecute_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const
 {
@@ -31,11 +29,7 @@ bool UEnclaveGameplayCueNotify::OnRemove_Implementation(AActor* MyTarget, const 
 
 bool UEnclaveGameplayCueNotify::ForwardCue(AActor* MyTarget, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const
 {
-	const FGameplayTag CueTag = GetCueTag(Parameters);
-	const bool bAvatarPresentationHandled = ForwardToAvatarPresentation(MyTarget, CueTag, EventType, Parameters);
-	const bool bResponderHandled = ForwardToResponder(MyTarget, CueTag, EventType, Parameters);
-
-	return bAvatarPresentationHandled || bResponderHandled;
+	return ForwardToAvatarPresentation(MyTarget, GetCueTag(Parameters), EventType, Parameters);
 }
 
 bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const
@@ -118,46 +112,10 @@ bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, FG
 	return true;
 }
 
-bool UEnclaveGameplayCueNotify::ForwardToResponder(AActor* MyTarget, FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const
-{
-	AActor* ResponderActor = ResolveCueResponder(MyTarget, Parameters);
-
-	if (!IsValid(ResponderActor))
-	{
-		return false;
-	}
-
-	IEnclaveGameplayCueResponderInterface* Responder = Cast<IEnclaveGameplayCueResponderInterface>(ResponderActor);
-
-	if (!Responder)
-	{
-		// Expected for a Removed event whose parameters arrived without an
-		// EffectCauser (resolution fell back to MyTarget, the avatar, which
-		// isn't a responder). Verbose rather than Warning - see the PIE
-		// verification note on weapon-swap-mid-reload.
-		ENCLAVE_LOG(LogEnclaveGameplayCue, Verbose, "%s: %s resolved no cue responder for event %d", *GetName(), *GetNameSafe(ResponderActor), static_cast<int32>(EventType));
-		return false;
-	}
-
-	return Responder->HandleGameplayCue(CueTag, EventType, Parameters);
-}
-
 FGameplayTag UEnclaveGameplayCueNotify::GetCueTag(const FGameplayCueParameters& Parameters) const
 {
 	// OriginalTag over GameplayCueTag: the tag actually executed for this
 	// instance. Practically always the same value given exact-match
 	// dispatch, but OriginalTag is the more correct one to forward.
 	return Parameters.OriginalTag.IsValid() ? Parameters.OriginalTag : GameplayCueTag;
-}
-
-AActor* UEnclaveGameplayCueNotify::ResolveCueResponder(AActor* MyTarget, const FGameplayCueParameters& Parameters)
-{
-	AActor* EffectCauser = Parameters.EffectCauser.Get();
-
-	if (IsValid(EffectCauser))
-	{
-		return EffectCauser;
-	}
-
-	return MyTarget;
 }

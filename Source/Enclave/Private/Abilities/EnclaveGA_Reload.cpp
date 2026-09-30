@@ -97,8 +97,8 @@ void UEnclaveGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 void UEnclaveGA_Reload::AddReloadCue(const FGameplayAbilityActorInfo* ActorInfo, float ReloadDuration)
 {
 	// Same source routing as UEnclaveGA_Fire::ExecuteSourceCue: EffectCauser
-	// identifies the originating item for avatar presentation and item-local
-	// cue response.
+	// identifies the originating item carried into the semantic presentation
+	// event coordinated by AvatarPresentation.
 	AActor* TriggeringActor = GetTriggeringSourceAs<AActor>();
 
 	if (!IsValid(TriggeringActor))
@@ -111,9 +111,9 @@ void UEnclaveGA_Reload::AddReloadCue(const FGameplayAbilityActorInfo* ActorInfo,
 	CueParameters.EffectCauser = TriggeringActor;
 	CueParameters.SourceObject = TriggeringActor;
 
-	// Carries the duration this activation is actually waiting on, so both
-	// avatar presentation and the current item-local reload presentation can
-	// use the same gameplay duration without recomputing it.
+	// Carries the duration this activation is actually waiting on so
+	// AvatarPresentation can apply the same gameplay duration to both avatar
+	// and item-local reload presentation without recomputing it.
 	CueParameters.RawMagnitude = ReloadDuration;
 
 	// The ability-level helper (rather than ASC->AddGameplayCue directly)

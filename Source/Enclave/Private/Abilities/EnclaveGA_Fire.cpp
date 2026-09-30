@@ -116,8 +116,8 @@ void UEnclaveGA_Fire::AcknowledgeUnspentAmmo(const FGameplayAbilityActivationInf
 void UEnclaveGA_Fire::ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor)
 {
 	// Keep the triggering source actor in the cue parameters. The shared cue
-	// notify uses it both as the originating item for avatar presentation and
-	// as the item-local IEnclaveGameplayCueResponderInterface target.
+	// notify carries it into the semantic presentation event so
+	// AvatarPresentation can coordinate both avatar and item presentation.
 	AActor* TriggeringActor = GetTriggeringSourceAs<AActor>();
 
 	if (!IsValid(SourceASC) || !IsValid(TriggeringActor))
@@ -125,9 +125,8 @@ void UEnclaveGA_Fire::ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySyste
 		return;
 	}
 
-	// EffectCauser is the non-const actor-shaped source used for both the
-	// avatar presentation event's originating item and item-local cue response.
-	// SourceObject is retained as the semantic GAS source as well.
+	// EffectCauser is the actor-shaped source used as the presentation event's
+	// originating item. SourceObject is retained as the semantic GAS source too.
 	FGameplayCueParameters CueParameters;
 	CueParameters.Instigator = AvatarActor;
 	CueParameters.EffectCauser = TriggeringActor;
