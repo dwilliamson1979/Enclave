@@ -217,9 +217,10 @@ void AEnclaveFirearmWeapon::StartWeaponReloadPresentation(float Duration)
 		return;
 	}
 
-	// The duration comes from the semantic presentation event, which was
-	// translated from the reload Gameplay Cue's RawMagnitude. Gameplay owns
-	// that number; this montage bends to fit it.
+	// Duration is the remaining presentation window supplied by
+	// AvatarPresentation when the avatar montage reaches its authored item
+	// choreography notify. Gameplay still owns the overall reload duration;
+	// this montage bends to finish inside the remaining window.
 	const float MontageLength = ReloadMontage->GetPlayLength();
 	const float PlayRate = (Duration > KINDA_SMALL_NUMBER && MontageLength > KINDA_SMALL_NUMBER) ? MontageLength / Duration : 1.0f;
 

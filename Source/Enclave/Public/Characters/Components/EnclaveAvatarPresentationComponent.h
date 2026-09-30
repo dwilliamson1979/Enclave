@@ -34,13 +34,25 @@ public:
 	virtual void PresentWieldedItem(AEnclaveItem* Item) override;
 	virtual void ClearWieldedItemPresentation(AEnclaveItem* Item) override;
 	virtual void HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event) override;
+	virtual void HandleItemPresentationChoreography(const FGameplayTag& Action) override;
 
 private:
+	struct FActiveChoreographedItemAction
+	{
+		TWeakObjectPtr<AEnclaveItem> Item;
+		float Duration = 0.0f;
+		float StartTimeSeconds = 0.0f;
+		bool bItemPresentationStarted = false;
+	};
+
 	bool AttachItem(AEnclaveItem* Item);
 	void LinkAnimLayers(const FGameplayTag& ItemType);
 	void UnlinkAnimLayers(const FGameplayTag& ItemType);
 	void PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
 	void StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const;
+	bool ShouldDeferItemPresentationToChoreography(const FGameplayTag& Action) const;
+	void BeginChoreographedItemAction(const FEnclaveItemPresentationActionEvent& Event);
+	void EndChoreographedItemAction(const FGameplayTag& Action);
 
 	/** How equipment is presented on this avatar body plan. */
 	UPROPERTY(EditDefaultsOnly, Category = "Presentation|Equipment")
@@ -55,4 +67,11 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<USkeletalMeshComponent> ThirdPersonMesh = nullptr;
+
+	/**
+	 * Lasting item actions whose item-local animation is waiting for an
+	 * authored avatar AnimNotify. Keyed by semantic Presentation.Item.Action.*
+	 * tag so duplicate FP/TP notifies are naturally idempotent.
+	 */
+	TMap<FGameplayTag, FActiveChoreographedItemAction> ActiveChoreographedItemActions;
 };

@@ -83,6 +83,13 @@ public:
 	/** Present a semantic action performed by the avatar's currently wielded item. */
 	virtual void HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event) = 0;
 
+	/**
+	 * Reports that an avatar montage reached the authored point where the
+	 * item-local portion of Action should begin. This is presentation
+	 * choreography only; it never authorizes or completes gameplay.
+	 */
+	virtual void HandleItemPresentationChoreography(const FGameplayTag& Action) = 0;
+
 	/** Find the presentation implementation associated with Actor, if one exists. */
 	static IEnclaveAvatarPresentationInterface* FindAvatarPresentation(AActor* Actor);
 };

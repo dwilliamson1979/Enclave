@@ -112,8 +112,9 @@ private:
 
 	/**
 	 * Base seconds from pressing reload to a full magazine - the gameplay
-	 * number; ReloadMontage is play-rate-scaled to match it, not the other
-	 * way around. Attachments/perks modify the value
+	 * number. Avatar presentation bends its choreography to this duration; the
+	 * weapon ReloadMontage is started at its authored notify point and scaled
+	 * to the remaining presentation window. Attachments/perks modify the value
 	 * AEnclaveFirearmWeapon::GetReloadDuration() returns, never this field.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Ammo", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
@@ -121,10 +122,11 @@ private:
 
 	/**
 	 * Weapon-mesh reload montage (slide/magazine motion), played on both the
-	 * first- and third-person weapon meshes while the semantic Reload
-	 * presentation action is active, play-rate-scaled to fit ReloadDuration.
-	 * Arm/body montages
-	 * for the avatar are handled separately. Clip-out/clip-in sounds belong on
+	 * first- and third-person weapon meshes when the avatar reload montage
+	 * reaches its Enclave Item Presentation Action notify. It is play-rate-
+	 * scaled to the remaining gameplay-owned reload window so it still finishes
+	 * with the authoritative presentation duration. Arm/body montages for the
+	 * avatar are handled separately. Clip-out/clip-in sounds belong on
 	 * this montage as Play Sound anim notifies so they stay in sync with the
 	 * scaled play rate. Optional.
 	 */

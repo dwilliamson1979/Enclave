@@ -14,9 +14,9 @@
  * AvatarPresentation is the single presentation coordinator: it presents the
  * avatar and routes item-local presentation to the originating AEnclaveItem.
  *
- * Item-local presentation still starts immediately in Phase 2. A later
- * choreography phase can move that item start behind an authored AnimNotify
- * without changing this gameplay/ability boundary again.
+ * AvatarPresentation may start item-local presentation immediately or defer
+ * it to an authored avatar AnimNotify. That choreography decision stays below
+ * this gameplay/ability boundary.
  *
  * The Gameplay Cue Manager dispatches by exact tag match, with no built-in
  * wildcard/parent-tag routing, so a distinct notify is still required per tag.

@@ -8,6 +8,8 @@
 #include "Debug/EnclaveDebug.h"
 #include "Equipment/Data/EnclaveItemPresentationDefinition.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "GameplayTags/EnclavePresentationTags.h"
+#include "Engine/World.h"
 
 UEnclaveAvatarPresentationComponent::UEnclaveAvatarPresentationComponent()
 {
@@ -60,17 +62,24 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 	switch (Event.Phase)
 	{
 	case EEnclaveItemPresentationActionPhase::Started:
-		// Phase 2: AvatarPresentation is now the single coordinator for both
-		// sides of an item action. Item-local presentation still starts
-		// immediately for now; a later choreography phase can move this call
-		// behind an authored AnimNotify without changing the gameplay cue path.
+		// Register any notify-driven item choreography before starting the avatar
+		// montage. A notify authored at montage time 0 can then safely resolve the
+		// active item/action on its first animation update.
+		if (ShouldDeferItemPresentationToChoreography(Event.Action))
+		{
+			BeginChoreographedItemAction(Event);
+		}
+
 		if (Montages)
 		{
 			PlayMontageOnMesh(FirstPersonMesh, Montages->FirstPerson, Event.Duration);
 			PlayMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson, Event.Duration);
 		}
 
-		if (IsValid(Event.Item))
+		// Instant/non-choreographed actions still start their item-local
+		// presentation immediately. Reload is deliberately excluded here: its
+		// weapon animation now begins from an authored avatar AnimNotify.
+		if (!ShouldDeferItemPresentationToChoreography(Event.Action) && IsValid(Event.Item))
 		{
 			Event.Item->StartPresentationAction(Event.Action, Event.Duration);
 		}
@@ -83,12 +92,95 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 			StopMontageOnMesh(ThirdPersonMesh, Montages->ThirdPerson);
 		}
 
-		if (IsValid(Event.Item))
+		if (ShouldDeferItemPresentationToChoreography(Event.Action))
+		{
+			EndChoreographedItemAction(Event.Action);
+		}
+		else if (IsValid(Event.Item))
 		{
 			Event.Item->EndPresentationAction(Event.Action);
 		}
 		break;
 	}
+}
+
+void UEnclaveAvatarPresentationComponent::HandleItemPresentationChoreography(const FGameplayTag& Action)
+{
+	FActiveChoreographedItemAction* ActiveAction = ActiveChoreographedItemActions.Find(Action);
+
+	if (!ActiveAction || ActiveAction->bItemPresentationStarted)
+	{
+		return;
+	}
+
+	AEnclaveItem* Item = ActiveAction->Item.Get();
+
+	if (!IsValid(Item))
+	{
+		return;
+	}
+
+	float RemainingDuration = ActiveAction->Duration;
+
+	if (RemainingDuration > KINDA_SMALL_NUMBER)
+	{
+		const UWorld* World = GetWorld();
+		const float CurrentTimeSeconds = World ? World->GetTimeSeconds() : ActiveAction->StartTimeSeconds;
+		const float ElapsedDuration = FMath::Max(0.0f, CurrentTimeSeconds - ActiveAction->StartTimeSeconds);
+		RemainingDuration = FMath::Max(0.0f, ActiveAction->Duration - ElapsedDuration);
+
+		// If the gameplay-owned presentation window has effectively ended, do
+		// not start a montage at an extreme play rate just because a late notify
+		// arrived. The Ended event will clean up the tracked action normally.
+		if (RemainingDuration <= KINDA_SMALL_NUMBER)
+		{
+			ActiveAction->bItemPresentationStarted = true;
+			return;
+		}
+	}
+
+	// FP and TP avatar montages may both carry the same semantic notify so the
+	// visible mesh drives choreography for both owners and simulated proxies.
+	// Mark started before dispatch so duplicate notifies are idempotent.
+	ActiveAction->bItemPresentationStarted = true;
+	Item->StartPresentationAction(Action, RemainingDuration);
+}
+
+bool UEnclaveAvatarPresentationComponent::ShouldDeferItemPresentationToChoreography(const FGameplayTag& Action) const
+{
+	// Phase 3 intentionally proves the choreography path with Reload only.
+	// Fire/DryFire remain immediate, and future coordinated actions can opt in
+	// deliberately rather than making every item action depend on a notify.
+	return Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_Reload);
+}
+
+void UEnclaveAvatarPresentationComponent::BeginChoreographedItemAction(const FEnclaveItemPresentationActionEvent& Event)
+{
+	FActiveChoreographedItemAction& ActiveAction = ActiveChoreographedItemActions.FindOrAdd(Event.Action);
+	ActiveAction.Item = Event.Item;
+	ActiveAction.Duration = Event.Duration;
+	ActiveAction.StartTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	ActiveAction.bItemPresentationStarted = false;
+}
+
+void UEnclaveAvatarPresentationComponent::EndChoreographedItemAction(const FGameplayTag& Action)
+{
+	FActiveChoreographedItemAction* ActiveAction = ActiveChoreographedItemActions.Find(Action);
+
+	if (!ActiveAction)
+	{
+		return;
+	}
+
+	if (ActiveAction->bItemPresentationStarted)
+	{
+		if (AEnclaveItem* Item = ActiveAction->Item.Get(); IsValid(Item))
+		{
+			Item->EndPresentationAction(Action);
+		}
+	}
+
+	ActiveChoreographedItemActions.Remove(Action);
 }
 
 bool UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)

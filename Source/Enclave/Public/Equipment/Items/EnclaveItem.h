@@ -31,6 +31,8 @@ public:
 	 * Starts this item's local cosmetic response for a semantic presentation
 	 * action. AvatarPresentation coordinates the overall avatar/item sequence
 	 * and calls this only after gameplay has already established the action.
+	 * Duration is the local presentation window available from this point; for
+	 * notify-driven choreography it may be the remaining gameplay duration.
 	 * Base items have no local response.
 	 */
 	virtual void StartPresentationAction(const FGameplayTag& Action, float Duration);

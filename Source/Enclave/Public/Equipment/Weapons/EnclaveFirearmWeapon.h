@@ -154,7 +154,7 @@ private:
 	/** Presentation.Item.Action.DryFire response: item-local dry-fire click from the muzzle. */
 	void HandleWeaponDryFire();
 
-	/** Starts the weapon-mesh reload presentation, scaled to the gameplay-owned duration. */
+	/** Starts the weapon-mesh reload presentation, scaled to the remaining gameplay-owned presentation window. */
 	void StartWeaponReloadPresentation(float Duration);
 
 	/** Stops the weapon-mesh reload presentation when the semantic Reload action ends. */
