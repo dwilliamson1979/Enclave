@@ -28,6 +28,14 @@ public:
 	virtual FGameplayTag GetItemType() const;
 
 	/**
+	 * Gameplay-authoritative time, in seconds, from selecting this item until
+	 * Equipment considers it ready for item actions. Presentation may visually
+	 * represent the same transition, but animation never determines readiness.
+	 * Base items are instant unless a concrete item type supplies a duration.
+	 */
+	virtual float GetEquipDuration() const;
+
+	/**
 	 * Starts this item's local cosmetic response for a semantic presentation
 	 * action. AvatarPresentation coordinates the overall avatar/item sequence
 	 * and calls this only after gameplay has already established the action.

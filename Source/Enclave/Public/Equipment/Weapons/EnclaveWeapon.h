@@ -33,6 +33,7 @@ public:
 	AEnclaveWeapon();
 
 	virtual FGameplayTag GetItemType() const override;
+	virtual float GetEquipDuration() const override;
 	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const override;
 
 	// IEnclaveWieldableInterface

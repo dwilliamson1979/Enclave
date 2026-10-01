@@ -12,6 +12,7 @@
 #include "AbilitySystemInterface.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 
 UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
@@ -30,6 +31,7 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 
 void UEnclaveEquipmentComponent::UninitializeComponent()
 {
+	ClearEquipmentReadinessTransition();
 	UnbindItemSource();
 
 	Super::UninitializeComponent();
@@ -40,6 +42,7 @@ void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentWieldedItem);
+	DOREPLIFETIME(UEnclaveEquipmentComponent, EquipmentReadiness);
 }
 
 bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
@@ -64,6 +67,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	RemoveGrantedAbilities();
 	CurrentWieldedItem = Item;
 	GrantAbilitiesForItem(CurrentWieldedItem);
+	BeginEquipmentReadinessTransition(CurrentWieldedItem);
 
 	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
 	LocallyWieldedItem = CurrentWieldedItem;
@@ -358,6 +362,8 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 		AEnclaveItem* PreviousItem = CurrentWieldedItem;
 		RemoveGrantedAbilities();
 		CurrentWieldedItem = nullptr;
+		ClearEquipmentReadinessTransition();
+		EquipmentReadiness = EEnclaveEquipmentReadiness::Unequipped;
 		UpdateWieldedItemPresentation(PreviousItem, nullptr);
 		LocallyWieldedItem.Reset();
 	}
@@ -366,6 +372,62 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 IEnclaveAvatarPresentationInterface* UEnclaveEquipmentComponent::GetAvatarPresentation() const
 {
 	return IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetOwner());
+}
+
+void UEnclaveEquipmentComponent::BeginEquipmentReadinessTransition(AEnclaveItem* Item)
+{
+	ClearEquipmentReadinessTransition();
+
+	if (!IsValid(Item))
+	{
+		EquipmentReadiness = EEnclaveEquipmentReadiness::Unequipped;
+		return;
+	}
+
+	const float EquipDuration = FMath::Max(0.0f, Item->GetEquipDuration());
+
+	if (EquipDuration <= KINDA_SMALL_NUMBER)
+	{
+		EquipmentReadiness = EEnclaveEquipmentReadiness::Ready;
+		return;
+	}
+
+	EquipmentReadiness = EEnclaveEquipmentReadiness::Equipping;
+
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World))
+	{
+		// With no world there is no authoritative clock to finish the delay.
+		// Failing open during teardown/initialization is safer than leaving the
+		// component permanently Equipping.
+		EquipmentReadiness = EEnclaveEquipmentReadiness::Ready;
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(EquipmentReadinessTimerHandle, this, &UEnclaveEquipmentComponent::CompleteEquipmentReadinessTransition, EquipDuration, false);
+}
+
+void UEnclaveEquipmentComponent::CompleteEquipmentReadinessTransition()
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	EquipmentReadiness = IsValid(CurrentWieldedItem)
+		? EEnclaveEquipmentReadiness::Ready
+		: EEnclaveEquipmentReadiness::Unequipped;
+}
+
+void UEnclaveEquipmentComponent::ClearEquipmentReadinessTransition()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(EquipmentReadinessTimerHandle);
+	}
 }
 
 void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem)

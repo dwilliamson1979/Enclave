@@ -7,7 +7,17 @@
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
 #include "Inventory/Interfaces/EnclaveItemSourceInterface.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "TimerManager.h"
 #include "EnclaveEquipmentComponent.generated.h"
+
+/** Gameplay-owned readiness of the currently wielded item. */
+UENUM(BlueprintType)
+enum class EEnclaveEquipmentReadiness : uint8
+{
+	Unequipped,
+	Equipping,
+	Ready
+};
 
 class AEnclaveItem;
 class UAbilitySystemComponent;
@@ -48,6 +58,8 @@ public:
 
 	bool WieldItem(AEnclaveItem* Item);
 	AEnclaveItem* GetCurrentWieldedItem() const { return CurrentWieldedItem; }
+	EEnclaveEquipmentReadiness GetEquipmentReadiness() const { return EquipmentReadiness; }
+	bool IsReadyForItemActions() const { return EquipmentReadiness == EEnclaveEquipmentReadiness::Ready; }
 
 	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
@@ -90,6 +102,12 @@ private:
 	/** Reports an already-established wielded-item state change to avatar presentation. */
 	void UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
 
+	// Gameplay-authoritative readiness transition. Presentation does not own,
+	// complete, or observe this timer in this phase.
+	void BeginEquipmentReadinessTransition(AEnclaveItem* Item);
+	void CompleteEquipmentReadinessTransition();
+	void ClearEquipmentReadinessTransition();
+
 	// Ability granting - server-authoritative only, mirrors the existing
 	// authority gating on WieldItem. Clients learn about granted abilities
 	// through the ASC's own replication, not through this path.
@@ -122,6 +140,18 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentWieldedItem)
 	TObjectPtr<AEnclaveItem> CurrentWieldedItem = nullptr;
+
+	/**
+	 * Gameplay truth for whether CurrentWieldedItem is still in its equip delay.
+	 * Replicated for future consumers, but presentation is intentionally not
+	 * coupled to Equipment to consume it. Phase 2 will use this state to enforce
+	 * item-action readiness without making animation authoritative.
+	 */
+	UPROPERTY(Replicated)
+	EEnclaveEquipmentReadiness EquipmentReadiness = EEnclaveEquipmentReadiness::Unequipped;
+
+	/** Authority-only timer for the current equip transition. */
+	FTimerHandle EquipmentReadinessTimerHandle;
 
 	/** The wielded item whose presentation has most recently been reconciled on this machine. */
 	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;

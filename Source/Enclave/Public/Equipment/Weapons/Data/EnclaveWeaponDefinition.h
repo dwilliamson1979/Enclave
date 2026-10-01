@@ -35,6 +35,7 @@ public:
 	USkeletalMesh* GetThirdPersonMesh() const { return ThirdPersonMesh; }
 
 	const TArray<FEnclaveAbilityGrant>& GetAbilityGrants() const { return AbilityGrants; }
+	float GetEquipDuration() const { return EquipDuration; }
 
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon"))
@@ -50,6 +51,15 @@ private:
 	TObjectPtr<USkeletalMesh> ThirdPersonMesh;
 
 	/**
+	 * Gameplay-authoritative delay from selecting this weapon until its item
+	 * actions become ready. Draw animation may be authored to visually fit this
+	 * window, but animation/AnimNotifies never complete the gameplay transition.
+	 * 0 = immediately ready.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Equipment", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
+	float EquipDuration = 0.0f;
+
+	/**
 	 * Granted to the wielder's ASC while this weapon is equipped, removed
 	 * the moment it's unequipped. Each entry pairs an ability with the input
 	 * tag that activates it (e.g. UEnclaveGA_Fire + Input.Item.Action.Primary,
@@ -61,4 +71,4 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Abilities", meta = (AllowPrivateAccess = "true", TitleProperty = "InputTag"))
 	TArray<FEnclaveAbilityGrant> AbilityGrants;
-};
+};

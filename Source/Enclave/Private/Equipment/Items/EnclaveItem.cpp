@@ -39,6 +39,11 @@ FGameplayTag AEnclaveItem::GetItemType() const
 	return FGameplayTag();
 }
 
+float AEnclaveItem::GetEquipDuration() const
+{
+	return 0.0f;
+}
+
 void AEnclaveItem::StartPresentationAction(const FGameplayTag& Action, float Duration)
 {
 }
