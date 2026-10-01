@@ -58,8 +58,8 @@ public:
 
 	bool WieldItem(AEnclaveItem* Item);
 	AEnclaveItem* GetCurrentWieldedItem() const { return CurrentWieldedItem; }
-	EEnclaveEquipmentReadiness GetEquipmentReadiness() const { return EquipmentReadiness; }
-	bool IsReadyForItemActions() const { return EquipmentReadiness == EEnclaveEquipmentReadiness::Ready; }
+	EEnclaveEquipmentReadiness GetCurrentWieldedItemReadiness() const { return CurrentWieldedItemReadiness; }
+	bool IsCurrentWieldedItemReadyForActions() const { return CurrentWieldedItemReadiness == EEnclaveEquipmentReadiness::Ready; }
 
 	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
@@ -102,11 +102,11 @@ private:
 	/** Reports an already-established wielded-item state change to avatar presentation. */
 	void UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
 
-	// Gameplay-authoritative readiness transition. Presentation does not own,
-	// complete, or observe this timer in this phase.
-	void BeginEquipmentReadinessTransition(AEnclaveItem* Item);
-	void CompleteEquipmentReadinessTransition();
-	void ClearEquipmentReadinessTransition();
+	// Gameplay-authoritative readiness transition for CurrentWieldedItem.
+	// Presentation does not own, complete, or observe this timer in this phase.
+	void BeginCurrentWieldedItemReadinessTransition(AEnclaveItem* Item);
+	void CompleteCurrentWieldedItemReadinessTransition();
+	void ClearCurrentWieldedItemReadinessTransition();
 
 	// Ability granting - server-authoritative only, mirrors the existing
 	// authority gating on WieldItem. Clients learn about granted abilities
@@ -148,10 +148,10 @@ private:
 	 * item-action readiness without making animation authoritative.
 	 */
 	UPROPERTY(Replicated)
-	EEnclaveEquipmentReadiness EquipmentReadiness = EEnclaveEquipmentReadiness::Unequipped;
+	EEnclaveEquipmentReadiness CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
 
-	/** Authority-only timer for the current equip transition. */
-	FTimerHandle EquipmentReadinessTimerHandle;
+	/** Authority-only timer for the current wielded item's equip transition. */
+	FTimerHandle CurrentWieldedItemReadinessTimerHandle;
 
 	/** The wielded item whose presentation has most recently been reconciled on this machine. */
 	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;

@@ -31,7 +31,7 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 
 void UEnclaveEquipmentComponent::UninitializeComponent()
 {
-	ClearEquipmentReadinessTransition();
+	ClearCurrentWieldedItemReadinessTransition();
 	UnbindItemSource();
 
 	Super::UninitializeComponent();
@@ -42,7 +42,7 @@ void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentWieldedItem);
-	DOREPLIFETIME(UEnclaveEquipmentComponent, EquipmentReadiness);
+	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentWieldedItemReadiness);
 }
 
 bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
@@ -67,7 +67,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	RemoveGrantedAbilities();
 	CurrentWieldedItem = Item;
 	GrantAbilitiesForItem(CurrentWieldedItem);
-	BeginEquipmentReadinessTransition(CurrentWieldedItem);
+	BeginCurrentWieldedItemReadinessTransition(CurrentWieldedItem);
 
 	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
 	LocallyWieldedItem = CurrentWieldedItem;
@@ -362,8 +362,8 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 		AEnclaveItem* PreviousItem = CurrentWieldedItem;
 		RemoveGrantedAbilities();
 		CurrentWieldedItem = nullptr;
-		ClearEquipmentReadinessTransition();
-		EquipmentReadiness = EEnclaveEquipmentReadiness::Unequipped;
+		ClearCurrentWieldedItemReadinessTransition();
+		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
 		UpdateWieldedItemPresentation(PreviousItem, nullptr);
 		LocallyWieldedItem.Reset();
 	}
@@ -374,13 +374,13 @@ IEnclaveAvatarPresentationInterface* UEnclaveEquipmentComponent::GetAvatarPresen
 	return IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetOwner());
 }
 
-void UEnclaveEquipmentComponent::BeginEquipmentReadinessTransition(AEnclaveItem* Item)
+void UEnclaveEquipmentComponent::BeginCurrentWieldedItemReadinessTransition(AEnclaveItem* Item)
 {
-	ClearEquipmentReadinessTransition();
+	ClearCurrentWieldedItemReadinessTransition();
 
 	if (!IsValid(Item))
 	{
-		EquipmentReadiness = EEnclaveEquipmentReadiness::Unequipped;
+		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
 		return;
 	}
 
@@ -388,11 +388,11 @@ void UEnclaveEquipmentComponent::BeginEquipmentReadinessTransition(AEnclaveItem*
 
 	if (EquipDuration <= KINDA_SMALL_NUMBER)
 	{
-		EquipmentReadiness = EEnclaveEquipmentReadiness::Ready;
+		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Ready;
 		return;
 	}
 
-	EquipmentReadiness = EEnclaveEquipmentReadiness::Equipping;
+	CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Equipping;
 
 	UWorld* World = GetWorld();
 
@@ -401,14 +401,14 @@ void UEnclaveEquipmentComponent::BeginEquipmentReadinessTransition(AEnclaveItem*
 		// With no world there is no authoritative clock to finish the delay.
 		// Failing open during teardown/initialization is safer than leaving the
 		// component permanently Equipping.
-		EquipmentReadiness = EEnclaveEquipmentReadiness::Ready;
+		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Ready;
 		return;
 	}
 
-	World->GetTimerManager().SetTimer(EquipmentReadinessTimerHandle, this, &UEnclaveEquipmentComponent::CompleteEquipmentReadinessTransition, EquipDuration, false);
+	World->GetTimerManager().SetTimer(CurrentWieldedItemReadinessTimerHandle, this, &UEnclaveEquipmentComponent::CompleteCurrentWieldedItemReadinessTransition, EquipDuration, false);
 }
 
-void UEnclaveEquipmentComponent::CompleteEquipmentReadinessTransition()
+void UEnclaveEquipmentComponent::CompleteCurrentWieldedItemReadinessTransition()
 {
 	AActor* OwnerActor = GetOwner();
 
@@ -417,16 +417,16 @@ void UEnclaveEquipmentComponent::CompleteEquipmentReadinessTransition()
 		return;
 	}
 
-	EquipmentReadiness = IsValid(CurrentWieldedItem)
+	CurrentWieldedItemReadiness = IsValid(CurrentWieldedItem)
 		? EEnclaveEquipmentReadiness::Ready
 		: EEnclaveEquipmentReadiness::Unequipped;
 }
 
-void UEnclaveEquipmentComponent::ClearEquipmentReadinessTransition()
+void UEnclaveEquipmentComponent::ClearCurrentWieldedItemReadinessTransition()
 {
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(EquipmentReadinessTimerHandle);
+		World->GetTimerManager().ClearTimer(CurrentWieldedItemReadinessTimerHandle);
 	}
 }
 
