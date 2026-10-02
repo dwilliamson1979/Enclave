@@ -39,6 +39,11 @@ FGameplayTag AEnclaveItem::GetItemType() const
 	return FGameplayTag();
 }
 
+bool AEnclaveItem::HasItemCapability(const FGameplayTag&) const
+{
+	return false;
+}
+
 float AEnclaveItem::GetEquipDuration() const
 {
 	return 0.0f;

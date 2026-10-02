@@ -28,6 +28,13 @@ public:
 	virtual FGameplayTag GetItemType() const;
 
 	/**
+	 * Returns whether this item declares the exact semantic capability tag.
+	 * Base items declare no capabilities; concrete item types may source them
+	 * from their authored definition data.
+	 */
+	virtual bool HasItemCapability(const FGameplayTag& CapabilityTag) const;
+
+	/**
 	 * Gameplay-authoritative time, in seconds, from selecting this item until
 	 * Equipment considers it ready for item actions. Presentation may visually
 	 * represent the same transition, but animation never determines readiness.

@@ -27,6 +27,11 @@ FGameplayTag AEnclaveWeapon::GetItemType() const
 	return WeaponDefinition->GetWeaponType();
 }
 
+bool AEnclaveWeapon::HasItemCapability(const FGameplayTag& CapabilityTag) const
+{
+	return IsValid(WeaponDefinition) && WeaponDefinition->HasItemCapability(CapabilityTag);
+}
+
 float AEnclaveWeapon::GetEquipDuration() const
 {
 	return IsValid(WeaponDefinition) ? WeaponDefinition->GetEquipDuration() : Super::GetEquipDuration();

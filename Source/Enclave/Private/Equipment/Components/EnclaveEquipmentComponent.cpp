@@ -3,9 +3,9 @@
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 
 #include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
-#include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
 #include "GameplayTags/EnclaveInputTags.h"
+#include "GameplayTags/EnclaveItemTags.h"
 #include "GameplayTags/EnclavePresentationTags.h"
 
 #include "AbilitySystemComponent.h"
@@ -344,7 +344,7 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 
 	for (const TObjectPtr<AEnclaveItem>& Item : ItemSource->GetSourceItems())
 	{
-		if (IsValid(Item) && Item->Implements<UEnclaveWieldableInterface>())
+		if (IsValid(Item) && Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
 		{
 			WieldableCache.Add(Item);
 		}

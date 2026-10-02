@@ -28,6 +28,9 @@ class ENCLAVE_API UEnclaveWeaponDefinition : public UPrimaryDataAsset
 
 public:
 
+	UEnclaveWeaponDefinition();
+
+	bool HasItemCapability(const FGameplayTag& CapabilityTag) const { return ItemCapabilities.HasTagExact(CapabilityTag); }
 	const FGameplayTagContainer& GetWeaponTags() const { return WeaponTags; }
 	const FGameplayTag& GetWeaponType() const { return WeaponType; }
 
@@ -38,6 +41,14 @@ public:
 	float GetEquipDuration() const { return EquipDuration; }
 
 private:
+	/**
+	 * Semantic capabilities exposed to systems that operate on generic items.
+	 * Weapon definitions are wieldable by default; additional item capabilities
+	 * can be authored here without introducing marker interfaces.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Item.Capability"))
+	FGameplayTagContainer ItemCapabilities;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon"))
 	FGameplayTagContainer WeaponTags;
 

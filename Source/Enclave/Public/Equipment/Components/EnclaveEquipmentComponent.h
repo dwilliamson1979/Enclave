@@ -160,7 +160,7 @@ private:
 	UPROPERTY(Transient)
 	TScriptInterface<IEnclaveItemSourceInterface> ItemSource;
 
-	/** Subset of the item source's items that implement IEnclaveWieldableInterface. Rebuilt only on source-change notifications. */
+	/** Subset of the item source's items that declare Item.Capability.Wieldable. Rebuilt only on source-change notifications. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AEnclaveItem>> WieldableCache;
 };

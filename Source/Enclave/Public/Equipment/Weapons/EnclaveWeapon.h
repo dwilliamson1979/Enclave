@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Equipment/Items/EnclaveItem.h"
-#include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "EnclaveWeapon.generated.h"
 
 class UEnclaveWeaponDefinition;
@@ -12,10 +11,9 @@ class UEnclaveWeaponDefinition;
 /**
  * Base class for wieldable weapons.
  *
- * Owns weapon-level identity, configuration, equip timing, and ability grants.
- * IEnclaveWieldableInterface is intentionally only a marker capability; item
- * action support and execution are resolved through GAS from the currently
- * wielded item's granted abilities.
+ * Owns weapon-level identity, configuration, equip timing, capabilities,
+ * and ability grants. Item action support and execution are resolved through
+ * GAS from the currently wielded item's granted abilities.
  *
  * Anything that only makes sense for a ranged/firearm weapon (hit detection,
  * ammo/reload state, muzzle presentation, and firearm-local action
@@ -24,7 +22,7 @@ class UEnclaveWeaponDefinition;
  * behavior.
  */
 UCLASS(Abstract, Blueprintable)
-class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem, public IEnclaveWieldableInterface
+class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem
 {
 	GENERATED_BODY()
 
@@ -33,6 +31,7 @@ public:
 	AEnclaveWeapon();
 
 	virtual FGameplayTag GetItemType() const override;
+	virtual bool HasItemCapability(const FGameplayTag& CapabilityTag) const override;
 	virtual float GetEquipDuration() const override;
 	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const override;
 
