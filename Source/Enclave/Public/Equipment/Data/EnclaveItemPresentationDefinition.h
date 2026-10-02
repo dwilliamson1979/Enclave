@@ -113,6 +113,11 @@ class ENCLAVE_API UEnclaveItemPresentationDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+#if WITH_EDITOR
+	/** Flags choreographed actions that have no montage containing their matching choreography notify. */
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
+
 	/** Most specific row for ItemType, walking up its parent tags; nullptr if none match. */
 	const FEnclaveItemPresentationMapping* FindPresentationMapping(const FGameplayTag& ItemType) const;
 

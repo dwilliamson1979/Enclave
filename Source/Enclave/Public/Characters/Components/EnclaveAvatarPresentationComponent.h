@@ -49,7 +49,8 @@ private:
 	bool AttachItem(AEnclaveItem* Item);
 	void LinkAnimLayers(const FGameplayTag& ItemType);
 	void UnlinkAnimLayers(const FGameplayTag& ItemType);
-	void PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
+	bool MontageContainsChoreographyNotify(const UAnimMontage* Montage, const FGameplayTag& Action) const;
+	bool PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
 	void StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const;
 	void BeginChoreographedItemAction(const FEnclaveItemPresentationActionEvent& Event);
 	void EndChoreographedItemAction(const FGameplayTag& Action);

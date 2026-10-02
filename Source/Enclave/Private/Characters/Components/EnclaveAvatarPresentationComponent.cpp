@@ -4,6 +4,7 @@
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/Notifies/EnclaveAnimNotify_ItemPresentationAction.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Debug/EnclaveDebug.h"
 #include "Equipment/Data/EnclaveItemPresentationDefinition.h"
@@ -69,6 +70,7 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 	switch (Event.Phase)
 	{
 	case EEnclaveItemPresentationActionPhase::Started:
+	{
 		// Register notify-driven item choreography before starting the avatar
 		// montage. A notify authored at montage time 0 can then safely resolve the
 		// active item/action on its first animation update.
@@ -77,20 +79,38 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 			BeginChoreographedItemAction(Event);
 		}
 
-		if (Presentation)
-		{
-			PlayMontageOnMesh(FirstPersonMesh, Presentation->FirstPerson, Event.Duration);
-			PlayMontageOnMesh(ThirdPersonMesh, Presentation->ThirdPerson, Event.Duration);
-		}
+		const bool bFirstPersonHasChoreographyNotify =
+			bChoreographedItemPresentation && MontageContainsChoreographyNotify(Presentation->FirstPerson, Event.Action);
+		const bool bThirdPersonHasChoreographyNotify =
+			bChoreographedItemPresentation && MontageContainsChoreographyNotify(Presentation->ThirdPerson, Event.Action);
 
-		// Immediate actions start their item-local presentation with the semantic
-		// action. Choreographed actions wait for the avatar animation to emit the
-		// authored presentation point.
-		if (!bChoreographedItemPresentation && IsValid(Event.Item))
+		const bool bFirstPersonPlayed = Presentation && PlayMontageOnMesh(FirstPersonMesh, Presentation->FirstPerson, Event.Duration);
+		const bool bThirdPersonPlayed = Presentation && PlayMontageOnMesh(ThirdPersonMesh, Presentation->ThirdPerson, Event.Duration);
+
+		if (bChoreographedItemPresentation)
 		{
+			const bool bHasViableChoreographyPath =
+				(bFirstPersonHasChoreographyNotify && bFirstPersonPlayed) ||
+				(bThirdPersonHasChoreographyNotify && bThirdPersonPlayed);
+
+			if (!bHasViableChoreographyPath)
+			{
+				UE_LOG(LogEnclaveAvatarPresentation, Warning,
+					TEXT("%s: choreographed presentation action %s for item type %s has no playable avatar montage containing a matching choreography notify; starting item presentation immediately."),
+					*GetNameSafe(GetOwner()), *Event.Action.ToString(), *Event.ItemType.ToString());
+
+				// Use the same idempotent path a real AnimNotify uses so duration
+				// accounting and duplicate protection remain centralized.
+				HandleItemPresentationChoreography(Event.Action);
+			}
+		}
+		else if (IsValid(Event.Item))
+		{
+			// Immediate actions start their item-local presentation with the semantic action.
 			Event.Item->StartPresentationAction(Event.Action, Event.Duration);
 		}
 		break;
+	}
 
 	case EEnclaveItemPresentationActionPhase::Ended:
 		if (Presentation)
@@ -303,13 +323,34 @@ void UEnclaveAvatarPresentationComponent::UnlinkAnimLayers(const FGameplayTag& I
 	}
 }
 
-void UEnclaveAvatarPresentationComponent::PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const
+bool UEnclaveAvatarPresentationComponent::MontageContainsChoreographyNotify(const UAnimMontage* Montage, const FGameplayTag& Action) const
+{
+	if (!IsValid(Montage) || !Action.IsValid())
+	{
+		return false;
+	}
+
+	for (const FAnimNotifyEvent& NotifyEvent : Montage->Notifies)
+	{
+		const UEnclaveAnimNotify_ItemPresentationAction* PresentationNotify =
+			Cast<UEnclaveAnimNotify_ItemPresentationAction>(NotifyEvent.Notify.Get());
+
+		if (PresentationNotify && PresentationNotify->GetAction().MatchesTagExact(Action))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UEnclaveAvatarPresentationComponent::PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const
 {
 	UAnimInstance* AnimInstance = (IsValid(MeshComp) && Montage) ? MeshComp->GetAnimInstance() : nullptr;
 
 	if (!AnimInstance)
 	{
-		return;
+		return false;
 	}
 
 	const float MontageLength = Montage->GetPlayLength();
@@ -319,7 +360,10 @@ void UEnclaveAvatarPresentationComponent::PlayMontageOnMesh(USkeletalMeshCompone
 	{
 		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: montage %s failed to play on %s - does its skeleton match the mesh's?"),
 			*GetNameSafe(GetOwner()), *GetNameSafe(Montage), *GetNameSafe(MeshComp));
+		return false;
 	}
+
+	return true;
 }
 
 void UEnclaveAvatarPresentationComponent::StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const

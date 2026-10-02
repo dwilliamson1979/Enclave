@@ -23,6 +23,9 @@ public:
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 	virtual FString GetNotifyName_Implementation() const override;
 
+	/** Semantic action this notify releases for item-local presentation. */
+	const FGameplayTag& GetAction() const { return Action; }
+
 private:
 	/** Semantic Presentation.Item.Action.* action whose item-local presentation should begin here. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (AllowPrivateAccess = "true", Categories = "Presentation.Item.Action"))
