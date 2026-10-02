@@ -55,6 +55,11 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation(AEnclaveI
 
 void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event)
 {
+	if (!ShouldRunTransientPresentation())
+	{
+		return;
+	}
+
 	const FEnclaveItemPresentationMontages* Presentation =
 		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindItemPresentationMontages(Event.ItemType, Event.Action) : nullptr;
 
@@ -108,6 +113,11 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 
 void UEnclaveAvatarPresentationComponent::HandleItemPresentationChoreography(const FGameplayTag& Action)
 {
+	if (!ShouldRunTransientPresentation())
+	{
+		return;
+	}
+
 	FActiveChoreographedItemAction* ActiveAction = ActiveChoreographedItemActions.Find(Action);
 
 	if (!ActiveAction || ActiveAction->bItemPresentationStarted)
@@ -176,6 +186,12 @@ void UEnclaveAvatarPresentationComponent::EndChoreographedItemAction(const FGame
 	}
 
 	ActiveChoreographedItemActions.Remove(Action);
+}
+
+bool UEnclaveAvatarPresentationComponent::ShouldRunTransientPresentation() const
+{
+	const UWorld* World = GetWorld();
+	return World && World->GetNetMode() != NM_DedicatedServer;
 }
 
 bool UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)

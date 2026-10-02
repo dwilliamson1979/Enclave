@@ -45,6 +45,7 @@ private:
 		bool bItemPresentationStarted = false;
 	};
 
+	bool ShouldRunTransientPresentation() const;
 	bool AttachItem(AEnclaveItem* Item);
 	void LinkAnimLayers(const FGameplayTag& ItemType);
 	void UnlinkAnimLayers(const FGameplayTag& ItemType);
