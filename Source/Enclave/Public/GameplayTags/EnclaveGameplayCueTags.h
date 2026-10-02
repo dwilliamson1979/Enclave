@@ -10,9 +10,10 @@
  *
  * These drive purely cosmetic responses (avatar/item montages, muzzle flash,
  * fire sound) triggered off an ability's activation without that ability
- * knowing how they are rendered. UEnclaveGameplayCueNotify translates the
- * recognized item-action cues into semantic presentation events;
- * AvatarPresentation coordinates both avatar and item-local presentation.
+ * knowing how they are rendered. Each concrete UEnclaveGameplayCueNotify
+ * Blueprint configures the semantic Presentation.Item.Action.* mapping and
+ * cue lifecycle mode in Class Defaults; AvatarPresentation coordinates both
+ * avatar and item-local presentation.
  */
 namespace EnclaveGameplayTags
 {

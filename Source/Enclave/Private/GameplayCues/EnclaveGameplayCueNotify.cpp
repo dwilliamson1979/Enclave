@@ -4,8 +4,6 @@
 
 #include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "Equipment/Items/EnclaveItem.h"
-#include "GameplayTags/EnclaveGameplayCueTags.h"
-#include "GameplayTags/EnclavePresentationTags.h"
 
 bool UEnclaveGameplayCueNotify::OnExecute_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const
 {
@@ -29,56 +27,48 @@ bool UEnclaveGameplayCueNotify::OnRemove_Implementation(AActor* MyTarget, const 
 
 bool UEnclaveGameplayCueNotify::ForwardCue(AActor* MyTarget, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const
 {
-	return ForwardToAvatarPresentation(MyTarget, GetCueTag(Parameters), EventType, Parameters);
-}
+	if (!PresentationAction.IsValid())
+	{
+		return false;
+	}
 
-bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, FGameplayTag CueTag, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const
-{
-	FGameplayTag PresentationAction;
 	EEnclaveItemPresentationActionPhase Phase = EEnclaveItemPresentationActionPhase::Started;
 	float Duration = 0.0f;
 
-	if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_Fire))
+	switch (PresentationMode)
 	{
+	case EEnclaveGameplayCuePresentationMode::OneShot:
 		if (EventType != EGameplayCueEvent::Executed)
 		{
 			return false;
 		}
+		break;
 
-		PresentationAction = EnclaveGameplayTags::Presentation_Item_Action_Fire;
-	}
-	else if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_DryFire))
-	{
-		if (EventType != EGameplayCueEvent::Executed)
-		{
-			return false;
-		}
-
-		PresentationAction = EnclaveGameplayTags::Presentation_Item_Action_DryFire;
-	}
-	else if (CueTag.MatchesTagExact(EnclaveGameplayTags::GameplayCue_Weapon_Reload))
-	{
+	case EEnclaveGameplayCuePresentationMode::Duration:
 		if (EventType == EGameplayCueEvent::WhileActive)
 		{
-			PresentationAction = EnclaveGameplayTags::Presentation_Item_Action_Reload;
 			Phase = EEnclaveItemPresentationActionPhase::Started;
 			Duration = Parameters.RawMagnitude;
 		}
 		else if (EventType == EGameplayCueEvent::Removed)
 		{
-			PresentationAction = EnclaveGameplayTags::Presentation_Item_Action_Reload;
 			Phase = EEnclaveItemPresentationActionPhase::Ended;
 		}
 		else
 		{
 			return false;
 		}
-	}
-	else
-	{
+		break;
+
+	default:
 		return false;
 	}
 
+	return ForwardToAvatarPresentation(MyTarget, Phase, Duration, Parameters);
+}
+
+bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, EEnclaveItemPresentationActionPhase Phase, float Duration, const FGameplayCueParameters& Parameters) const
+{
 	AEnclaveItem* Item = Cast<AEnclaveItem>(Parameters.EffectCauser.Get());
 
 	AActor* AvatarActor = MyTarget;
@@ -110,12 +100,4 @@ bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, FG
 
 	AvatarPresentation->HandleItemPresentationAction(Event);
 	return true;
-}
-
-FGameplayTag UEnclaveGameplayCueNotify::GetCueTag(const FGameplayCueParameters& Parameters) const
-{
-	// OriginalTag over GameplayCueTag: the tag actually executed for this
-	// instance. Practically always the same value given exact-match
-	// dispatch, but OriginalTag is the more correct one to forward.
-	return Parameters.OriginalTag.IsValid() ? Parameters.OriginalTag : GameplayCueTag;
 }

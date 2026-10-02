@@ -21,9 +21,10 @@
  *   UEnclaveGA_Fire lists in its ActivationBlockedTags.
  * - GameplayCue.Weapon.Reload is ADDED (not executed) with
  *   bRemoveOnAbilityEnd, carrying the reload duration in RawMagnitude.
- *   UEnclaveGameplayCueNotify translates WhileActive/Removed into semantic
- *   Reload Started/Ended events; AvatarPresentation coordinates both the
- *   avatar and originating item's cosmetic response.
+ *   Its concrete UEnclaveGameplayCueNotify Blueprint is configured as a
+ *   Duration presentation cue, so WhileActive/Removed become semantic Reload
+ *   Started/Ended events; AvatarPresentation coordinates both the avatar and
+ *   originating item's cosmetic response.
  * - Timing is data-driven: the server waits GetReloadDuration() seconds,
  *   then calls CompleteReload() and ends the ability. The animation bends
  *   to fit the number, never the other way around, so reload speed
