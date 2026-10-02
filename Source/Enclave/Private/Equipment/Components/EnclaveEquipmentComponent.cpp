@@ -439,10 +439,10 @@ void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* Pre
 		return;
 	}
 
-	if (IsValid(PreviousItem) && PreviousItem != NewItem)
-	{
-		AvatarPresentation->ClearWieldedItemPresentation(PreviousItem);
-	}
+	// AvatarPresentation owns the persistent presentation state it applied, so
+	// always let it tear that state down before reconciliation. This still works
+	// when PreviousItem has already been destroyed and the local weak pointer is stale.
+	AvatarPresentation->ClearWieldedItemPresentation();
 
 	if (IsValid(NewItem))
 	{

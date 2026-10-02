@@ -29,6 +29,19 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 		return;
 	}
 
+	// Presentation owns the persistent state it applied. If another caller asks
+	// us to present a different item without clearing first, tear down the old
+	// state here so cleanup never depends on the old gameplay object surviving.
+	if (PresentedWieldedItemState.IsActive())
+	{
+		if (PresentedWieldedItemState.Item.Get() == Item)
+		{
+			return;
+		}
+
+		ClearWieldedItemPresentation();
+	}
+
 	// Keep a failed presentation invisible rather than leaving the item at its
 	// previous/world transform. Presentation failure does not alter equipment state.
 	Item->SetActorHiddenInGame(true);
@@ -38,19 +51,33 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 		return;
 	}
 
-	LinkAnimLayers(Item->GetItemType());
+	PresentedWieldedItemState.Item = Item;
+	PresentedWieldedItemState.ItemType = Item->GetItemType();
+	PresentedWieldedItemState.bIsActive = true;
+
+	LinkAnimLayers(PresentedWieldedItemState.ItemType);
 	Item->SetActorHiddenInGame(false);
 }
 
-void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation(AEnclaveItem* Item)
+void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 {
-	if (!IsValid(Item))
+	// Transient choreography belongs to the presentation being removed. Cancel
+	// it first so late notifies from an old montage cannot affect the next item.
+	EndAllChoreographedItemActions();
+
+	if (!PresentedWieldedItemState.IsActive())
 	{
 		return;
 	}
 
-	UnlinkAnimLayers(Item->GetItemType());
-	Item->SetActorHiddenInGame(true);
+	UnlinkPresentedAnimLayers();
+
+	if (AEnclaveItem* Item = PresentedWieldedItemState.Item.Get(); IsValid(Item))
+	{
+		Item->SetActorHiddenInGame(true);
+	}
+
+	PresentedWieldedItemState.Reset();
 }
 
 
@@ -183,6 +210,7 @@ void UEnclaveAvatarPresentationComponent::BeginChoreographedItemAction(const FEn
 {
 	FActiveChoreographedItemAction& ActiveAction = ActiveChoreographedItemActions.FindOrAdd(Event.Action);
 	ActiveAction.Item = Event.Item;
+	ActiveAction.ItemType = Event.ItemType;
 	ActiveAction.Duration = Event.Duration;
 	ActiveAction.StartTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 	ActiveAction.bItemPresentationStarted = false;
@@ -206,6 +234,31 @@ void UEnclaveAvatarPresentationComponent::EndChoreographedItemAction(const FGame
 	}
 
 	ActiveChoreographedItemActions.Remove(Action);
+}
+
+void UEnclaveAvatarPresentationComponent::EndAllChoreographedItemActions()
+{
+	TArray<FGameplayTag> ActiveActions;
+	ActiveChoreographedItemActions.GenerateKeyArray(ActiveActions);
+
+	for (const FGameplayTag& Action : ActiveActions)
+	{
+		if (const FActiveChoreographedItemAction* ActiveAction = ActiveChoreographedItemActions.Find(Action))
+		{
+			const FEnclaveItemPresentationMontages* Presentation =
+				IsValid(ItemPresentationDefinition)
+					? ItemPresentationDefinition->FindItemPresentationMontages(ActiveAction->ItemType, Action)
+					: nullptr;
+
+			if (Presentation)
+			{
+				StopMontageOnMesh(FirstPersonMesh, Presentation->FirstPerson);
+				StopMontageOnMesh(ThirdPersonMesh, Presentation->ThirdPerson);
+			}
+		}
+
+		EndChoreographedItemAction(Action);
+	}
 }
 
 bool UEnclaveAvatarPresentationComponent::ShouldRunTransientPresentation() const
@@ -294,32 +347,26 @@ void UEnclaveAvatarPresentationComponent::LinkAnimLayers(const FGameplayTag& Ite
 	if (IsValid(FirstPersonMesh) && PresentationMapping->FirstPersonAnimLayers)
 	{
 		FirstPersonMesh->LinkAnimClassLayers(PresentationMapping->FirstPersonAnimLayers);
+		PresentedWieldedItemState.FirstPersonAnimLayers = PresentationMapping->FirstPersonAnimLayers;
 	}
 
 	if (IsValid(ThirdPersonMesh) && PresentationMapping->ThirdPersonAnimLayers)
 	{
 		ThirdPersonMesh->LinkAnimClassLayers(PresentationMapping->ThirdPersonAnimLayers);
+		PresentedWieldedItemState.ThirdPersonAnimLayers = PresentationMapping->ThirdPersonAnimLayers;
 	}
 }
 
-void UEnclaveAvatarPresentationComponent::UnlinkAnimLayers(const FGameplayTag& ItemType)
+void UEnclaveAvatarPresentationComponent::UnlinkPresentedAnimLayers()
 {
-	const FEnclaveItemPresentationMapping* PresentationMapping =
-		IsValid(ItemPresentationDefinition) ? ItemPresentationDefinition->FindPresentationMapping(ItemType) : nullptr;
-
-	if (!PresentationMapping)
+	if (IsValid(FirstPersonMesh) && PresentedWieldedItemState.FirstPersonAnimLayers)
 	{
-		return;
+		FirstPersonMesh->UnlinkAnimClassLayers(PresentedWieldedItemState.FirstPersonAnimLayers);
 	}
 
-	if (IsValid(FirstPersonMesh) && PresentationMapping->FirstPersonAnimLayers)
+	if (IsValid(ThirdPersonMesh) && PresentedWieldedItemState.ThirdPersonAnimLayers)
 	{
-		FirstPersonMesh->UnlinkAnimClassLayers(PresentationMapping->FirstPersonAnimLayers);
-	}
-
-	if (IsValid(ThirdPersonMesh) && PresentationMapping->ThirdPersonAnimLayers)
-	{
-		ThirdPersonMesh->UnlinkAnimClassLayers(PresentationMapping->ThirdPersonAnimLayers);
+		ThirdPersonMesh->UnlinkAnimClassLayers(PresentedWieldedItemState.ThirdPersonAnimLayers);
 	}
 }
 

@@ -10,7 +10,45 @@
 class AEnclaveItem;
 class UEnclaveItemPresentationDefinition;
 class USkeletalMeshComponent;
+class UAnimInstance;
 class UAnimMontage;
+
+/**
+ * Runtime record of the persistent wielded-item presentation this component
+ * actually applied. Teardown uses this state rather than querying the gameplay
+ * item again, because that item may already have been destroyed or become stale.
+ */
+USTRUCT()
+struct ENCLAVE_API FEnclavePresentedWieldedItemState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AEnclaveItem> Item;
+
+	UPROPERTY(Transient)
+	FGameplayTag ItemType;
+
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> FirstPersonAnimLayers;
+
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> ThirdPersonAnimLayers;
+
+	UPROPERTY(Transient)
+	bool bIsActive = false;
+
+	bool IsActive() const { return bIsActive; }
+
+	void Reset()
+	{
+		Item.Reset();
+		ItemType = FGameplayTag();
+		FirstPersonAnimLayers = nullptr;
+		ThirdPersonAnimLayers = nullptr;
+		bIsActive = false;
+	}
+};
 
 /**
  * Coordinates how gameplay state and semantic gameplay events are presented
@@ -32,7 +70,7 @@ public:
 
 	// IEnclaveAvatarPresentationInterface
 	virtual void PresentWieldedItem(AEnclaveItem* Item) override;
-	virtual void ClearWieldedItemPresentation(AEnclaveItem* Item) override;
+	virtual void ClearWieldedItemPresentation() override;
 	virtual void HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event) override;
 	virtual void HandleItemPresentationChoreography(const FGameplayTag& Action) override;
 
@@ -40,6 +78,7 @@ private:
 	struct FActiveChoreographedItemAction
 	{
 		TWeakObjectPtr<AEnclaveItem> Item;
+		FGameplayTag ItemType;
 		float Duration = 0.0f;
 		float StartTimeSeconds = 0.0f;
 		bool bItemPresentationStarted = false;
@@ -48,12 +87,13 @@ private:
 	bool ShouldRunTransientPresentation() const;
 	bool AttachItem(AEnclaveItem* Item);
 	void LinkAnimLayers(const FGameplayTag& ItemType);
-	void UnlinkAnimLayers(const FGameplayTag& ItemType);
+	void UnlinkPresentedAnimLayers();
 	bool MontageContainsChoreographyNotify(const UAnimMontage* Montage, const FGameplayTag& Action) const;
 	bool PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
 	void StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const;
 	void BeginChoreographedItemAction(const FEnclaveItemPresentationActionEvent& Event);
 	void EndChoreographedItemAction(const FGameplayTag& Action);
+	void EndAllChoreographedItemActions();
 
 	/** How equipment is presented on this avatar body plan. */
 	UPROPERTY(EditDefaultsOnly, Category = "Presentation|Equipment")
@@ -69,9 +109,13 @@ private:
 	UPROPERTY()
 	TObjectPtr<USkeletalMeshComponent> ThirdPersonMesh = nullptr;
 
+	/** Persistent wielded-item presentation actually applied by this component. */
+	UPROPERTY(Transient)
+	FEnclavePresentedWieldedItemState PresentedWieldedItemState;
+
 	/**
-	 * Lasting item actions whose item-local animation is waiting for an
-	 * authored avatar AnimNotify. Keyed by semantic Presentation.Item.Action.*
+	 * Choreographed item actions whose item-local presentation is coordinated
+	 * by an authored avatar AnimNotify. Keyed by semantic Presentation.Item.Action.*
 	 * tag so duplicate FP/TP notifies are naturally idempotent.
 	 */
 	TMap<FGameplayTag, FActiveChoreographedItemAction> ActiveChoreographedItemActions;

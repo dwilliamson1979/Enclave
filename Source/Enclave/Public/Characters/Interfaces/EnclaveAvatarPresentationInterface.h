@@ -77,8 +77,8 @@ public:
 	/** Present Item as the avatar's currently wielded item. */
 	virtual void PresentWieldedItem(AEnclaveItem* Item) = 0;
 
-	/** Remove presentation associated with Item no longer being wielded. */
-	virtual void ClearWieldedItemPresentation(AEnclaveItem* Item) = 0;
+	/** Remove the persistent wielded-item presentation currently applied by the avatar. */
+	virtual void ClearWieldedItemPresentation() = 0;
 
 	/** Present a semantic action performed by the avatar's currently wielded item. */
 	virtual void HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event) = 0;
