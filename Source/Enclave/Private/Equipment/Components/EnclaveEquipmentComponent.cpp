@@ -457,6 +457,7 @@ void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* Pre
 			DrawEvent.Item = NewItem;
 			DrawEvent.ItemType = NewItem->GetItemType();
 			DrawEvent.Action = EnclaveGameplayTags::Presentation_Item_Action_Draw;
+			DrawEvent.Lifecycle = EEnclaveItemPresentationActionLifecycle::OneShot;
 			DrawEvent.Duration = FMath::Max(0.0f, NewItem->GetEquipDuration());
 			AvatarPresentation->HandleItemPresentationAction(DrawEvent);
 		}

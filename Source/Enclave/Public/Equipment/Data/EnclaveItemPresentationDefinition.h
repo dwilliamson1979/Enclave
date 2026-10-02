@@ -15,7 +15,7 @@ class UAnimMontage;
  *
  * Immediate starts the item as soon as the presentation action starts.
  * Choreographed waits until the avatar animation reaches an authored semantic
- * choreography point (currently emitted by UEnclaveAnimNotify_ItemPresentationAction).
+ * choreography point emitted by a UEnclaveAnimNotify_ItemPresentationAction authored directly on the montage timeline.
  */
 UENUM(BlueprintType)
 enum class EEnclaveItemPresentationTiming : uint8
@@ -114,7 +114,7 @@ class ENCLAVE_API UEnclaveItemPresentationDefinition : public UPrimaryDataAsset
 
 public:
 #if WITH_EDITOR
-	/** Flags choreographed actions that have no montage containing their matching choreography notify. */
+	/** Flags choreographed actions that have no matching montage-authored choreography notify. */
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif
 

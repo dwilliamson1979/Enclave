@@ -61,9 +61,10 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 
 void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 {
-	// Transient choreography belongs to the presentation being removed. Cancel
-	// it first so late notifies from an old montage cannot affect the next item.
-	EndAllChoreographedItemActions();
+	// Active item actions belong to the presentation being removed. End them
+	// first so lasting Immediate actions are cleaned up too, and late notifies
+	// from old choreographed montages cannot affect the next item.
+	EndAllActiveItemPresentationActions();
 
 	if (!PresentedWieldedItemState.IsActive())
 	{
@@ -79,7 +80,6 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 
 	PresentedWieldedItemState.Reset();
 }
-
 
 void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event)
 {
@@ -98,18 +98,23 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 	{
 	case EEnclaveItemPresentationActionPhase::Started:
 	{
-		// Register notify-driven item choreography before starting the avatar
-		// montage. A notify authored at montage time 0 can then safely resolve the
-		// active item/action on its first animation update.
-		if (bChoreographedItemPresentation)
+		// Duration actions need deterministic teardown even when their item-local
+		// presentation starts immediately. Choreographed one-shots also need a
+		// short-lived record while waiting for their authored montage notify.
+		const bool bShouldTrackAction =
+			Event.Lifecycle == EEnclaveItemPresentationActionLifecycle::Duration || bChoreographedItemPresentation;
+
+		if (bShouldTrackAction)
 		{
-			BeginChoreographedItemAction(Event);
+			BeginActiveItemPresentationAction(Event, Presentation, bChoreographedItemPresentation);
 		}
 
 		const bool bFirstPersonHasChoreographyNotify =
-			bChoreographedItemPresentation && MontageContainsChoreographyNotify(Presentation->FirstPerson, Event.Action);
+			bChoreographedItemPresentation &&
+			UEnclaveAnimNotify_ItemPresentationAction::MontageContainsAction(Presentation->FirstPerson, Event.Action);
 		const bool bThirdPersonHasChoreographyNotify =
-			bChoreographedItemPresentation && MontageContainsChoreographyNotify(Presentation->ThirdPerson, Event.Action);
+			bChoreographedItemPresentation &&
+			UEnclaveAnimNotify_ItemPresentationAction::MontageContainsAction(Presentation->ThirdPerson, Event.Action);
 
 		const bool bFirstPersonPlayed = Presentation && PlayMontageOnMesh(FirstPersonMesh, Presentation->FirstPerson, Event.Duration);
 		const bool bThirdPersonPlayed = Presentation && PlayMontageOnMesh(ThirdPersonMesh, Presentation->ThirdPerson, Event.Duration);
@@ -123,7 +128,7 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 			if (!bHasViableChoreographyPath)
 			{
 				UE_LOG(LogEnclaveAvatarPresentation, Warning,
-					TEXT("%s: choreographed presentation action %s for item type %s has no playable avatar montage containing a matching choreography notify; starting item presentation immediately."),
+					TEXT("%s: choreographed presentation action %s for item type %s has no playable avatar montage containing a matching montage-authored choreography notify; starting item presentation immediately."),
 					*GetNameSafe(GetOwner()), *Event.Action.ToString(), *Event.ItemType.ToString());
 
 				// Use the same idempotent path a real AnimNotify uses so duration
@@ -133,28 +138,41 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 		}
 		else if (IsValid(Event.Item))
 		{
-			// Immediate actions start their item-local presentation with the semantic action.
 			Event.Item->StartPresentationAction(Event.Action, Event.Duration);
+
+			if (FActiveItemPresentationAction* ActiveAction = ActiveItemPresentationActions.Find(Event.Action))
+			{
+				ActiveAction->bItemPresentationStarted = true;
+			}
 		}
 		break;
 	}
 
 	case EEnclaveItemPresentationActionPhase::Ended:
-		if (Presentation)
+	{
+		FActiveItemPresentationAction* ActiveAction = ActiveItemPresentationActions.Find(Event.Action);
+
+		if (!ActiveAction)
 		{
-			StopMontageOnMesh(FirstPersonMesh, Presentation->FirstPerson);
-			StopMontageOnMesh(ThirdPersonMesh, Presentation->ThirdPerson);
+			// Duration Starts are always tracked. An untracked Ended event is therefore
+			// stale/out-of-order and must not tear down presentation for a newer item.
+			break;
 		}
 
-		if (bChoreographedItemPresentation)
+		AEnclaveItem* ActiveItem = ActiveAction->Item.Get();
+
+		if ((IsValid(Event.Item) && ActiveItem != Event.Item.Get()) ||
+			(!IsValid(Event.Item) && IsValid(ActiveItem)))
 		{
-			EndChoreographedItemAction(Event.Action);
+			// A late Removed from a previously wielded item can arrive after the same
+			// semantic action has already started on the replacement item. Never let
+			// that old lifecycle event terminate the new presentation instance.
+			break;
 		}
-		else if (IsValid(Event.Item))
-		{
-			Event.Item->EndPresentationAction(Event.Action);
-		}
+
+		EndActiveItemPresentationAction(Event.Action);
 		break;
+	}
 	}
 }
 
@@ -165,9 +183,9 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationChoreography(con
 		return;
 	}
 
-	FActiveChoreographedItemAction* ActiveAction = ActiveChoreographedItemActions.Find(Action);
+	FActiveItemPresentationAction* ActiveAction = ActiveItemPresentationActions.Find(Action);
 
-	if (!ActiveAction || ActiveAction->bItemPresentationStarted)
+	if (!ActiveAction || !ActiveAction->bChoreographed || ActiveAction->bItemPresentationStarted)
 	{
 		return;
 	}
@@ -176,6 +194,10 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationChoreography(con
 
 	if (!IsValid(Item))
 	{
+		if (ActiveAction->Lifecycle == EEnclaveItemPresentationActionLifecycle::OneShot)
+		{
+			ActiveItemPresentationActions.Remove(Action);
+		}
 		return;
 	}
 
@@ -189,11 +211,17 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationChoreography(con
 		RemainingDuration = FMath::Max(0.0f, ActiveAction->Duration - ElapsedDuration);
 
 		// If the gameplay-owned presentation window has effectively ended, do
-		// not start a montage at an extreme play rate just because a late notify
-		// arrived. The Ended event will clean up the tracked action normally.
+		// not start an item montage at an extreme play rate just because a late
+		// notify arrived. Duration actions remain tracked until Ended/teardown;
+		// one-shots have no later lifecycle event and can be released now.
 		if (RemainingDuration <= KINDA_SMALL_NUMBER)
 		{
 			ActiveAction->bItemPresentationStarted = true;
+
+			if (ActiveAction->Lifecycle == EEnclaveItemPresentationActionLifecycle::OneShot)
+			{
+				ActiveItemPresentationActions.Remove(Action);
+			}
 			return;
 		}
 	}
@@ -203,27 +231,44 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationChoreography(con
 	// Mark started before dispatch so duplicate notifies are idempotent.
 	ActiveAction->bItemPresentationStarted = true;
 	Item->StartPresentationAction(Action, RemainingDuration);
+
+	// A choreographed one-shot only needs tracking while waiting for its first
+	// valid notify. Duration actions stay active so item swap/death can end the
+	// item-local portion even if the cue's Removed event never arrives.
+	if (ActiveAction->Lifecycle == EEnclaveItemPresentationActionLifecycle::OneShot)
+	{
+		ActiveItemPresentationActions.Remove(Action);
+	}
 }
 
-
-void UEnclaveAvatarPresentationComponent::BeginChoreographedItemAction(const FEnclaveItemPresentationActionEvent& Event)
+void UEnclaveAvatarPresentationComponent::BeginActiveItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event, const FEnclaveItemPresentationMontages* Presentation, bool bChoreographed)
 {
-	FActiveChoreographedItemAction& ActiveAction = ActiveChoreographedItemActions.FindOrAdd(Event.Action);
+	// Re-starting the same semantic action replaces any stale presentation
+	// record rather than inheriting teardown state from the previous instance.
+	EndActiveItemPresentationAction(Event.Action);
+
+	FActiveItemPresentationAction& ActiveAction = ActiveItemPresentationActions.Add(Event.Action);
 	ActiveAction.Item = Event.Item;
-	ActiveAction.ItemType = Event.ItemType;
+	ActiveAction.FirstPersonMontage = Presentation ? Presentation->FirstPerson.Get() : nullptr;
+	ActiveAction.ThirdPersonMontage = Presentation ? Presentation->ThirdPerson.Get() : nullptr;
+	ActiveAction.Lifecycle = Event.Lifecycle;
 	ActiveAction.Duration = Event.Duration;
 	ActiveAction.StartTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	ActiveAction.bChoreographed = bChoreographed;
 	ActiveAction.bItemPresentationStarted = false;
 }
 
-void UEnclaveAvatarPresentationComponent::EndChoreographedItemAction(const FGameplayTag& Action)
+bool UEnclaveAvatarPresentationComponent::EndActiveItemPresentationAction(const FGameplayTag& Action)
 {
-	FActiveChoreographedItemAction* ActiveAction = ActiveChoreographedItemActions.Find(Action);
+	FActiveItemPresentationAction* ActiveAction = ActiveItemPresentationActions.Find(Action);
 
 	if (!ActiveAction)
 	{
-		return;
+		return false;
 	}
+
+	StopMontageOnMesh(FirstPersonMesh, ActiveAction->FirstPersonMontage.Get());
+	StopMontageOnMesh(ThirdPersonMesh, ActiveAction->ThirdPersonMontage.Get());
 
 	if (ActiveAction->bItemPresentationStarted)
 	{
@@ -233,31 +278,18 @@ void UEnclaveAvatarPresentationComponent::EndChoreographedItemAction(const FGame
 		}
 	}
 
-	ActiveChoreographedItemActions.Remove(Action);
+	ActiveItemPresentationActions.Remove(Action);
+	return true;
 }
 
-void UEnclaveAvatarPresentationComponent::EndAllChoreographedItemActions()
+void UEnclaveAvatarPresentationComponent::EndAllActiveItemPresentationActions()
 {
 	TArray<FGameplayTag> ActiveActions;
-	ActiveChoreographedItemActions.GenerateKeyArray(ActiveActions);
+	ActiveItemPresentationActions.GenerateKeyArray(ActiveActions);
 
 	for (const FGameplayTag& Action : ActiveActions)
 	{
-		if (const FActiveChoreographedItemAction* ActiveAction = ActiveChoreographedItemActions.Find(Action))
-		{
-			const FEnclaveItemPresentationMontages* Presentation =
-				IsValid(ItemPresentationDefinition)
-					? ItemPresentationDefinition->FindItemPresentationMontages(ActiveAction->ItemType, Action)
-					: nullptr;
-
-			if (Presentation)
-			{
-				StopMontageOnMesh(FirstPersonMesh, Presentation->FirstPerson);
-				StopMontageOnMesh(ThirdPersonMesh, Presentation->ThirdPerson);
-			}
-		}
-
-		EndChoreographedItemAction(Action);
+		EndActiveItemPresentationAction(Action);
 	}
 }
 
@@ -368,27 +400,6 @@ void UEnclaveAvatarPresentationComponent::UnlinkPresentedAnimLayers()
 	{
 		ThirdPersonMesh->UnlinkAnimClassLayers(PresentedWieldedItemState.ThirdPersonAnimLayers);
 	}
-}
-
-bool UEnclaveAvatarPresentationComponent::MontageContainsChoreographyNotify(const UAnimMontage* Montage, const FGameplayTag& Action) const
-{
-	if (!IsValid(Montage) || !Action.IsValid())
-	{
-		return false;
-	}
-
-	for (const FAnimNotifyEvent& NotifyEvent : Montage->Notifies)
-	{
-		const UEnclaveAnimNotify_ItemPresentationAction* PresentationNotify =
-			Cast<UEnclaveAnimNotify_ItemPresentationAction>(NotifyEvent.Notify.Get());
-
-		if (PresentationNotify && PresentationNotify->GetAction().MatchesTagExact(Action))
-		{
-			return true;
-		}
-	}
-
-	return false;
 }
 
 bool UEnclaveAvatarPresentationComponent::PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const

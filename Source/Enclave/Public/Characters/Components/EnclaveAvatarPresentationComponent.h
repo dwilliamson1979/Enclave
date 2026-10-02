@@ -12,6 +12,7 @@ class UEnclaveItemPresentationDefinition;
 class USkeletalMeshComponent;
 class UAnimInstance;
 class UAnimMontage;
+struct FEnclaveItemPresentationMontages;
 
 /**
  * Runtime record of the persistent wielded-item presentation this component
@@ -75,12 +76,15 @@ public:
 	virtual void HandleItemPresentationChoreography(const FGameplayTag& Action) override;
 
 private:
-	struct FActiveChoreographedItemAction
+	struct FActiveItemPresentationAction
 	{
 		TWeakObjectPtr<AEnclaveItem> Item;
-		FGameplayTag ItemType;
+		TWeakObjectPtr<UAnimMontage> FirstPersonMontage;
+		TWeakObjectPtr<UAnimMontage> ThirdPersonMontage;
+		EEnclaveItemPresentationActionLifecycle Lifecycle = EEnclaveItemPresentationActionLifecycle::OneShot;
 		float Duration = 0.0f;
 		float StartTimeSeconds = 0.0f;
+		bool bChoreographed = false;
 		bool bItemPresentationStarted = false;
 	};
 
@@ -88,12 +92,11 @@ private:
 	bool AttachItem(AEnclaveItem* Item);
 	void LinkAnimLayers(const FGameplayTag& ItemType);
 	void UnlinkPresentedAnimLayers();
-	bool MontageContainsChoreographyNotify(const UAnimMontage* Montage, const FGameplayTag& Action) const;
 	bool PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
 	void StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const;
-	void BeginChoreographedItemAction(const FEnclaveItemPresentationActionEvent& Event);
-	void EndChoreographedItemAction(const FGameplayTag& Action);
-	void EndAllChoreographedItemActions();
+	void BeginActiveItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event, const FEnclaveItemPresentationMontages* Presentation, bool bChoreographed);
+	bool EndActiveItemPresentationAction(const FGameplayTag& Action);
+	void EndAllActiveItemPresentationActions();
 
 	/** How equipment is presented on this avatar body plan. */
 	UPROPERTY(EditDefaultsOnly, Category = "Presentation|Equipment")
@@ -114,9 +117,10 @@ private:
 	FEnclavePresentedWieldedItemState PresentedWieldedItemState;
 
 	/**
-	 * Choreographed item actions whose item-local presentation is coordinated
-	 * by an authored avatar AnimNotify. Keyed by semantic Presentation.Item.Action.*
-	 * tag so duplicate FP/TP notifies are naturally idempotent.
+	 * Item actions that still require presentation-lifetime bookkeeping. Duration
+	 * actions remain here until Ended/teardown; choreographed one-shots remain
+	 * only while waiting for their authored montage notify. Keyed by semantic
+	 * Presentation.Item.Action.* so duplicate FP/TP notifies are idempotent.
 	 */
-	TMap<FGameplayTag, FActiveChoreographedItemAction> ActiveChoreographedItemActions;
+	TMap<FGameplayTag, FActiveItemPresentationAction> ActiveItemPresentationActions;
 };

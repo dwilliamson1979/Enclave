@@ -24,7 +24,7 @@ FGameplayTag AEnclaveWeapon::GetItemType() const
 		return FGameplayTag();
 	}
 
-	return WeaponDefinition->GetWeaponType();
+	return WeaponDefinition->GetItemType();
 }
 
 bool AEnclaveWeapon::HasItemCapability(const FGameplayTag& CapabilityTag) const

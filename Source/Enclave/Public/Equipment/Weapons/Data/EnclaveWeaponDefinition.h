@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Equipment/Data/EnclaveItemDefinition.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/EnclaveAbilityGrant.h"
 #include "EnclaveWeaponDefinition.generated.h"
@@ -11,8 +11,10 @@
 class USkeletalMesh;
 
 /**
- * Data shared by every wieldable weapon, regardless of what kind of weapon
- * it is - classification, presentation meshes, and granted abilities.
+ * Weapon-specific data shared by every wieldable weapon, regardless of what
+ * kind of weapon it is. Generic item identity/capabilities live on the
+ * UEnclaveItemDefinition base; this class adds weapon tags, presentation
+ * meshes, equip timing, and granted abilities.
  *
  * Deliberately does NOT carry anything specific to how a weapon deals
  * damage (muzzle/fire-cue presentation, trace range, damage/cooldown
@@ -22,7 +24,7 @@ class USkeletalMesh;
  * AEnclaveWeapon and AEnclaveFirearmWeapon.
  */
 UCLASS(BlueprintType)
-class ENCLAVE_API UEnclaveWeaponDefinition : public UPrimaryDataAsset
+class ENCLAVE_API UEnclaveWeaponDefinition : public UEnclaveItemDefinition
 {
 	GENERATED_BODY()
 
@@ -30,9 +32,7 @@ public:
 
 	UEnclaveWeaponDefinition();
 
-	bool HasItemCapability(const FGameplayTag& CapabilityTag) const { return ItemCapabilities.HasTagExact(CapabilityTag); }
 	const FGameplayTagContainer& GetWeaponTags() const { return WeaponTags; }
-	const FGameplayTag& GetWeaponType() const { return WeaponType; }
 
 	USkeletalMesh* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMesh* GetThirdPersonMesh() const { return ThirdPersonMesh; }
@@ -41,19 +41,8 @@ public:
 	float GetEquipDuration() const { return EquipDuration; }
 
 private:
-	/**
-	 * Semantic capabilities exposed to systems that operate on generic items.
-	 * Weapon definitions are wieldable by default; additional item capabilities
-	 * can be authored here without introducing marker interfaces.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Item.Capability"))
-	FGameplayTagContainer ItemCapabilities;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon"))
 	FGameplayTagContainer WeaponTags;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon.Type"))
-	FGameplayTag WeaponType;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USkeletalMesh> FirstPersonMesh;

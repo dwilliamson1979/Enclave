@@ -11,6 +11,16 @@ class AActor;
 class AEnclaveItem;
 
 UENUM(BlueprintType)
+enum class EEnclaveItemPresentationActionLifecycle : uint8
+{
+	/** One Started event; no matching Ended event is expected. */
+	OneShot,
+
+	/** Started remains active until a matching Ended event arrives or presentation is torn down. */
+	Duration
+};
+
+UENUM(BlueprintType)
 enum class EEnclaveItemPresentationActionPhase : uint8
 {
 	/** The action began. Instant actions (Fire, DryFire) only ever send this. */
@@ -49,7 +59,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Presentation|Equipment")
 	EEnclaveItemPresentationActionPhase Phase = EEnclaveItemPresentationActionPhase::Started;
 
-	/** Expected length in seconds when gameplay knows it; 0 for instant actions. */
+	/** Whether this action is one-shot or remains active until an Ended event. */
+	UPROPERTY(BlueprintReadOnly, Category = "Presentation|Equipment")
+	EEnclaveItemPresentationActionLifecycle Lifecycle = EEnclaveItemPresentationActionLifecycle::OneShot;
+
+	/** Expected presentation window in seconds when gameplay knows it; 0 when unspecified. */
 	UPROPERTY(BlueprintReadOnly, Category = "Presentation|Equipment")
 	float Duration = 0.0f;
 };

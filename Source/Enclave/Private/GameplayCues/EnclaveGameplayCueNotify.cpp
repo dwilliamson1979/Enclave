@@ -3,6 +3,7 @@
 #include "GameplayCues/EnclaveGameplayCueNotify.h"
 
 #include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
+#include "Debug/EnclaveDebug.h"
 #include "Equipment/Items/EnclaveItem.h"
 
 bool UEnclaveGameplayCueNotify::OnExecute_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) const
@@ -29,10 +30,13 @@ bool UEnclaveGameplayCueNotify::ForwardCue(AActor* MyTarget, EGameplayCueEvent::
 {
 	if (!PresentationAction.IsValid())
 	{
+		UE_LOG(LogEnclaveGameplayCue, Warning, TEXT("%s has no PresentationAction configured; cue presentation was ignored."),
+			*GetNameSafe(GetClass()));
 		return false;
 	}
 
 	EEnclaveItemPresentationActionPhase Phase = EEnclaveItemPresentationActionPhase::Started;
+	EEnclaveItemPresentationActionLifecycle Lifecycle = EEnclaveItemPresentationActionLifecycle::OneShot;
 	float Duration = 0.0f;
 
 	switch (PresentationMode)
@@ -45,6 +49,8 @@ bool UEnclaveGameplayCueNotify::ForwardCue(AActor* MyTarget, EGameplayCueEvent::
 		break;
 
 	case EEnclaveGameplayCuePresentationMode::Duration:
+		Lifecycle = EEnclaveItemPresentationActionLifecycle::Duration;
+
 		if (EventType == EGameplayCueEvent::WhileActive)
 		{
 			Phase = EEnclaveItemPresentationActionPhase::Started;
@@ -64,10 +70,10 @@ bool UEnclaveGameplayCueNotify::ForwardCue(AActor* MyTarget, EGameplayCueEvent::
 		return false;
 	}
 
-	return ForwardToAvatarPresentation(MyTarget, Phase, Duration, Parameters);
+	return ForwardToAvatarPresentation(MyTarget, Phase, Lifecycle, Duration, Parameters);
 }
 
-bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, EEnclaveItemPresentationActionPhase Phase, float Duration, const FGameplayCueParameters& Parameters) const
+bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, EEnclaveItemPresentationActionPhase Phase, EEnclaveItemPresentationActionLifecycle Lifecycle, float Duration, const FGameplayCueParameters& Parameters) const
 {
 	AEnclaveItem* Item = Cast<AEnclaveItem>(Parameters.EffectCauser.Get());
 
@@ -96,6 +102,7 @@ bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, EE
 	Event.ItemType = IsValid(Item) ? Item->GetItemType() : FGameplayTag();
 	Event.Action = PresentationAction;
 	Event.Phase = Phase;
+	Event.Lifecycle = Lifecycle;
 	Event.Duration = Duration;
 
 	AvatarPresentation->HandleItemPresentationAction(Event);

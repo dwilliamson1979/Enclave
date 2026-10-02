@@ -8,6 +8,7 @@
 #include "EnclaveGameplayCueNotify.generated.h"
 
 enum class EEnclaveItemPresentationActionPhase : uint8;
+enum class EEnclaveItemPresentationActionLifecycle : uint8;
 
 /**
  * Defines how a Gameplay Cue's lifecycle is translated into semantic
@@ -64,5 +65,5 @@ protected:
 	bool ForwardCue(AActor* MyTarget, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const;
 
 	/** Sends an already-resolved semantic presentation phase to avatar presentation. */
-	bool ForwardToAvatarPresentation(AActor* MyTarget, EEnclaveItemPresentationActionPhase Phase, float Duration, const FGameplayCueParameters& Parameters) const;
+	bool ForwardToAvatarPresentation(AActor* MyTarget, EEnclaveItemPresentationActionPhase Phase, EEnclaveItemPresentationActionLifecycle Lifecycle, float Duration, const FGameplayCueParameters& Parameters) const;
 };

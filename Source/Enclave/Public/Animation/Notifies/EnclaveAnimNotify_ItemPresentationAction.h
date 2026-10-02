@@ -7,6 +7,8 @@
 #include "GameplayTagContainer.h"
 #include "EnclaveAnimNotify_ItemPresentationAction.generated.h"
 
+class UAnimMontage;
+
 /**
  * Presentation-only choreography marker placed on an avatar montage.
  *
@@ -22,6 +24,13 @@ class ENCLAVE_API UEnclaveAnimNotify_ItemPresentationAction : public UAnimNotify
 public:
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 	virtual FString GetNotifyName_Implementation() const override;
+
+	/**
+	 * Returns whether Montage contains a matching choreography notify authored
+	 * directly on the montage timeline. Source-sequence notifies are deliberately
+	 * not accepted as Enclave choreography markers.
+	 */
+	static bool MontageContainsAction(const UAnimMontage* Montage, const FGameplayTag& Action);
 
 	/** Semantic action this notify releases for item-local presentation. */
 	const FGameplayTag& GetAction() const { return Action; }

@@ -4,35 +4,10 @@
 
 #if WITH_EDITOR
 #include "Animation/Notifies/EnclaveAnimNotify_ItemPresentationAction.h"
-#include "Animation/AnimMontage.h"
 #include "Misc/DataValidation.h"
 #endif
 
 #if WITH_EDITOR
-namespace
-{
-bool MontageContainsPresentationActionNotify(const UAnimMontage* Montage, const FGameplayTag& Action)
-{
-	if (!IsValid(Montage) || !Action.IsValid())
-	{
-		return false;
-	}
-
-	for (const FAnimNotifyEvent& NotifyEvent : Montage->Notifies)
-	{
-		const UEnclaveAnimNotify_ItemPresentationAction* PresentationNotify =
-			Cast<UEnclaveAnimNotify_ItemPresentationAction>(NotifyEvent.Notify.Get());
-
-		if (PresentationNotify && PresentationNotify->GetAction().MatchesTagExact(Action))
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-}
-
 EDataValidationResult UEnclaveItemPresentationDefinition::IsDataValid(FDataValidationContext& Context) const
 {
 	Super::IsDataValid(Context);
@@ -51,14 +26,14 @@ EDataValidationResult UEnclaveItemPresentationDefinition::IsDataValid(FDataValid
 				continue;
 			}
 
-			const bool bFirstPersonHasNotify = MontageContainsPresentationActionNotify(Montages.FirstPerson, Action);
-			const bool bThirdPersonHasNotify = MontageContainsPresentationActionNotify(Montages.ThirdPerson, Action);
+			const bool bFirstPersonHasNotify = UEnclaveAnimNotify_ItemPresentationAction::MontageContainsAction(Montages.FirstPerson, Action);
+			const bool bThirdPersonHasNotify = UEnclaveAnimNotify_ItemPresentationAction::MontageContainsAction(Montages.ThirdPerson, Action);
 
 			if (!bFirstPersonHasNotify && !bThirdPersonHasNotify)
 			{
 				Context.AddError(FText::Format(
 					NSLOCTEXT("EnclaveItemPresentationDefinition", "MissingChoreographyNotify",
-						"Item type {0}, action {1} is Choreographed, but neither avatar montage contains an Enclave Item Presentation Action notify for that action."),
+						"Item type {0}, action {1} is Choreographed, but neither avatar montage contains a matching Enclave Item Presentation Action notify authored directly on the montage timeline. Source-sequence notifies are not valid choreography markers."),
 					FText::FromString(ItemType.ToString()),
 					FText::FromString(Action.ToString())));
 			}

@@ -6,5 +6,5 @@
 
 UEnclaveWeaponDefinition::UEnclaveWeaponDefinition()
 {
-	ItemCapabilities.AddTag(EnclaveGameplayTags::Item_Capability_Wieldable);
+	AddItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable);
 }
