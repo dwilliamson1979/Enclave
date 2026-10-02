@@ -12,16 +12,16 @@ class UEnclaveWeaponDefinition;
 /**
  * Base class for wieldable weapons.
  *
- * Defines common weapon representation and translates generic wieldable
- * actions into weapon-specific behavior. Deliberately minimal - anything
- * that only makes sense for a *ranged* weapon (fire hit-detection, muzzle
- * presentation, the Weapon.Fire/Weapon.Reload gameplay cue response) lives
- * one level down, on AEnclaveFirearmWeapon (split out 2026-09-23), so a
- * future non-firearm wieldable (a knife, a baton) doesn't inherit a
- * Fireable contract or muzzle sockets it has no use for.
+ * Owns weapon-level identity, configuration, equip timing, and ability grants.
+ * IEnclaveWieldableInterface is intentionally only a marker capability; item
+ * action support and execution are resolved through GAS from the currently
+ * wielded item's granted abilities.
  *
- * Networking and detailed firing/reloading mechanics are intentionally left
- * to more specialized weapon implementations as those systems are introduced.
+ * Anything that only makes sense for a ranged/firearm weapon (hit detection,
+ * ammo/reload state, muzzle presentation, and firearm-local action
+ * presentation) lives one level down on AEnclaveFirearmWeapon, so a future
+ * non-firearm weapon such as a knife or baton does not inherit firearm-only
+ * behavior.
  */
 UCLASS(Abstract, Blueprintable)
 class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem, public IEnclaveWieldableInterface
@@ -36,20 +36,11 @@ public:
 	virtual float GetEquipDuration() const override;
 	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const override;
 
-	// IEnclaveWieldableInterface
-	virtual bool HandlePrimaryAction_Implementation(const FEnclaveInputEvent& InputEvent) override;
-	virtual bool HandleSecondaryAction_Implementation(const FEnclaveInputEvent& InputEvent) override;
-	virtual bool HandleTertiaryAction_Implementation(const FEnclaveInputEvent& InputEvent) override;
-
 	const UEnclaveWeaponDefinition* GetWeaponDefinition() const { return WeaponDefinition; }
 
 protected:
 
 	virtual void BeginPlay() override;
-
-	virtual bool TryPrimaryAction(const FEnclaveInputEvent& InputEvent);
-	virtual bool TrySecondaryAction(const FEnclaveInputEvent& InputEvent);
-	virtual bool TryTertiaryAction(const FEnclaveInputEvent& InputEvent);
 
 	/**
 	 * Applies WeaponDefinition's shared presentation (currently: first- and
