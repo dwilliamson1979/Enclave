@@ -36,21 +36,18 @@ bool UEnclaveGameplayCueNotify::ForwardCue(AActor* MyTarget, EGameplayCueEvent::
 	}
 
 	EEnclaveItemPresentationActionPhase Phase = EEnclaveItemPresentationActionPhase::Started;
-	EEnclaveItemPresentationActionLifecycle Lifecycle = EEnclaveItemPresentationActionLifecycle::OneShot;
 	float Duration = 0.0f;
 
-	switch (PresentationMode)
+	switch (PresentationLifecycle)
 	{
-	case EEnclaveGameplayCuePresentationMode::OneShot:
+	case EEnclaveItemPresentationActionLifecycle::OneShot:
 		if (EventType != EGameplayCueEvent::Executed)
 		{
 			return false;
 		}
 		break;
 
-	case EEnclaveGameplayCuePresentationMode::Duration:
-		Lifecycle = EEnclaveItemPresentationActionLifecycle::Duration;
-
+	case EEnclaveItemPresentationActionLifecycle::Duration:
 		if (EventType == EGameplayCueEvent::WhileActive)
 		{
 			Phase = EEnclaveItemPresentationActionPhase::Started;
@@ -70,7 +67,7 @@ bool UEnclaveGameplayCueNotify::ForwardCue(AActor* MyTarget, EGameplayCueEvent::
 		return false;
 	}
 
-	return ForwardToAvatarPresentation(MyTarget, Phase, Lifecycle, Duration, Parameters);
+	return ForwardToAvatarPresentation(MyTarget, Phase, PresentationLifecycle, Duration, Parameters);
 }
 
 bool UEnclaveGameplayCueNotify::ForwardToAvatarPresentation(AActor* MyTarget, EEnclaveItemPresentationActionPhase Phase, EEnclaveItemPresentationActionLifecycle Lifecycle, float Duration, const FGameplayCueParameters& Parameters) const

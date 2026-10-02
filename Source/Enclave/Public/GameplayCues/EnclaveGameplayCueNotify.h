@@ -5,24 +5,8 @@
 #include "CoreMinimal.h"
 #include "GameplayCueNotify_Static.h"
 #include "GameplayTagContainer.h"
+#include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "EnclaveGameplayCueNotify.generated.h"
-
-enum class EEnclaveItemPresentationActionPhase : uint8;
-enum class EEnclaveItemPresentationActionLifecycle : uint8;
-
-/**
- * Defines how a Gameplay Cue's lifecycle is translated into semantic
- * presentation-action phases.
- */
-UENUM(BlueprintType)
-enum class EEnclaveGameplayCuePresentationMode : uint8
-{
-	/** Executed maps to one Started presentation event. */
-	OneShot,
-
-	/** WhileActive maps to Started and Removed maps to Ended. */
-	Duration
-};
 
 /**
  * Shared base for Gameplay Cue notifies that forward semantic item actions to
@@ -31,7 +15,7 @@ enum class EEnclaveGameplayCuePresentationMode : uint8
  * Each concrete Gameplay Cue Blueprint owns its mapping in Class Defaults:
  * - GameplayCueTag identifies the gameplay event handled by that Blueprint.
  * - PresentationAction identifies the semantic Presentation.Item.Action.* event.
- * - PresentationMode defines how the cue lifecycle maps to Started/Ended.
+ * - PresentationLifecycle defines whether the action is one-shot or has Started/Ended phases.
  *
  * AvatarPresentation remains the single presentation coordinator: it presents
  * the avatar and routes item-local presentation to the originating AEnclaveItem.
@@ -57,9 +41,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation", meta = (Categories = "Presentation.Item.Action"))
 	FGameplayTag PresentationAction;
 
-	/** How this cue's GAS lifecycle maps to presentation Started/Ended phases. */
+	/** Whether this cue produces a one-shot action or a Started/Ended duration action. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
-	EEnclaveGameplayCuePresentationMode PresentationMode = EEnclaveGameplayCuePresentationMode::OneShot;
+	EEnclaveItemPresentationActionLifecycle PresentationLifecycle = EEnclaveItemPresentationActionLifecycle::OneShot;
 
 	/** Translates this cue's configured lifecycle into semantic avatar/item presentation. */
 	bool ForwardCue(AActor* MyTarget, EGameplayCueEvent::Type EventType, const FGameplayCueParameters& Parameters) const;
