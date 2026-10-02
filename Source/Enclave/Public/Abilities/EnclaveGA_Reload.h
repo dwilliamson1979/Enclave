@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/EnclaveGameplayAbility.h"
+#include "Abilities/EnclaveItemGameplayAbility.h"
 #include "EnclaveGA_Reload.generated.h"
 
 /**
@@ -19,6 +19,9 @@
  *   predicting client and the server.
  * - ActivationOwnedTags: State.Weapon.Reloading while active, which
  *   UEnclaveGA_Fire lists in its ActivationBlockedTags.
+ * - Inherits the common item-ability readiness gate from
+ *   UEnclaveItemGameplayAbility, so reload cannot start while the current
+ *   wield relationship owns State.Item.Wielded.Equipping.
  * - GameplayCue.Weapon.Reload is ADDED (not executed) with
  *   bRemoveOnAbilityEnd, carrying the reload duration in RawMagnitude.
  *   Its concrete UEnclaveGameplayCueNotify Blueprint is configured as a
@@ -53,7 +56,7 @@
  * activation's prediction key so the prediction settles exactly.
  */
 UCLASS()
-class ENCLAVE_API UEnclaveGA_Reload : public UEnclaveGameplayAbility
+class ENCLAVE_API UEnclaveGA_Reload : public UEnclaveItemGameplayAbility
 {
 	GENERATED_BODY()
 

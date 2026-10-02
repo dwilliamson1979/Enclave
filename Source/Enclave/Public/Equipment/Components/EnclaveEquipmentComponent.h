@@ -7,7 +7,7 @@
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
 #include "Inventory/Interfaces/EnclaveItemSourceInterface.h"
 #include "GameplayAbilitySpecHandle.h"
-#include "TimerManager.h"
+#include "ActiveGameplayEffectHandle.h"
 #include "EnclaveEquipmentComponent.generated.h"
 
 /** Gameplay-owned readiness of the currently wielded item. */
@@ -22,6 +22,7 @@ enum class EEnclaveEquipmentReadiness : uint8
 class AEnclaveItem;
 class UAbilitySystemComponent;
 class IEnclaveAvatarPresentationInterface;
+struct FGameplayEffectRemovalInfo;
 
 /**
  * Manages the character's currently wielded item and item-action input.
@@ -102,10 +103,11 @@ private:
 	/** Reports an already-established wielded-item state change to avatar presentation. */
 	void UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
 
-	// Gameplay-authoritative readiness transition for CurrentWieldedItem.
-	// Presentation does not own, complete, or observe this timer in this phase.
+	// Gameplay-authoritative readiness transition for CurrentWieldedItem. GAS owns
+	// the equip window's clock through a duration Gameplay Effect; Equipment mirrors
+	// that effect's lifecycle into CurrentWieldedItemReadiness.
 	void BeginCurrentWieldedItemReadinessTransition(AEnclaveItem* Item);
-	void CompleteCurrentWieldedItemReadinessTransition();
+	void HandleCurrentWieldedItemEquipEffectRemoved(const FGameplayEffectRemovalInfo& RemovalInfo, FActiveGameplayEffectHandle RemovedHandle, TWeakObjectPtr<AEnclaveItem> TransitionItem);
 	void ClearCurrentWieldedItemReadinessTransition();
 
 	// Ability granting - server-authoritative only, mirrors the existing
@@ -143,15 +145,15 @@ private:
 
 	/**
 	 * Gameplay truth for whether CurrentWieldedItem is still in its equip delay.
-	 * Replicated for future consumers, but presentation is intentionally not
-	 * coupled to Equipment to consume it. Phase 2 will use this state to enforce
-	 * item-action readiness without making animation authoritative.
+	 * The authoritative value follows the GAS equip-window effect lifecycle;
+	 * presentation remains intentionally uncoupled and receives only the authored
+	 * duration on the semantic Draw event.
 	 */
 	UPROPERTY(Replicated)
 	EEnclaveEquipmentReadiness CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
 
-	/** Authority-only timer for the current wielded item's equip transition. */
-	FTimerHandle CurrentWieldedItemReadinessTimerHandle;
+	/** Authority-only handle for the duration Gameplay Effect that owns the current equip window. */
+	FActiveGameplayEffectHandle CurrentWieldedItemEquipEffectHandle;
 
 	/** The wielded item whose presentation has most recently been reconciled on this machine. */
 	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;

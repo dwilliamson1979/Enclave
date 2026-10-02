@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/EnclaveGameplayAbility.h"
+#include "Abilities/EnclaveItemGameplayAbility.h"
 #include "EnclaveGA_Fire.generated.h"
 
 class UGameplayEffect;
@@ -13,7 +13,7 @@ class UAbilitySystemComponent;
  * Hitscan fire ability.
  *
  * Runs on the owning client too (LocalPredicted, inherited from
- * UEnclaveGameplayAbility) so the cooldown/cost commit feels instant, but
+ * UEnclaveGameplayAbility through UEnclaveItemGameplayAbility) so the cooldown/cost commit feels instant, but
  * the trace and damage application only happen where HasAuthority() is
  * true - there is no cosmetic reaction to the damage itself for a
  * predicting client to show locally, so predicting the damage would only
@@ -68,10 +68,11 @@ class UAbilitySystemComponent;
  * AEnclaveFirearmWeapon). Server-side activations that spend nothing (dry
  * fire, failed commit) still acknowledge their key so a client that
  * predicted differently settles. Blocked outright while
- * State.Weapon.Reloading is owned (UEnclaveGA_Reload).
+ * State.Weapon.Reloading is owned (UEnclaveGA_Reload), and while
+ * State.Item.Wielded.Equipping is owned (UEnclaveItemGameplayAbility).
  */
 UCLASS()
-class ENCLAVE_API UEnclaveGA_Fire : public UEnclaveGameplayAbility
+class ENCLAVE_API UEnclaveGA_Fire : public UEnclaveItemGameplayAbility
 {
 	GENERATED_BODY()
 
