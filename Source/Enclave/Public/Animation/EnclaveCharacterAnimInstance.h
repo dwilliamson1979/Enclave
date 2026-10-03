@@ -48,7 +48,7 @@ public:
 protected:
 	/**
 	 * Gameplay Tag -> ABP variable bindings, configured per ABP in Class
-	 * Defaults (e.g. State.Weapon.Reloading -> bIsReloading). Driven by the
+	 * Defaults (e.g. State.Item.Reloading -> bIsReloading). Driven by the
 	 * ASC's tag-change events, not polled. Supported property types: bool
 	 * (tag present), int (tag count), float (tag count).
 	 */

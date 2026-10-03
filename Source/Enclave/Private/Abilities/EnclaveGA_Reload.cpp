@@ -20,7 +20,7 @@ UEnclaveGA_Reload::UEnclaveGA_Reload()
 
 	// State remains useful independently of the interaction policy (animation,
 	// UI, debugging, etc.).
-	ActivationOwnedTags.AddTag(EnclaveGameplayTags::State_Weapon_Reloading);
+	ActivationOwnedTags.AddTag(EnclaveGameplayTags::State_Item_Reloading);
 }
 
 bool UEnclaveGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
@@ -36,7 +36,7 @@ bool UEnclaveGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Hand
 
 	// No reloadable source, or nothing to reload (magazine full) - refusing
 	// here rather than activating and immediately ending keeps a
-	// full-magazine reload press from flashing State.Weapon.Reloading (and
+	// full-magazine reload press from flashing State.Item.Reloading (and
 	// blocking fire) for a frame.
 	return Reloadable && Reloadable->CanReload();
 }

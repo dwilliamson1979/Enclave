@@ -19,7 +19,7 @@
  *   predicting client and the server.
  * - Asset identity: Ability.Type.Action.Item.Reload. While active, Reload
  *   blocks abilities identified as Ability.Type.Action.Item.Fire.
- * - ActivationOwnedTags still exposes State.Weapon.Reloading for observable
+ * - ActivationOwnedTags still exposes State.Item.Reloading for observable
  *   gameplay/presentation state.
  * - The equip Gameplay Effect blocks the broad Ability.Type.Action.Item
  *   family, so Reload cannot start during the authoritative equip window.
@@ -42,7 +42,7 @@
  * client-side timer would finish first too, and a client EndAbility
  * replicates to the server - ending the server's instance before its own
  * timer fired, i.e. before CompleteReload ever ran. Instead the client's
- * instance just stays active (keeping State.Weapon.Reloading and the cue
+ * instance just stays active (keeping State.Item.Reloading and the cue
  * up locally) until the server ends the ability and that end replicates
  * back. Firing is therefore blocked on the client for about one extra
  * round trip after the reload really finished - the cost of never losing

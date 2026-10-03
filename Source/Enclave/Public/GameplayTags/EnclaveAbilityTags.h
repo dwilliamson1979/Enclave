@@ -26,10 +26,10 @@ namespace EnclaveGameplayTags
 
 	/**
 	 * Owned by the avatar's ASC for as long as UEnclaveGA_Reload is active.
-	 * This is observable state for animation/UI/debugging; Reload's ability-tag
-	 * relationship owns the rule that Fire cannot begin during Reload.
+	 * This is observable item-action state for animation/UI/debugging; Reload's
+	 * ability-tag relationship owns the rule that Fire cannot begin during Reload.
 	 */
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Weapon_Reloading);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Reloading);
 
 	/** Granted by the authoritative equip-window Gameplay Effect while the current wield relationship is not ready for item actions. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Wielded_Equipping);
