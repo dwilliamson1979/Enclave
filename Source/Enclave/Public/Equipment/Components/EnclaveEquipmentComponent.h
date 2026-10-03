@@ -128,11 +128,11 @@ private:
 	void ServerTryWieldPrevious();
 
 	/** Semantic input tag used to request the next available wieldable item. */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
 	FGameplayTag NextWieldableInputTag;
 
 	/** Semantic input tag used to request the previous available wieldable item. */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
 	FGameplayTag PreviousWieldableInputTag;
 
 	/** Cached routing filters derived from the configured input tags. */
