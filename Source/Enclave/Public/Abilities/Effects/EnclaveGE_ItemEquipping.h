@@ -11,7 +11,7 @@
  * current wield relationship.
  *
  * The applied spec supplies the actual duration at runtime. While active this
- * effect grants State.Item.Wielded.Equipping for observable state and blocks
+ * effect grants State.Item.Equipping for observable state and blocks
  * Ability.Type.Action.Item through GAS for the same authoritative window.
  * Equipment never needs to know any concrete item-action ability types.
  */

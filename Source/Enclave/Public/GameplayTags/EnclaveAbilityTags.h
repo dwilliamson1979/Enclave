@@ -32,5 +32,5 @@ namespace EnclaveGameplayTags
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Reloading);
 
 	/** Granted by the authoritative equip-window Gameplay Effect while the current wield relationship is not ready for item actions. */
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Wielded_Equipping);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Equipping);
 }

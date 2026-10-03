@@ -22,7 +22,7 @@ UEnclaveGE_ItemEquipping::UEnclaveGE_ItemEquipping()
 	// / FindOrAddComponent, which are runtime mutation helpers.
 	UTargetTagsGameplayEffectComponent* TargetTagsComponent = CreateDefaultSubobject<UTargetTagsGameplayEffectComponent>(TEXT("TargetTags"));
 	FInheritedTagContainer GrantedTags;
-	GrantedTags.AddTag(EnclaveGameplayTags::State_Item_Wielded_Equipping);
+	GrantedTags.AddTag(EnclaveGameplayTags::State_Item_Equipping);
 	TargetTagsComponent->SetAndApplyTargetTagChanges(GrantedTags);
 	GEComponents.Add(TargetTagsComponent);
 
