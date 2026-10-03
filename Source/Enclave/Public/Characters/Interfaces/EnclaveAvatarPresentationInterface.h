@@ -98,9 +98,10 @@ public:
 	virtual void HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event) = 0;
 
 	/**
-	 * Reports that an avatar montage reached the authored point where the
-	 * item-local portion of Action should begin. This is presentation
-	 * choreography only; it never authorizes or completes gameplay.
+	 * Reports that an avatar montage reached an authored semantic choreography
+	 * point for Action. Presentation may use that point for item-local animation
+	 * or a visual transition such as completing a Draw attachment. It never
+	 * authorizes or completes gameplay.
 	 */
 	virtual void HandleItemPresentationChoreography(const FGameplayTag& Action) = 0;
 

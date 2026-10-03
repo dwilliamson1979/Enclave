@@ -37,6 +37,9 @@ struct ENCLAVE_API FEnclavePresentedWieldedItemState
 	TSubclassOf<UAnimInstance> ThirdPersonAnimLayers;
 
 	UPROPERTY(Transient)
+	bool bWieldedAttachmentPending = false;
+
+	UPROPERTY(Transient)
 	bool bIsActive = false;
 
 	bool IsActive() const { return bIsActive; }
@@ -47,6 +50,7 @@ struct ENCLAVE_API FEnclavePresentedWieldedItemState
 		ItemType = FGameplayTag();
 		FirstPersonAnimLayers = nullptr;
 		ThirdPersonAnimLayers = nullptr;
+		bWieldedAttachmentPending = false;
 		bIsActive = false;
 	}
 };
@@ -90,6 +94,8 @@ private:
 
 	bool ShouldRunTransientPresentation() const;
 	bool AttachItem(AEnclaveItem* Item);
+	void SetItemPresentationHidden(AEnclaveItem* Item, bool bHidden) const;
+	bool CommitPendingWieldedAttachment(AEnclaveItem* Item);
 	void LinkAnimLayers(const FGameplayTag& ItemType);
 	void UnlinkPresentedAnimLayers();
 	bool PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;

@@ -9,6 +9,7 @@
 #include "Debug/EnclaveDebug.h"
 #include "Equipment/Data/EnclaveItemPresentationDefinition.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "GameplayTags/EnclavePresentationTags.h"
 #include "Engine/World.h"
 
 UEnclaveAvatarPresentationComponent::UEnclaveAvatarPresentationComponent()
@@ -42,21 +43,47 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 		ClearWieldedItemPresentation();
 	}
 
-	// Keep a failed presentation invisible rather than leaving the item at its
-	// previous/world transform. Presentation failure does not alter equipment state.
+	// Keep a failed or not-yet-drawn presentation invisible rather than leaving
+	// the item at its previous/world transform. Actor visibility is replicated,
+	// so also gate the presentation meshes locally; otherwise an authority-side
+	// visibility update can reveal a still-pending Draw on a client.
 	Item->SetActorHiddenInGame(true);
+	SetItemPresentationHidden(Item, true);
 
-	if (!AttachItem(Item))
+	const FGameplayTag ItemType = Item->GetItemType();
+	const FEnclaveItemPresentationMontages* DrawPresentation =
+		IsValid(ItemPresentationDefinition)
+			? ItemPresentationDefinition->FindItemPresentationMontages(ItemType, EnclaveGameplayTags::Presentation_Item_Action_Draw)
+			: nullptr;
+
+	// A choreographed Draw owns the visual moment when the item reaches the
+	// wielded socket. Dedicated servers intentionally do not run transient
+	// choreography, so their persistent presentation must remain immediate.
+	const bool bDeferWieldedAttachment =
+		ShouldRunTransientPresentation() &&
+		DrawPresentation &&
+		DrawPresentation->ItemPresentationTiming == EEnclaveItemPresentationTiming::Choreographed;
+
+	if (!bDeferWieldedAttachment && !AttachItem(Item))
 	{
 		return;
 	}
 
 	PresentedWieldedItemState.Item = Item;
-	PresentedWieldedItemState.ItemType = Item->GetItemType();
+	PresentedWieldedItemState.ItemType = ItemType;
+	PresentedWieldedItemState.bWieldedAttachmentPending = bDeferWieldedAttachment;
 	PresentedWieldedItemState.bIsActive = true;
 
+	// Link the wielded animation layers before Draw plays so the avatar can use
+	// the correct item-specific pose/montage while the physical attachment waits
+	// for its authored choreography point.
 	LinkAnimLayers(PresentedWieldedItemState.ItemType);
-	Item->SetActorHiddenInGame(false);
+
+	if (!bDeferWieldedAttachment)
+	{
+		Item->SetActorHiddenInGame(false);
+		SetItemPresentationHidden(Item, false);
+	}
 }
 
 void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
@@ -75,6 +102,7 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 
 	if (AEnclaveItem* Item = PresentedWieldedItemState.Item.Get(); IsValid(Item))
 	{
+		SetItemPresentationHidden(Item, true);
 		Item->SetActorHiddenInGame(true);
 	}
 
@@ -199,6 +227,18 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationChoreography(con
 			ActiveItemPresentationActions.Remove(Action);
 		}
 		return;
+	}
+
+	// Draw is special only in presentation terms: gameplay has already committed
+	// the wield relationship, but a choreographed Draw may keep the item hidden
+	// until this authored presentation point. Commit that durable visual result
+	// before duration accounting so even a late notify cannot leave the current
+	// wielded item permanently pending/hidden.
+	if (Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_Draw) &&
+		PresentedWieldedItemState.bWieldedAttachmentPending &&
+		PresentedWieldedItemState.Item.Get() == Item)
+	{
+		CommitPendingWieldedAttachment(Item);
 	}
 
 	float RemainingDuration = ActiveAction->Duration;
@@ -364,6 +404,45 @@ bool UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)
 	}
 
 	return bFirstPersonAttached && bThirdPersonAttached;
+}
+
+void UEnclaveAvatarPresentationComponent::SetItemPresentationHidden(AEnclaveItem* Item, bool bHidden) const
+{
+	if (!IsValid(Item))
+	{
+		return;
+	}
+
+	if (USkeletalMeshComponent* ItemFirstPersonMesh = Item->GetFirstPersonMesh(); IsValid(ItemFirstPersonMesh))
+	{
+		ItemFirstPersonMesh->SetHiddenInGame(bHidden, true);
+	}
+
+	if (USkeletalMeshComponent* ItemThirdPersonMesh = Item->GetThirdPersonMesh(); IsValid(ItemThirdPersonMesh))
+	{
+		ItemThirdPersonMesh->SetHiddenInGame(bHidden, true);
+	}
+}
+
+bool UEnclaveAvatarPresentationComponent::CommitPendingWieldedAttachment(AEnclaveItem* Item)
+{
+	if (!PresentedWieldedItemState.IsActive() ||
+		!PresentedWieldedItemState.bWieldedAttachmentPending ||
+		PresentedWieldedItemState.Item.Get() != Item ||
+		!IsValid(Item))
+	{
+		return false;
+	}
+
+	if (!AttachItem(Item))
+	{
+		return false;
+	}
+
+	PresentedWieldedItemState.bWieldedAttachmentPending = false;
+	Item->SetActorHiddenInGame(false);
+	SetItemPresentationHidden(Item, false);
+	return true;
 }
 
 void UEnclaveAvatarPresentationComponent::LinkAnimLayers(const FGameplayTag& ItemType)

@@ -11,11 +11,14 @@
 class UAnimMontage;
 
 /**
- * Determines when the item-local portion of a semantic presentation action begins.
+ * Determines when item-related presentation for a semantic action reaches its
+ * authored execution point.
  *
- * Immediate starts the item as soon as the presentation action starts.
+ * Immediate begins item-related presentation as soon as the action starts.
  * Choreographed waits until the avatar animation reaches an authored semantic
  * choreography point emitted by a UEnclaveAnimNotify_ItemPresentationAction authored directly on the montage timeline.
+ * For Draw, that choreography point also controls when the item visibly attaches
+ * to the avatar's wielded sockets.
  */
 UENUM(BlueprintType)
 enum class EEnclaveItemPresentationTiming : uint8
@@ -44,7 +47,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UAnimMontage> ThirdPerson = nullptr;
 
-	/** When the participating item's own presentation should begin for this action. */
+	/** When item-related presentation should reach its authored execution point for this action. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	EEnclaveItemPresentationTiming ItemPresentationTiming = EEnclaveItemPresentationTiming::Immediate;
 };
