@@ -21,8 +21,16 @@ namespace EnclaveGameplayTags
 	/** Set-by-caller duration used by the current wield relationship's equipping Gameplay Effect. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Item_EquipDuration);
 
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Weapon_Rifle_Fire);
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Weapon_Pistol_Fire);
+	/** Root for cooldown channels owned by item-supplied gameplay. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Item);
+	/** Rifle item cooldown channel. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Item_Rifle);
+	/** Fire cooldown channel currently used by rifle items. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Item_Rifle_Fire);
+	/** Pistol item cooldown channel. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Item_Pistol);
+	/** Fire cooldown channel currently used by pistol items. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Item_Pistol_Fire);
 
 	/**
 	 * Owned by the avatar's ASC for as long as UEnclaveGA_Reload is active.

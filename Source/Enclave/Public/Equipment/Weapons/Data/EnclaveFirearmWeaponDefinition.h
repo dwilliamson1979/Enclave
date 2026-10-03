@@ -43,10 +43,12 @@ public:
 	float GetDamageAmount() const { return DamageAmount; }
 	float GetTraceRange() const { return TraceRange; }
 
-	// This weapon's fire-rate cooldown GE. Deliberately per-weapon (not
-	// shared) since cooldown tags are already scoped per weapon identity
-	// (e.g. Cooldown.Weapon.Rifle.Fire) so two different weapons never share
-	// a cooldown even mid-swap.
+	// This firearm definition's fire-rate cooldown GE. The GE owns the
+	// cooldown channel tag (currently e.g. Cooldown.Item.Rifle.Fire). The
+	// taxonomy is deliberately rooted under Item rather than Weapon so future
+	// non-weapon items can use the same cooldown vocabulary. Distinct items may
+	// still share a channel; per-definition/per-source isolation can be added
+	// when a concrete gameplay requirement needs it.
 	TSubclassOf<UGameplayEffect> GetCooldownEffectClass() const { return CooldownEffectClass; }
 
 	// This weapon's damage-application GE, stamped onto each
@@ -94,7 +96,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
 	float TraceRange = 10000.0f;
 
-	/** Fire-rate cooldown Gameplay Effect for this specific weapon (e.g. GE_Fire_Cooldown_Rifle). Must carry this weapon's own Cooldown.Weapon.* tag. */
+	/** Fire-rate cooldown Gameplay Effect for this firearm definition (e.g. GE_Fire_Cooldown_Rifle). Its granted cooldown tag should live under Cooldown.Item.*. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UGameplayEffect> CooldownEffectClass;
 
