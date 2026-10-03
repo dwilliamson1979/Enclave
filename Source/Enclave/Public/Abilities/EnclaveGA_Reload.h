@@ -23,7 +23,7 @@
  *   gameplay/presentation state.
  * - The equip Gameplay Effect blocks the broad Ability.Type.Action.Item
  *   family, so Reload cannot start during the authoritative equip window.
- * - GameplayCue.Weapon.Reload is ADDED (not executed) with
+ * - GameplayCue.Item.Action.Reload is ADDED (not executed) with
  *   bRemoveOnAbilityEnd, carrying the reload duration in RawMagnitude.
  *   Its concrete UEnclaveGameplayCueNotify Blueprint is configured as a
  *   Duration presentation cue, so WhileActive/Removed become semantic Reload
@@ -73,7 +73,7 @@ protected:
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
 private:
-	/** Adds GameplayCue.Weapon.Reload for the lifetime of this activation (removed automatically on end/cancel). Runs on the predicting client and the server alike. */
+	/** Adds GameplayCue.Item.Action.Reload for the lifetime of this activation (removed automatically on end/cancel). Runs on the predicting client and the server alike. */
 	void AddReloadCue(const FGameplayAbilityActorInfo* ActorInfo, float ReloadDuration);
 
 	/** Server only: the reload duration elapsed uninterrupted - refill, then end (which replicates to the owning client and removes the cue everywhere). */

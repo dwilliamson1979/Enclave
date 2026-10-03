@@ -38,7 +38,7 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 
 	if (AmmoConsumer && !AmmoConsumer->CanConsumeAmmo())
 	{
-		ExecuteSourceCue(EnclaveGameplayTags::GameplayCue_Weapon_DryFire, SourceASC, AvatarActor);
+		ExecuteSourceCue(EnclaveGameplayTags::GameplayCue_Item_Action_DryFire, SourceASC, AvatarActor);
 		AcknowledgeUnspentAmmo(ActivationInfo);
 		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ true);
 		return;
@@ -57,7 +57,7 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 	// predicting owning client too, so the shot feels instant locally, while
 	// GAS's cue replication recognizes the matching prediction key on the
 	// server's own execution and does not double-play it there.
-	ExecuteSourceCue(EnclaveGameplayTags::GameplayCue_Weapon_Fire, SourceASC, AvatarActor);
+	ExecuteSourceCue(EnclaveGameplayTags::GameplayCue_Item_Action_Fire, SourceASC, AvatarActor);
 
 	if (HasAuthority(&ActivationInfo))
 	{

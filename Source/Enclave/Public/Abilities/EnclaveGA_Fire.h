@@ -60,7 +60,7 @@ class UAbilitySystemComponent;
  * activation (CheckCost is deliberately not overridden - a failed cost
  * check stops GAS before ActivateAbility ever runs, leaving nowhere to play
  * a dry-fire click); ActivateAbility checks first and executes
- * GameplayCue.Weapon.DryFire instead of firing. The round itself is spent
+ * GameplayCue.Item.Action.DryFire instead of firing. The round itself is spent
  * in ApplyCost, i.e. only once CommitAbility has passed its cooldown check,
  * on BOTH the predicting client and the server, each passing the
  * activation's prediction key - the ammo consumer predicts the spend on the
@@ -92,7 +92,7 @@ private:
 	/** SourceASC/AvatarActor are resolved once in ActivateAbility and passed in here, rather than each callee re-deriving them from ActorInfo on its own. */
 	void PerformHitDetection(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
 
-	/** Executes CueTag (GameplayCue.Weapon.Fire, or .DryFire on an empty magazine) with the triggering source in EffectCauser/SourceObject and the ASC avatar as the cue target. UEnclaveGameplayCueNotify fans the cue out to avatar presentation and item-local cue response. Runs on the predicting owning client as well as the server. Presentation only. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
+	/** Executes CueTag (GameplayCue.Item.Action.Fire, or .DryFire on an empty magazine) with the triggering source in EffectCauser/SourceObject and the ASC avatar as the cue target. UEnclaveGameplayCueNotify fans the cue out to avatar presentation and item-local cue response. Runs on the predicting owning client as well as the server. Presentation only. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
 	void ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
 
 	/** Server only: this activation spent no ammo (dry fire / failed commit) - acknowledge its prediction key anyway so the owning client drops any spend it predicted for it. No-op for a source that doesn't consume ammo. */

@@ -17,8 +17,11 @@
  */
 namespace EnclaveGameplayTags
 {
+	/** Root for semantic item-action Gameplay Cues emitted by item abilities. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Item_Action);
+
 	/** Executed by UEnclaveGA_Fire on every successful activation, regardless of whether the trace hits anything. */
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Weapon_Fire);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Item_Action_Fire);
 
 	/**
 	 * Added (not executed) by UEnclaveGA_Reload for the duration of the
@@ -27,8 +30,8 @@ namespace EnclaveGameplayTags
 	 * presentation and a Removed to stop it. The project's first duration
 	 * cue; Fire/DryFire stay one-shot executes.
 	 */
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Weapon_Reload);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Item_Action_Reload);
 
 	/** Executed by UEnclaveGA_Fire when activated with an empty magazine - dry-fire click, nothing else. No cooldown is committed and nothing traces. */
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Weapon_DryFire);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Item_Action_DryFire);
 }

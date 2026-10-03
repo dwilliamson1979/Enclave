@@ -125,7 +125,7 @@ void UEnclaveGA_Reload::AddReloadCue(const FGameplayAbilityActorInfo* ActorInfo,
 	// scopes the add to this activation's prediction key and, with
 	// bRemoveOnAbilityEnd, removes the cue in EndAbility for both a
 	// completed and a cancelled reload - no bookkeeping here.
-	K2_AddGameplayCueWithParams(EnclaveGameplayTags::GameplayCue_Weapon_Reload, CueParameters, /*bRemoveOnAbilityEnd=*/ true);
+	K2_AddGameplayCueWithParams(EnclaveGameplayTags::GameplayCue_Item_Action_Reload, CueParameters, /*bRemoveOnAbilityEnd=*/ true);
 }
 
 void UEnclaveGA_Reload::OnReloadDurationElapsed()
