@@ -6,8 +6,9 @@
 
 UEnclaveItemGameplayAbility::UEnclaveItemGameplayAbility()
 {
-	// Equipment does not special-case Fire, Reload, or future item actions.
-	// GAS rejects every item ability while the wield relationship is still
-	// inside its authoritative equip window.
-	ActivationBlockedTags.AddTag(EnclaveGameplayTags::State_Item_Wielded_Equipping);
+	// Every ability granted by the wielded item participates in the same broad
+	// GAS interaction category. Equip/death/etc. can therefore block or cancel
+	// item actions generically without knowing about Fire, Reload, or future
+	// concrete actions.
+	AddAbilityAssetTag(EnclaveGameplayTags::Ability_Type_Action_Item);
 }

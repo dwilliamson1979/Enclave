@@ -54,7 +54,7 @@ private:
 	 * Gameplay-authoritative delay from selecting this weapon until its item
 	 * actions become ready. Draw animation may be authored to visually fit this
 	 * window, but animation/AnimNotifies never complete the gameplay transition.
-	 * 0 = immediately ready.
+	 * 0 = immediately ready, immediate visual attachment, and no Draw presentation.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Equipment", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
 	float EquipDuration = 0.0f;

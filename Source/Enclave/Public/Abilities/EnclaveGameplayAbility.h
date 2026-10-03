@@ -25,6 +25,12 @@ public:
 
 protected:
 	/**
+	 * Adds one native identity/classification tag to this ability's Asset Tags.
+	 * Intended for constructors only; SetAssetTags is construction-time API in GAS.
+	 */
+	void AddAbilityAssetTag(const FGameplayTag& Tag);
+
+	/**
 	 * Resolves whatever triggered this ability's activation (GetCurrentSourceObject(),
 	 * the FGameplayAbilitySpec::SourceObject set when the ability was
 	 * granted) as T - an actor class, or a UInterface this project defines.
@@ -57,4 +63,4 @@ protected:
 		const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(Handle) : nullptr;
 		return Spec ? Cast<T>(Spec->SourceObject.Get()) : nullptr;
 	}
-};
+};

@@ -2,6 +2,7 @@
 
 #include "Abilities/Effects/EnclaveGE_ItemEquipping.h"
 
+#include "GameplayEffectComponents/BlockAbilityTagsGameplayEffectComponent.h"
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
 
@@ -24,4 +25,13 @@ UEnclaveGE_ItemEquipping::UEnclaveGE_ItemEquipping()
 	GrantedTags.AddTag(EnclaveGameplayTags::State_Item_Wielded_Equipping);
 	TargetTagsComponent->SetAndApplyTargetTagChanges(GrantedTags);
 	GEComponents.Add(TargetTagsComponent);
+
+	// The equip window itself owns the readiness restriction: while this GE is
+	// active, GAS blocks every ability classified as an item action. Individual
+	// item abilities do not need to know that Equipping exists.
+	UBlockAbilityTagsGameplayEffectComponent* BlockItemActionsComponent = CreateDefaultSubobject<UBlockAbilityTagsGameplayEffectComponent>(TEXT("BlockItemActions"));
+	FInheritedTagContainer BlockedAbilityTags;
+	BlockedAbilityTags.AddTag(EnclaveGameplayTags::Ability_Type_Action_Item);
+	BlockItemActionsComponent->SetAndApplyBlockedAbilityTagChanges(BlockedAbilityTags);
+	GEComponents.Add(BlockItemActionsComponent);
 }

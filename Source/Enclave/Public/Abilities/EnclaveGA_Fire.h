@@ -68,8 +68,8 @@ class UAbilitySystemComponent;
  * AEnclaveFirearmWeapon). Server-side activations that spend nothing (dry
  * fire, failed commit) still acknowledge their key so a client that
  * predicted differently settles. Blocked outright while
- * State.Weapon.Reloading is owned (UEnclaveGA_Reload), and while
- * State.Item.Wielded.Equipping is owned (UEnclaveItemGameplayAbility).
+ * Reload blocks the Fire ability identity while it is active, and the equip
+ * Gameplay Effect blocks the broader Ability.Type.Action.Item family.
  */
 UCLASS()
 class ENCLAVE_API UEnclaveGA_Fire : public UEnclaveItemGameplayAbility

@@ -17,11 +17,12 @@
  * - CanActivateAbility: the source must implement IEnclaveReloadableInterface
  *   and report CanReload() (magazine not already full). Checked on both the
  *   predicting client and the server.
- * - ActivationOwnedTags: State.Weapon.Reloading while active, which
- *   UEnclaveGA_Fire lists in its ActivationBlockedTags.
- * - Inherits the common item-ability readiness gate from
- *   UEnclaveItemGameplayAbility, so reload cannot start while the current
- *   wield relationship owns State.Item.Wielded.Equipping.
+ * - Asset identity: Ability.Type.Action.Item.Reload. While active, Reload
+ *   blocks abilities identified as Ability.Type.Action.Item.Fire.
+ * - ActivationOwnedTags still exposes State.Weapon.Reloading for observable
+ *   gameplay/presentation state.
+ * - The equip Gameplay Effect blocks the broad Ability.Type.Action.Item
+ *   family, so Reload cannot start during the authoritative equip window.
  * - GameplayCue.Weapon.Reload is ADDED (not executed) with
  *   bRemoveOnAbilityEnd, carrying the reload duration in RawMagnitude.
  *   Its concrete UEnclaveGameplayCueNotify Blueprint is configured as a

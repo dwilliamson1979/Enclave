@@ -11,10 +11,15 @@
 
 UEnclaveGA_Reload::UEnclaveGA_Reload()
 {
-	// Owned for the whole activation; UEnclaveGA_Fire is blocked by it.
-	// Re-pressing reload mid-reload needs no extra tag - an
-	// InstancedPerActor ability that is already active doesn't re-activate
-	// (bRetriggerInstancedAbility defaults to false).
+	AddAbilityAssetTag(EnclaveGameplayTags::Ability_Type_Action_Item_Reload);
+
+	// Reload owns the policy that Fire cannot begin while Reload is active.
+	// This matches GAS's native block-by-ability-identity model and means a
+	// future alternate Fire ability only needs the Fire identity tag to obey it.
+	BlockAbilitiesWithTag.AddTag(EnclaveGameplayTags::Ability_Type_Action_Item_Fire);
+
+	// State remains useful independently of the interaction policy (animation,
+	// UI, debugging, etc.).
 	ActivationOwnedTags.AddTag(EnclaveGameplayTags::State_Weapon_Reloading);
 }
 

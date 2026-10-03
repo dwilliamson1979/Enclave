@@ -11,9 +11,9 @@
  * current wield relationship.
  *
  * The applied spec supplies the actual duration at runtime. While active this
- * effect grants State.Item.Wielded.Equipping to the owner's ASC, allowing GAS
- * ability activation rules to enforce readiness without Equipment knowing any
- * concrete item-action ability types.
+ * effect grants State.Item.Wielded.Equipping for observable state and blocks
+ * Ability.Type.Action.Item through GAS for the same authoritative window.
+ * Equipment never needs to know any concrete item-action ability types.
  */
 UCLASS()
 class ENCLAVE_API UEnclaveGE_ItemEquipping : public UGameplayEffect

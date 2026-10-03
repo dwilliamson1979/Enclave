@@ -51,15 +51,19 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 	SetItemPresentationHidden(Item, true);
 
 	const FGameplayTag ItemType = Item->GetItemType();
+	const float EquipDuration = FMath::Max(0.0f, Item->GetEquipDuration());
 	const FEnclaveItemPresentationMontages* DrawPresentation =
 		IsValid(ItemPresentationDefinition)
 			? ItemPresentationDefinition->FindItemPresentationMontages(ItemType, EnclaveGameplayTags::Presentation_Item_Action_Draw)
 			: nullptr;
 
-	// A choreographed Draw owns the visual moment when the item reaches the
-	// wielded socket. Dedicated servers intentionally do not run transient
-	// choreography, so their persistent presentation must remain immediate.
+	// A zero-duration equip has no gameplay transition, so presentation must not
+	// invent one: attach/show immediately and skip Draw choreography entirely.
+	// For a real equip window, a choreographed Draw owns the visual moment when
+	// the item reaches the wielded socket. Dedicated servers intentionally do not
+	// run transient choreography, so their persistent presentation remains immediate.
 	const bool bDeferWieldedAttachment =
+		EquipDuration > KINDA_SMALL_NUMBER &&
 		ShouldRunTransientPresentation() &&
 		DrawPresentation &&
 		DrawPresentation->ItemPresentationTiming == EEnclaveItemPresentationTiming::Choreographed;

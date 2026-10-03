@@ -17,9 +17,7 @@
 
 UEnclaveGA_Fire::UEnclaveGA_Fire()
 {
-	// Can't fire mid-reload. GAS checks this in CanActivateAbility on both
-	// the predicting client and the server.
-	ActivationBlockedTags.AddTag(EnclaveGameplayTags::State_Weapon_Reloading);
+	AddAbilityAssetTag(EnclaveGameplayTags::Ability_Type_Action_Item_Fire);
 }
 
 void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)

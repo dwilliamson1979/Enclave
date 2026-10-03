@@ -64,6 +64,11 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 
 	AEnclaveItem* PreviousItem = CurrentWieldedItem;
 
+	// A wield transition interrupts whatever the previously wielded item was
+	// doing before its specs are revoked. The cancellation is generic by GAS
+	// ability identity; Equipment knows no concrete Fire/Reload/etc. classes.
+	CancelActiveItemAbilities();
+
 	// Authority owns the gameplay transition. Presentation is notified only
 	// after the authoritative equipment state has been committed and cannot
 	// reject or roll it back.
@@ -505,17 +510,20 @@ void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* Pre
 	{
 		AvatarPresentation->PresentWieldedItem(NewItem);
 
-		// Equipment owns the semantic wield transition. Once the new item's
-		// persistent presentation is established, explicitly report the Draw
-		// action rather than making AvatarPresentation infer it from state.
-		if (PreviousItem != NewItem)
+		const float EquipDuration = FMath::Max(0.0f, NewItem->GetEquipDuration());
+
+		// Equipment owns the semantic wield transition. A zero-duration equip is
+		// immediately Ready and therefore has no Draw transition to present.
+		// Positive durations explicitly report Draw so presentation can conform
+		// its animation/choreography to the authoritative gameplay window.
+		if (PreviousItem != NewItem && EquipDuration > KINDA_SMALL_NUMBER)
 		{
 			FEnclaveItemPresentationActionEvent DrawEvent;
 			DrawEvent.Item = NewItem;
 			DrawEvent.ItemType = NewItem->GetItemType();
 			DrawEvent.Action = EnclaveGameplayTags::Presentation_Item_Action_Draw;
 			DrawEvent.Lifecycle = EEnclaveItemPresentationActionLifecycle::OneShot;
-			DrawEvent.Duration = FMath::Max(0.0f, NewItem->GetEquipDuration());
+			DrawEvent.Duration = EquipDuration;
 			AvatarPresentation->HandleItemPresentationAction(DrawEvent);
 		}
 	}
@@ -545,6 +553,20 @@ UAbilitySystemComponent* UEnclaveEquipmentComponent::GetOwnerAbilitySystemCompon
 	// only that its owner exposes one (same principle as ItemSource above).
 	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(OwnerActor);
 	return AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
+}
+
+void UEnclaveEquipmentComponent::CancelActiveItemAbilities()
+{
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!IsValid(ASC))
+	{
+		return;
+	}
+
+	FGameplayTagContainer ItemActionTags;
+	ItemActionTags.AddTag(EnclaveGameplayTags::Ability_Type_Action_Item);
+	ASC->CancelAbilities(&ItemActionTags, /*WithoutTags=*/ nullptr, /*Ignore=*/ nullptr);
 }
 
 void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)

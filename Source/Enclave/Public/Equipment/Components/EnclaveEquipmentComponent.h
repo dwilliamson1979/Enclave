@@ -114,6 +114,7 @@ private:
 	// authority gating on WieldItem. Clients learn about granted abilities
 	// through the ASC's own replication, not through this path.
 	UAbilitySystemComponent* GetOwnerAbilitySystemComponent() const;
+	void CancelActiveItemAbilities();
 	void GrantAbilitiesForItem(AEnclaveItem* Item);
 	void RemoveGrantedAbilities();
 

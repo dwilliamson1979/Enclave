@@ -13,3 +13,15 @@ UEnclaveGameplayAbility::UEnclaveGameplayAbility()
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 }
+
+void UEnclaveGameplayAbility::AddAbilityAssetTag(const FGameplayTag& Tag)
+{
+	if (!Tag.IsValid())
+	{
+		return;
+	}
+
+	FGameplayTagContainer AssetTags = GetAssetTags();
+	AssetTags.AddTag(Tag);
+	SetAssetTags(AssetTags);
+}

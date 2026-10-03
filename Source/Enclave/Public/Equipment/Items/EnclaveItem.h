@@ -38,7 +38,9 @@ public:
 	 * Gameplay-authoritative time, in seconds, from selecting this item until
 	 * Equipment considers it ready for item actions. Presentation may visually
 	 * represent the same transition, but animation never determines readiness.
-	 * Base items are instant unless a concrete item type supplies a duration.
+	 * A zero duration means there is no equip transition to present: attachment
+	 * is immediate and Draw presentation is skipped. Base items are instant unless
+	 * a concrete item type supplies a duration.
 	 */
 	virtual float GetEquipDuration() const;
 

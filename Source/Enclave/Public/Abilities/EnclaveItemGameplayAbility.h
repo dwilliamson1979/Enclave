@@ -9,10 +9,10 @@
 /**
  * Base class for Gameplay Abilities granted by the currently wielded item.
  *
- * Item abilities share one readiness rule: they cannot activate while the
- * current wield relationship owns State.Item.Wielded.Equipping. Equipment
- * establishes that state through GAS; individual abilities remain responsible
- * for their own additional action-specific activation rules.
+ * Every item ability is classified as Ability.Type.Action.Item. Gameplay
+ * Effects and other abilities can use that identity to block/cancel the whole
+ * item-action family without depending on concrete ability classes. Individual
+ * abilities remain responsible for their additional action-specific rules.
  */
 UCLASS(Abstract)
 class ENCLAVE_API UEnclaveItemGameplayAbility : public UEnclaveGameplayAbility
