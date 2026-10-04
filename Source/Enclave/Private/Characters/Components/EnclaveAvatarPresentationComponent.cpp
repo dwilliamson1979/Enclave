@@ -81,7 +81,15 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 	// for its authored choreography point.
 	LinkAnimLayers(PresentedWieldedItemState.ItemType);
 
-	if (!bDeferWieldedAttachment)
+	if (bDeferWieldedAttachment)
+	{
+		// The authored Draw notify normally commits the attachment. This timer is
+		// presentation-only insurance for interrupted/non-ticking montages: by the
+		// end of the authoritative equip window, the current item must not remain
+		// locally hidden forever. It does not make the item gameplay-ready.
+		ArmPendingWieldedAttachmentFallback(EquipDuration);
+	}
+	else
 	{
 		SetItemPresentationHidden(Item, false);
 	}
@@ -89,6 +97,10 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 
 void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 {
+	// A fallback armed for the old wield relationship must never be allowed to
+	// attach or reveal an item after presentation has moved on to another item.
+	ClearPendingWieldedAttachmentFallback();
+
 	// Active item actions belong to the presentation being removed. End them
 	// first so lasting Immediate actions are cleaned up too, and late notifies
 	// from old choreographed montages cannot affect the next item.
@@ -441,7 +453,77 @@ bool UEnclaveAvatarPresentationComponent::CommitPendingWieldedAttachment(AEnclav
 
 	PresentedWieldedItemState.bWieldedAttachmentPending = false;
 	SetItemPresentationHidden(Item, false);
+	ClearPendingWieldedAttachmentFallback();
 	return true;
+}
+
+void UEnclaveAvatarPresentationComponent::ArmPendingWieldedAttachmentFallback(float Duration)
+{
+	ClearPendingWieldedAttachmentFallback();
+
+	if (Duration <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+
+	if (!World)
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		PendingWieldedAttachmentFallbackTimerHandle,
+		this,
+		&UEnclaveAvatarPresentationComponent::HandlePendingWieldedAttachmentFallback,
+		Duration,
+		false);
+}
+
+void UEnclaveAvatarPresentationComponent::ClearPendingWieldedAttachmentFallback()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(PendingWieldedAttachmentFallbackTimerHandle);
+	}
+
+	PendingWieldedAttachmentFallbackTimerHandle.Invalidate();
+}
+
+void UEnclaveAvatarPresentationComponent::HandlePendingWieldedAttachmentFallback()
+{
+	// The one-shot timer has reached the end of the gameplay-owned equip window.
+	PendingWieldedAttachmentFallbackTimerHandle.Invalidate();
+
+	if (!PresentedWieldedItemState.IsActive() || !PresentedWieldedItemState.bWieldedAttachmentPending)
+	{
+		return;
+	}
+
+	AEnclaveItem* Item = PresentedWieldedItemState.Item.Get();
+
+	if (!IsValid(Item))
+	{
+		return;
+	}
+
+	if (!CommitPendingWieldedAttachment(Item))
+	{
+		UE_LOG(LogEnclaveAvatarPresentation, Warning,
+			TEXT("%s: Draw attachment fallback expired for %s, but the pending wielded attachment still could not be committed."),
+			*GetNameSafe(GetOwner()), *GetNameSafe(Item));
+		return;
+	}
+
+	UE_LOG(LogEnclaveAvatarPresentation, Warning,
+		TEXT("%s: Draw choreography for %s did not commit the wielded attachment before the equip window ended; applied presentation fallback."),
+		*GetNameSafe(GetOwner()), *GetNameSafe(Item));
+
+	// A choreographed Draw is a one-shot tracked only while waiting for its
+	// semantic notify. If the timer had to complete the durable attachment, retire
+	// that stale action record and stop any lingering Draw montage as well.
+	EndActiveItemPresentationAction(EnclaveGameplayTags::Presentation_Item_Action_Draw);
 }
 
 void UEnclaveAvatarPresentationComponent::LinkAnimLayers(const FGameplayTag& ItemType)

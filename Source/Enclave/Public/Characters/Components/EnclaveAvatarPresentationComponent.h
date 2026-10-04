@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "TimerManager.h"
 #include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
 #include "EnclaveAvatarPresentationComponent.generated.h"
 
@@ -96,6 +97,9 @@ private:
 	bool AttachItem(AEnclaveItem* Item);
 	void SetItemPresentationHidden(AEnclaveItem* Item, bool bHidden) const;
 	bool CommitPendingWieldedAttachment(AEnclaveItem* Item);
+	void ArmPendingWieldedAttachmentFallback(float Duration);
+	void ClearPendingWieldedAttachmentFallback();
+	void HandlePendingWieldedAttachmentFallback();
 	void LinkAnimLayers(const FGameplayTag& ItemType);
 	void UnlinkPresentedAnimLayers();
 	bool PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
@@ -121,6 +125,12 @@ private:
 	/** Persistent wielded-item presentation actually applied by this component. */
 	UPROPERTY(Transient)
 	FEnclavePresentedWieldedItemState PresentedWieldedItemState;
+
+	/**
+	 * Presentation-only safety net for a choreographed Draw whose authored notify
+	 * never executes. Gameplay readiness remains owned by the equip GameplayEffect.
+	 */
+	FTimerHandle PendingWieldedAttachmentFallbackTimerHandle;
 
 	/**
 	 * Item actions that still require presentation-lifetime bookkeeping. Duration
