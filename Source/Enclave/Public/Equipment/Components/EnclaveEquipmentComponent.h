@@ -58,6 +58,17 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	bool WieldItem(AEnclaveItem* Item);
+
+	/**
+	 * Authority-only teardown of the current wield relationship. Cancels active
+	 * item actions, revokes item-granted abilities, removes the equip window,
+	 * clears replicated wield state, and reconciles avatar presentation.
+	 *
+	 * Intentionally does not destroy inventory items; item lifetime belongs to
+	 * the item source (currently UEnclaveInventoryComponent).
+	 */
+	void ClearCurrentWieldedItem();
+
 	AEnclaveItem* GetCurrentWieldedItem() const { return CurrentWieldedItem; }
 	EEnclaveEquipmentReadiness GetCurrentWieldedItemReadiness() const { return CurrentWieldedItemReadiness; }
 	bool IsCurrentWieldedItemReadyForActions() const { return CurrentWieldedItemReadiness == EEnclaveEquipmentReadiness::Ready; }

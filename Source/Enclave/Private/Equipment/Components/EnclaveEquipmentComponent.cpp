@@ -34,7 +34,17 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 
 void UEnclaveEquipmentComponent::UninitializeComponent()
 {
-	ClearCurrentWieldedItemReadinessTransition();
+	AActor* OwnerActor = GetOwner();
+
+	// The ASC is PlayerState-owned and can outlive this Pawn. Revoke every
+	// Pawn/item-scoped gameplay contribution before this component goes away so
+	// a non-death teardown (travel, admin destruction, etc.) cannot leak specs or
+	// an active equip effect into the next avatar.
+	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		ClearCurrentWieldedItem();
+	}
+
 	UnbindItemSource();
 
 	Super::UninitializeComponent();
@@ -81,6 +91,30 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	LocallyWieldedItem = CurrentWieldedItem;
 
 	return true;
+}
+
+void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	AEnclaveItem* PreviousItem = CurrentWieldedItem;
+
+	// Order matters: cancel active item work while its specs/source object still
+	// exist, then revoke the specs and any authoritative equip-window effect.
+	CancelActiveItemAbilities();
+	RemoveGrantedAbilities();
+	ClearCurrentWieldedItemReadinessTransition();
+
+	CurrentWieldedItem = nullptr;
+	CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
+
+	UpdateWieldedItemPresentation(PreviousItem, nullptr);
+	LocallyWieldedItem.Reset();
 }
 
 const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
@@ -367,13 +401,7 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority() &&
 		IsValid(CurrentWieldedItem) && !WieldableCache.Contains(CurrentWieldedItem))
 	{
-		AEnclaveItem* PreviousItem = CurrentWieldedItem;
-		RemoveGrantedAbilities();
-		CurrentWieldedItem = nullptr;
-		ClearCurrentWieldedItemReadinessTransition();
-		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
-		UpdateWieldedItemPresentation(PreviousItem, nullptr);
-		LocallyWieldedItem.Reset();
+		ClearCurrentWieldedItem();
 	}
 }
 

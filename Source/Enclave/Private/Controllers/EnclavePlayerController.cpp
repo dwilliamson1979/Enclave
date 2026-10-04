@@ -7,6 +7,15 @@
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
 #include "Combat/Components/EnclaveCombatFeedbackComponent.h"
 
+#include "Debug/EnclaveDebug.h"
+#include "Engine/World.h"
+
+#include "GameFramework/GameModeBase.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
+#include "Equipment/Components/EnclaveEquipmentComponent.h"
+#include "Inventory/Components/EnclaveInventoryComponent.h"
+
 AEnclavePlayerController::AEnclavePlayerController()
 {
 	bShowMouseCursor = false;
@@ -15,10 +24,84 @@ AEnclavePlayerController::AEnclavePlayerController()
 	CombatFeedbackComp = CreateDefaultSubobject<UEnclaveCombatFeedbackComponent>(TEXT("CombatFeedbackComp"));
 }
 
+void AEnclavePlayerController::EnclaveDebugRespawn()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (HasAuthority())
+	{
+		PerformDebugRespawn();
+		return;
+	}
+
+	ServerEnclaveDebugRespawn();
+#endif
+}
+
+void AEnclavePlayerController::ServerEnclaveDebugRespawn_Implementation()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	PerformDebugRespawn();
+#endif
+}
+
+void AEnclavePlayerController::PerformDebugRespawn()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	APawn* PreviousPawn = GetPawn();
+	AGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode() : nullptr;
+
+	if (!GameMode)
+	{
+		ENCLAVE_LOG(LogEnclaveCharacter, Warning, "EnclaveDebugRespawn failed: no authoritative GameMode.");
+		return;
+	}
+
+	ENCLAVE_LOG(LogEnclaveCharacter, Log, "EnclaveDebugRespawn: recreating pawn %s while preserving PlayerState %s.", *GetNameSafe(PreviousPawn), *GetNameSafe(PlayerState.Get()));
+
+	if (PreviousPawn)
+	{
+		// Exercise the same explicit lifecycle boundary the real Death path will use.
+		// Do this before UnPossess so the old Pawn can still resolve the persistent
+		// PlayerState-owned ASC while revoking its item-granted specs/effects.
+		if (UEnclaveEquipmentComponent* Equipment = PreviousPawn->FindComponentByClass<UEnclaveEquipmentComponent>())
+		{
+			Equipment->ClearCurrentWieldedItem();
+		}
+
+		if (UEnclaveInventoryComponent* Inventory = PreviousPawn->FindComponentByClass<UEnclaveInventoryComponent>())
+		{
+			Inventory->DestroyAllItems();
+		}
+
+		UnPossess();
+		PreviousPawn->Destroy();
+	}
+
+	GameMode->RestartPlayer(this);
+
+	ENCLAVE_LOG(LogEnclaveCharacter, Log, "EnclaveDebugRespawn complete. New pawn: %s", *GetNameSafe(GetPawn()));
+#endif
+}
+
 void AEnclavePlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 
+	RefreshPossessedPawnInputState();
+}
+
+void AEnclavePlayerController::AcknowledgePossession(APawn* P)
+{
+	Super::AcknowledgePossession(P);
+
+	// OnPossess is authoritative. Networked respawn reaches the owning client
+	// through possession acknowledgement, so refresh the semantic input routing
+	// here as well for the newly replicated Pawn.
 	RefreshPossessedPawnInputState();
 }
 

@@ -20,9 +20,18 @@ public:
 
 	AEnclavePlayerController();
 
+	/**
+	 * Development-only lifecycle test. Recreates this controller's pawn while
+	 * preserving the PlayerState-owned ASC so stale item specs/effects are easy
+	 * to detect across repeated respawns.
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugRespawn();
+
 protected:
 
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void AcknowledgePossession(APawn* P) override;
 	virtual void OnUnPossess() override;
 
 	virtual void BeginPlay() override;
@@ -37,6 +46,11 @@ protected:
 	virtual bool CanProcessInput(const FEnclaveInputEvent& InputEvent) const;
 
 private:
+
+	UFUNCTION(Server, Reliable)
+	void ServerEnclaveDebugRespawn();
+
+	void PerformDebugRespawn();
 
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag);
 

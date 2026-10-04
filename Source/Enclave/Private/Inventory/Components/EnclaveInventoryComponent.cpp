@@ -13,6 +13,20 @@ UEnclaveInventoryComponent::UEnclaveInventoryComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+void UEnclaveInventoryComponent::UninitializeComponent()
+{
+	AActor* OwnerActor = GetOwner();
+
+	// Carried items are Pawn-scoped in the current slice. Destroy them when the
+	// owning Pawn is torn down so they cannot survive into a later respawn.
+	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		DestroyAllItems();
+	}
+
+	Super::UninitializeComponent();
+}
+
 void UEnclaveInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -58,6 +72,35 @@ AEnclaveItem* UEnclaveInventoryComponent::SpawnItem(TSubclassOf<AEnclaveItem> It
 	}
 
 	return Item;
+}
+
+void UEnclaveInventoryComponent::DestroyAllItems()
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	if (Items.IsEmpty())
+	{
+		return;
+	}
+
+	// Publish the source change before destroying the actors. Equipment can then
+	// cancel/revoke any current item ability while its SourceObject is still valid.
+	TArray<TObjectPtr<AEnclaveItem>> ItemsToDestroy = MoveTemp(Items);
+	Items.Reset();
+	ItemSourceChangedDelegate.Broadcast();
+
+	for (AEnclaveItem* Item : ItemsToDestroy)
+	{
+		if (IsValid(Item))
+		{
+			Item->Destroy();
+		}
+	}
 }
 
 bool UEnclaveInventoryComponent::AddItem(AEnclaveItem* Item)
