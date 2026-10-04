@@ -55,7 +55,6 @@ void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentWieldedItem);
-	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentWieldedItemReadiness);
 }
 
 bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
@@ -84,7 +83,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	// reject or roll it back.
 	RemoveGrantedAbilities();
 	CurrentWieldedItem = Item;
-	BeginCurrentWieldedItemReadinessTransition(CurrentWieldedItem);
+	BeginCurrentWieldedItemEquipWindow(CurrentWieldedItem);
 	GrantAbilitiesForItem(CurrentWieldedItem);
 
 	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
@@ -108,10 +107,9 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
 	// exist, then revoke the specs and any authoritative equip-window effect.
 	CancelActiveItemAbilities();
 	RemoveGrantedAbilities();
-	ClearCurrentWieldedItemReadinessTransition();
+	ClearCurrentWieldedItemEquipWindow();
 
 	CurrentWieldedItem = nullptr;
-	CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
 
 	UpdateWieldedItemPresentation(PreviousItem, nullptr);
 	LocallyWieldedItem.Reset();
@@ -410,13 +408,12 @@ IEnclaveAvatarPresentationInterface* UEnclaveEquipmentComponent::GetAvatarPresen
 	return IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetOwner());
 }
 
-void UEnclaveEquipmentComponent::BeginCurrentWieldedItemReadinessTransition(AEnclaveItem* Item)
+void UEnclaveEquipmentComponent::BeginCurrentWieldedItemEquipWindow(AEnclaveItem* Item)
 {
-	ClearCurrentWieldedItemReadinessTransition();
+	ClearCurrentWieldedItemEquipWindow();
 
 	if (!IsValid(Item))
 	{
-		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
 		return;
 	}
 
@@ -424,7 +421,6 @@ void UEnclaveEquipmentComponent::BeginCurrentWieldedItemReadinessTransition(AEnc
 
 	if (EquipDuration <= KINDA_SMALL_NUMBER)
 	{
-		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Ready;
 		return;
 	}
 
@@ -432,9 +428,8 @@ void UEnclaveEquipmentComponent::BeginCurrentWieldedItemReadinessTransition(AEnc
 
 	if (!IsValid(ASC))
 	{
-		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: cannot enforce %.3fs equip readiness for %s because the owner has no AbilitySystemComponent; failing open as Ready."),
+		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: cannot enforce %.3fs equip window for %s because the owner has no AbilitySystemComponent; skipping the equip window."),
 			*GetNameSafe(GetOwner()), EquipDuration, *GetNameSafe(Item));
-		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Ready;
 		return;
 	}
 
@@ -445,66 +440,41 @@ void UEnclaveEquipmentComponent::BeginCurrentWieldedItemReadinessTransition(AEnc
 
 	if (!EffectSpec.IsValid())
 	{
-		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: failed to create the equip-readiness Gameplay Effect for %s; failing open as Ready."),
+		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: failed to create the equip Gameplay Effect for %s; skipping the equip window."),
 			*GetNameSafe(GetOwner()), *GetNameSafe(Item));
-		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Ready;
 		return;
 	}
 
-	// The weapon/item definition owns the authored duration. The native GE owns
-	// the clock, and its granted tag owns ability blocking for exactly that same
-	// window. There is deliberately no parallel Equipment timer.
+	// The item definition owns the authored duration. The native GE owns the
+	// authoritative clock, State.Item.Equipping, and item-action blocking for
+	// exactly that window. Equipment keeps only the handle needed for early removal.
 	EffectSpec.Data->SetSetByCallerMagnitude(EnclaveGameplayTags::Data_Item_EquipDuration, EquipDuration);
 
 	const FActiveGameplayEffectHandle AppliedHandle = ASC->ApplyGameplayEffectSpecToSelf(*EffectSpec.Data.Get());
 
 	if (!AppliedHandle.IsValid() || !AppliedHandle.WasSuccessfullyApplied())
 	{
-		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: failed to apply the equip-readiness Gameplay Effect for %s; failing open as Ready."),
+		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: failed to apply the equip Gameplay Effect for %s; skipping the equip window."),
 			*GetNameSafe(GetOwner()), *GetNameSafe(Item));
-		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Ready;
 		return;
 	}
 
 	CurrentWieldedItemEquipEffectHandle = AppliedHandle;
-	CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Equipping;
-
-	FActiveGameplayEffectEvents* EffectEvents = ASC->GetActiveEffectEventSet(AppliedHandle);
-
-	if (!EffectEvents)
-	{
-		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: equip-readiness Gameplay Effect for %s has no active-effect event set; removing it and failing open as Ready."),
-			*GetNameSafe(GetOwner()), *GetNameSafe(Item));
-		ASC->RemoveActiveGameplayEffect(AppliedHandle);
-		CurrentWieldedItemEquipEffectHandle.Invalidate();
-		CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Ready;
-		return;
-	}
-
-	EffectEvents->OnEffectRemoved.AddUObject(this, &UEnclaveEquipmentComponent::HandleCurrentWieldedItemEquipEffectRemoved, AppliedHandle, TWeakObjectPtr<AEnclaveItem>(Item));
 }
 
-void UEnclaveEquipmentComponent::HandleCurrentWieldedItemEquipEffectRemoved(const FGameplayEffectRemovalInfo& /*RemovalInfo*/, FActiveGameplayEffectHandle RemovedHandle, TWeakObjectPtr<AEnclaveItem> TransitionItem)
+bool UEnclaveEquipmentComponent::IsCurrentWieldedItemReadyForActions() const
 {
-	if (CurrentWieldedItemEquipEffectHandle == RemovedHandle)
+	if (!IsValid(CurrentWieldedItem))
 	{
-		CurrentWieldedItemEquipEffectHandle.Invalidate();
+		return false;
 	}
 
-	AEnclaveItem* CompletedItem = TransitionItem.Get();
+	const UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
 
-	// An old effect can be explicitly removed while switching to a new item.
-	// Only the effect belonging to the still-current wield relationship is
-	// allowed to advance readiness.
-	if (!IsValid(CompletedItem) || CurrentWieldedItem != CompletedItem)
-	{
-		return;
-	}
-
-	CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Ready;
+	return IsValid(ASC) && !ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Item_Equipping);
 }
 
-void UEnclaveEquipmentComponent::ClearCurrentWieldedItemReadinessTransition()
+void UEnclaveEquipmentComponent::ClearCurrentWieldedItemEquipWindow()
 {
 	if (!CurrentWieldedItemEquipEffectHandle.IsValid())
 	{

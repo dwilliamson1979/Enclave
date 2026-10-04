@@ -10,19 +10,9 @@
 #include "ActiveGameplayEffectHandle.h"
 #include "EnclaveEquipmentComponent.generated.h"
 
-/** Gameplay-owned readiness of the currently wielded item. */
-UENUM(BlueprintType)
-enum class EEnclaveEquipmentReadiness : uint8
-{
-	Unequipped,
-	Equipping,
-	Ready
-};
-
 class AEnclaveItem;
 class UAbilitySystemComponent;
 class IEnclaveAvatarPresentationInterface;
-struct FGameplayEffectRemovalInfo;
 
 /**
  * Manages the character's currently wielded item and item-action input.
@@ -70,8 +60,12 @@ public:
 	void ClearCurrentWieldedItem();
 
 	AEnclaveItem* GetCurrentWieldedItem() const { return CurrentWieldedItem; }
-	EEnclaveEquipmentReadiness GetCurrentWieldedItemReadiness() const { return CurrentWieldedItemReadiness; }
-	bool IsCurrentWieldedItemReadyForActions() const { return CurrentWieldedItemReadiness == EEnclaveEquipmentReadiness::Ready; }
+
+	/**
+	 * Derived readiness query. GAS is the single source of truth: an item is
+	 * actionable only when one is wielded and State.Item.Equipping is absent.
+	 */
+	bool IsCurrentWieldedItemReadyForActions() const;
 
 	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
@@ -114,12 +108,10 @@ private:
 	/** Reports an already-established wielded-item state change to avatar presentation. */
 	void UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
 
-	// Gameplay-authoritative readiness transition for CurrentWieldedItem. GAS owns
-	// the equip window's clock through a duration Gameplay Effect; Equipment mirrors
-	// that effect's lifecycle into CurrentWieldedItemReadiness.
-	void BeginCurrentWieldedItemReadinessTransition(AEnclaveItem* Item);
-	void HandleCurrentWieldedItemEquipEffectRemoved(const FGameplayEffectRemovalInfo& RemovalInfo, FActiveGameplayEffectHandle RemovedHandle, TWeakObjectPtr<AEnclaveItem> TransitionItem);
-	void ClearCurrentWieldedItemReadinessTransition();
+	// Gameplay-authoritative equip window for CurrentWieldedItem. GAS owns both
+	// the clock and the State.Item.Equipping tag that blocks item actions.
+	void BeginCurrentWieldedItemEquipWindow(AEnclaveItem* Item);
+	void ClearCurrentWieldedItemEquipWindow();
 
 	// Ability granting - server-authoritative only, mirrors the existing
 	// authority gating on WieldItem. Clients learn about granted abilities
@@ -154,15 +146,6 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentWieldedItem)
 	TObjectPtr<AEnclaveItem> CurrentWieldedItem = nullptr;
-
-	/**
-	 * Gameplay truth for whether CurrentWieldedItem is still in its equip delay.
-	 * The authoritative value follows the GAS equip-window effect lifecycle;
-	 * presentation remains intentionally uncoupled and receives only the authored
-	 * duration on the semantic Draw event.
-	 */
-	UPROPERTY(Replicated)
-	EEnclaveEquipmentReadiness CurrentWieldedItemReadiness = EEnclaveEquipmentReadiness::Unequipped;
 
 	/** Authority-only handle for the duration Gameplay Effect that owns the current equip window. */
 	FActiveGameplayEffectHandle CurrentWieldedItemEquipEffectHandle;
