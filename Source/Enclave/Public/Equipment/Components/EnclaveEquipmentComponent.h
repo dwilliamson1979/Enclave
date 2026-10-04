@@ -105,6 +105,9 @@ private:
 	/** The owner's avatar-presentation implementation, discovered by interface. */
 	IEnclaveAvatarPresentationInterface* GetAvatarPresentation() const;
 
+	/** Applies authoritative actor visibility for the wield transition. */
+	void UpdateWieldedItemActorVisibility(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
+
 	/** Reports an already-established wielded-item state change to avatar presentation. */
 	void UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
 

@@ -83,6 +83,11 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	// reject or roll it back.
 	RemoveGrantedAbilities();
 	CurrentWieldedItem = Item;
+
+	// Actor-level visibility is replicated gameplay state. Equipment owns this
+	// transition; AvatarPresentation only controls local mesh visibility.
+	UpdateWieldedItemActorVisibility(PreviousItem, CurrentWieldedItem);
+
 	BeginCurrentWieldedItemEquipWindow(CurrentWieldedItem);
 	GrantAbilitiesForItem(CurrentWieldedItem);
 
@@ -111,6 +116,9 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
 
 	CurrentWieldedItem = nullptr;
 
+	// The released item remains carried in the current slice, so gameplay hides
+	// the actor again. Presentation independently tears down its local mesh state.
+	UpdateWieldedItemActorVisibility(PreviousItem, nullptr);
 	UpdateWieldedItemPresentation(PreviousItem, nullptr);
 	LocallyWieldedItem.Reset();
 }
@@ -487,6 +495,22 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItemEquipWindow()
 	if (UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent())
 	{
 		ASC->RemoveActiveGameplayEffect(HandleToRemove);
+	}
+}
+
+void UEnclaveEquipmentComponent::UpdateWieldedItemActorVisibility(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem)
+{
+	// This helper is called only from authority-owned wield transitions. The
+	// replicated actor flag represents gameplay/world visibility: carried but
+	// unwielded items are hidden, while the currently wielded item is visible.
+	if (IsValid(PreviousItem) && PreviousItem != NewItem)
+	{
+		PreviousItem->SetActorHiddenInGame(true);
+	}
+
+	if (IsValid(NewItem))
+	{
+		NewItem->SetActorHiddenInGame(false);
 	}
 }
 

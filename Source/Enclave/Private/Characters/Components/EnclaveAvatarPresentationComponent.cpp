@@ -43,11 +43,9 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 		ClearWieldedItemPresentation();
 	}
 
-	// Keep a failed or not-yet-drawn presentation invisible rather than leaving
-	// the item at its previous/world transform. Actor visibility is replicated,
-	// so also gate the presentation meshes locally; otherwise an authority-side
-	// visibility update can reveal a still-pending Draw on a client.
-	Item->SetActorHiddenInGame(true);
+	// Presentation owns only local mesh visibility. Gameplay/Equipment owns the
+	// replicated actor hidden flag, so a pending or failed Draw is masked locally
+	// without allowing cosmetic timing to mutate authoritative world visibility.
 	SetItemPresentationHidden(Item, true);
 
 	const FGameplayTag ItemType = Item->GetItemType();
@@ -85,7 +83,6 @@ void UEnclaveAvatarPresentationComponent::PresentWieldedItem(AEnclaveItem* Item)
 
 	if (!bDeferWieldedAttachment)
 	{
-		Item->SetActorHiddenInGame(false);
 		SetItemPresentationHidden(Item, false);
 	}
 }
@@ -107,7 +104,6 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 	if (AEnclaveItem* Item = PresentedWieldedItemState.Item.Get(); IsValid(Item))
 	{
 		SetItemPresentationHidden(Item, true);
-		Item->SetActorHiddenInGame(true);
 	}
 
 	PresentedWieldedItemState.Reset();
@@ -444,7 +440,6 @@ bool UEnclaveAvatarPresentationComponent::CommitPendingWieldedAttachment(AEnclav
 	}
 
 	PresentedWieldedItemState.bWieldedAttachmentPending = false;
-	Item->SetActorHiddenInGame(false);
 	SetItemPresentationHidden(Item, false);
 	return true;
 }
