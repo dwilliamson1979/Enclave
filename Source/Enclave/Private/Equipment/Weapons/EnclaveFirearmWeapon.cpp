@@ -353,7 +353,18 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 	if (CVarDebugFireTrace.GetValueOnGameThread())
 	{
 		DrawDebugLine(World, ViewLocation, bHit ? HitResult.ImpactPoint : TraceEnd, bHit ? FColor::Green : FColor::Red, false, 2.0f, 0, 1.0f);
-		ENCLAVE_NET_LOG(LogEnclaveWeapon, Log, this, FString::Printf(TEXT("fire trace hit: %s"), *GetNameSafe(HitResult.GetActor())));
+
+		const FString BoneName = HitResult.BoneName.IsNone() ? TEXT("None") : HitResult.BoneName.ToString();
+
+		ENCLAVE_NET_LOG(
+			LogEnclaveWeapon,
+			Log,
+			this,
+			FString::Printf(
+				TEXT("fire trace hit=%s component=%s bone=%s"),
+				*GetNameSafe(HitResult.GetActor()),
+				*GetNameSafe(HitResult.GetComponent()),
+				*BoneName));
 	}
 
 	if (bHit)

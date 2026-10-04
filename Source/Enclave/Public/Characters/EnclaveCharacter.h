@@ -66,6 +66,9 @@ private:
 	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
 	void InitializeAbilityActorInfo();
 
+	/** Authority only: exposes exactly one character representation to the Weapon trace channel for the selected match hit-detection mode. */
+	void ApplyWeaponHitDetectionCollisionPolicy();
+
 	// BlueprintReadOnly so BP_EnclaveCharacter's graph can reach it (e.g. to
 	// test Link Anim Class Layers before the equip-driven C++ path exists).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh", meta = (AllowPrivateAccess = "true"))

@@ -3,6 +3,8 @@
 #include "Characters/EnclaveCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -21,8 +23,11 @@
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "Collision/EnclaveCollisionChannels.h"
+#include "Game/EnclaveGameModeBase.h"
 
 #include "Engine/Engine.h"
+#include "Engine/World.h"
 #include "Debug/EnclaveDebug.h"
 
 // Input tag tracing. Previously printed unconditionally on every input
@@ -145,11 +150,74 @@ void AEnclaveCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	ApplyWeaponHitDetectionCollisionPolicy();
+
 	if (InputRouterComp)
 	{
 		InputRouterComp->RegisterInputHandler(Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement()));
 		InputRouterComp->RegisterInputHandler(ViewComp);
 		InputRouterComp->RegisterInputHandler(EquipmentComp);
+	}
+}
+
+void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy()
+{
+	// Fire hit detection is server-authoritative (UEnclaveGA_Fire only traces
+	// when HasAuthority), so clients do not get to choose their own target
+	// representation. Collision-response changes do not need to replicate.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UCapsuleComponent* Capsule = GetCapsuleComponent();
+	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();
+
+	if (!IsValid(Capsule) || !IsValid(ThirdPersonMesh))
+	{
+		return;
+	}
+
+	const AEnclaveGameModeBase* EnclaveGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
+
+	if (!IsValid(EnclaveGameMode))
+	{
+		ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s could not resolve AEnclaveGameModeBase; defaulting Weapon collision policy to Capsule.", *GetName());
+	}
+
+	const EEnclaveWeaponHitDetectionMode Mode = IsValid(EnclaveGameMode)
+		? EnclaveGameMode->GetWeaponHitDetectionMode()
+		: EEnclaveWeaponHitDetectionMode::Capsule;
+
+	switch (Mode)
+	{
+	case EEnclaveWeaponHitDetectionMode::SkeletalHitboxes:
+		// Movement still uses the capsule. Only Weapon queries ignore it and
+		// continue to the third-person mesh's Physics Asset bodies.
+		Capsule->SetCollisionResponseToChannel(ECC_Weapon, ECR_Ignore);
+		ThirdPersonMesh->SetCollisionResponseToChannel(ECC_Weapon, ECR_Block);
+
+		// A dedicated server has no rendering to force bone refreshes. Weapon
+		// traces depend on current Physics Asset body transforms, so skeletal
+		// hitbox mode explicitly keeps the authoritative body pose current.
+		ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
+		if (!ThirdPersonMesh->GetPhysicsAsset())
+		{
+			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s is using SkeletalHitboxes but its third-person mesh has no Physics Asset; Weapon traces cannot hit skeletal bodies.", *GetName());
+		}
+
+		if (ThirdPersonMesh->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+		{
+			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s is using SkeletalHitboxes but its third-person mesh collision is disabled; configure the CharacterMesh collision profile for query collision.", *GetName());
+		}
+		break;
+
+	case EEnclaveWeaponHitDetectionMode::Capsule:
+	default:
+		Capsule->SetCollisionResponseToChannel(ECC_Weapon, ECR_Block);
+		ThirdPersonMesh->SetCollisionResponseToChannel(ECC_Weapon, ECR_Ignore);
+		break;
 	}
 }
 
