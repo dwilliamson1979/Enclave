@@ -79,3 +79,8 @@ DerivedDataCache/*
 
 CreateUnrealCodebaseAndHierarchy.ps1
 ProjectSnapshots/*
+
+# Unreal C++ source files use CRLF in the working tree.
+# Git still normalizes text in the repository, preventing line-ending-only diffs.
+*.h text eol=crlf
+*.cpp text eol=crlf
