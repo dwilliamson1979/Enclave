@@ -26,7 +26,9 @@ AEnclaveItem::AEnclaveItem()
 
 	ThirdPersonMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("ThirdPersonMesh"));
 	ThirdPersonMesh->SetupAttachment(SceneRoot);
-	ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	// Remote item montages can carry gameplay-relevant cosmetic notifies such as reload audio.
+	// Keep montages advancing while off-screen without paying for full pose evaluation.
+	ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
 	ThirdPersonMesh->SetReceivesDecals(false);
 	ThirdPersonMesh->SetCastShadow(true);
 	ThirdPersonMesh->SetOnlyOwnerSee(false);
