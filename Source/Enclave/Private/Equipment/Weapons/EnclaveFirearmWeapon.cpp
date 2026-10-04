@@ -43,7 +43,7 @@ AEnclaveFirearmWeapon::AEnclaveFirearmWeapon()
 	// User.Trigger burst) happens just from existing in the world.
 	// SetupAttachment alone (no socket yet) since FirstPersonMesh/
 	// ThirdPersonMesh don't have their skeletal mesh assigned until
-	// ApplyWeaponDefinition runs in BeginPlay - the actual socket attachment
+	// ApplyItemDefinition runs in BeginPlay - the actual socket attachment
 	// and owner-visibility flags are set there too, once the definition (and
 	// therefore the mesh/socket/effect) is known.
 	MuzzleFlashComponentFirstPerson = CreateDefaultSubobject<UNiagaraComponent>(TEXT("MuzzleFlashComponentFirstPerson"));
@@ -79,9 +79,9 @@ const UEnclaveFirearmWeaponDefinition* AEnclaveFirearmWeapon::GetFirearmWeaponDe
 	return Cast<UEnclaveFirearmWeaponDefinition>(GetWeaponDefinition());
 }
 
-void AEnclaveFirearmWeapon::ApplyWeaponDefinition()
+void AEnclaveFirearmWeapon::ApplyItemDefinition()
 {
-	Super::ApplyWeaponDefinition();
+	Super::ApplyItemDefinition();
 
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 

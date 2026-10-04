@@ -2,58 +2,24 @@
 
 #include "Equipment/Weapons/EnclaveWeapon.h"
 
-#include "Components/SkeletalMeshComponent.h"
-
+#include "Equipment/Data/EnclaveItemDefinition.h"
 #include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
 
 AEnclaveWeapon::AEnclaveWeapon()
 {
 }
 
-void AEnclaveWeapon::BeginPlay()
+const UEnclaveItemDefinition* AEnclaveWeapon::GetItemDefinition() const
 {
-	Super::BeginPlay();
-
-	ApplyWeaponDefinition();
-}
-
-FGameplayTag AEnclaveWeapon::GetItemType() const
-{
-	if (!IsValid(WeaponDefinition))
+	if (const UEnclaveItemDefinition* Definition = Super::GetItemDefinition())
 	{
-		return FGameplayTag();
+		return Definition;
 	}
 
-	return WeaponDefinition->GetItemType();
+	return WeaponDefinition;
 }
 
-bool AEnclaveWeapon::HasItemCapability(const FGameplayTag& CapabilityTag) const
+const UEnclaveWeaponDefinition* AEnclaveWeapon::GetWeaponDefinition() const
 {
-	return IsValid(WeaponDefinition) && WeaponDefinition->HasItemCapability(CapabilityTag);
-}
-
-float AEnclaveWeapon::GetEquipDuration() const
-{
-	return IsValid(WeaponDefinition) ? WeaponDefinition->GetEquipDuration() : Super::GetEquipDuration();
-}
-
-TArray<FEnclaveAbilityGrant> AEnclaveWeapon::GetAbilityGrants() const
-{
-	if (!IsValid(WeaponDefinition))
-	{
-		return {};
-	}
-
-	return WeaponDefinition->GetAbilityGrants();
-}
-
-void AEnclaveWeapon::ApplyWeaponDefinition()
-{
-	if (!IsValid(WeaponDefinition))
-	{
-		return;
-	}
-
-	FirstPersonMesh->SetSkeletalMesh(WeaponDefinition->GetFirstPersonMesh());
-	ThirdPersonMesh->SetSkeletalMesh(WeaponDefinition->GetThirdPersonMesh());
+	return Cast<UEnclaveWeaponDefinition>(GetItemDefinition());
 }

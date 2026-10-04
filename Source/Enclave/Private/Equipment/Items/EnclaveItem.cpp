@@ -5,6 +5,8 @@
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 
+#include "Equipment/Data/EnclaveItemDefinition.h"
+
 AEnclaveItem::AEnclaveItem()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -36,19 +38,40 @@ AEnclaveItem::AEnclaveItem()
 	ThirdPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
-FGameplayTag AEnclaveItem::GetItemType() const
+void AEnclaveItem::BeginPlay()
 {
-	return FGameplayTag();
+	Super::BeginPlay();
+
+	ApplyItemDefinition();
 }
 
-bool AEnclaveItem::HasItemCapability(const FGameplayTag&) const
+const UEnclaveItemDefinition* AEnclaveItem::GetItemDefinition() const
 {
-	return false;
+	return ItemDefinition;
+}
+
+FGameplayTag AEnclaveItem::GetItemType() const
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) ? Definition->GetItemType() : FGameplayTag();
+}
+
+bool AEnclaveItem::HasItemCapability(const FGameplayTag& CapabilityTag) const
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) && Definition->HasItemCapability(CapabilityTag);
 }
 
 float AEnclaveItem::GetEquipDuration() const
 {
-	return 0.0f;
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) ? Definition->GetEquipDuration() : 0.0f;
+}
+
+TArray<FEnclaveAbilityGrant> AEnclaveItem::GetAbilityGrants() const
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) ? Definition->GetAbilityGrants() : TArray<FEnclaveAbilityGrant>();
 }
 
 void AEnclaveItem::StartPresentationAction(const FGameplayTag& Action, float Duration)
@@ -57,4 +80,17 @@ void AEnclaveItem::StartPresentationAction(const FGameplayTag& Action, float Dur
 
 void AEnclaveItem::EndPresentationAction(const FGameplayTag& Action)
 {
+}
+
+void AEnclaveItem::ApplyItemDefinition()
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+
+	if (!IsValid(Definition))
+	{
+		return;
+	}
+
+	FirstPersonMesh->SetSkeletalMesh(Definition->GetFirstPersonMesh());
+	ThirdPersonMesh->SetSkeletalMesh(Definition->GetThirdPersonMesh());
 }

@@ -6,20 +6,17 @@
 #include "Equipment/Items/EnclaveItem.h"
 #include "EnclaveWeapon.generated.h"
 
+class UEnclaveItemDefinition;
 class UEnclaveWeaponDefinition;
 
 /**
- * Base class for wieldable weapons.
+ * Base class for weapons.
  *
- * Owns weapon-level identity, configuration, equip timing, capabilities,
- * and ability grants. Item action support and execution are resolved through
- * GAS from the currently wielded item's granted abilities.
- *
- * Anything that only makes sense for a ranged/firearm weapon (hit detection,
- * ammo/reload state, muzzle presentation, and firearm-local action
- * presentation) lives one level down on AEnclaveFirearmWeapon, so a future
- * non-firearm weapon such as a knife or baton does not inherit firearm-only
- * behavior.
+ * Generic physical-item configuration and behavior live on AEnclaveItem and
+ * UEnclaveItemDefinition. This type exists as the runtime weapon tier for
+ * behavior that is meaningful to weapons generally, while firearm-specific
+ * hit detection, ammo/reload state, and presentation remain on
+ * AEnclaveFirearmWeapon.
  */
 UCLASS(Abstract, Blueprintable)
 class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem
@@ -27,31 +24,24 @@ class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem
 	GENERATED_BODY()
 
 public:
-
 	AEnclaveWeapon();
 
-	virtual FGameplayTag GetItemType() const override;
-	virtual bool HasItemCapability(const FGameplayTag& CapabilityTag) const override;
-	virtual float GetEquipDuration() const override;
-	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const override;
-
-	const UEnclaveWeaponDefinition* GetWeaponDefinition() const { return WeaponDefinition; }
-
-protected:
-
-	virtual void BeginPlay() override;
-
 	/**
-	 * Applies WeaponDefinition's shared presentation (currently: first- and
-	 * third-person meshes) to this actor. Virtual so a subclass
-	 * (AEnclaveFirearmWeapon) can extend it for its own definition subtype's
-	 * data (muzzle sockets, etc.) - an override must call Super:: first.
+	 * Temporary migration override: prefer AEnclaveItem::ItemDefinition, but
+	 * fall back to the legacy WeaponDefinition property so existing weapon
+	 * Blueprints continue working while their asset reference is migrated.
 	 */
-	virtual void ApplyWeaponDefinition();
+	virtual const UEnclaveItemDefinition* GetItemDefinition() const override;
+
+	/** Generic item definition resolved as a weapon definition. */
+	const UEnclaveWeaponDefinition* GetWeaponDefinition() const;
 
 private:
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
+	/**
+	 * Legacy asset reference retained only for staged editor migration.
+	 * Assign the inherited Item Definition property instead; remove this field
+	 * after BP_Rifle/BP_Pistol (and any other weapon actors) are migrated.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Migration", meta = (AllowPrivateAccess = "true", DisplayName = "Weapon Definition (Legacy - Migrate)"))
 	TObjectPtr<UEnclaveWeaponDefinition> WeaponDefinition;
-
 };

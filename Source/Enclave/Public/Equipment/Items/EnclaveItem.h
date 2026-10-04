@@ -8,6 +8,7 @@
 #include "Abilities/EnclaveAbilityGrant.h"
 #include "EnclaveItem.generated.h"
 
+class UEnclaveItemDefinition;
 class USceneComponent;
 class USkeletalMeshComponent;
 
@@ -15,7 +16,9 @@ class USkeletalMeshComponent;
  * Base actor for a physical runtime item.
  *
  * This represents an item that exists physically in the world or is being
- * presented by an actor. It does not represent an inventory entry.
+ * presented by an actor. It does not represent an inventory entry. Generic
+ * authored item data is sourced from ItemDefinition; concrete subclasses add
+ * only runtime behavior specific to their domain.
  */
 UCLASS(Abstract, Blueprintable)
 class ENCLAVE_API AEnclaveItem : public AActor
@@ -25,13 +28,12 @@ class ENCLAVE_API AEnclaveItem : public AActor
 public:
 	AEnclaveItem();
 
+	/** Definition supplying this actor's generic authored item data. */
+	virtual const UEnclaveItemDefinition* GetItemDefinition() const;
+
 	virtual FGameplayTag GetItemType() const;
 
-	/**
-	 * Returns whether this item declares the exact semantic capability tag.
-	 * Base items declare no capabilities; concrete item types may source them
-	 * from their authored definition data.
-	 */
+	/** Returns whether this item declares the exact semantic capability tag. */
 	virtual bool HasItemCapability(const FGameplayTag& CapabilityTag) const;
 
 	/**
@@ -39,8 +41,7 @@ public:
 	 * Equipment considers it ready for item actions. Presentation may visually
 	 * represent the same transition, but animation never determines readiness.
 	 * A zero duration means there is no equip transition to present: attachment
-	 * is immediate and Draw presentation is skipped. Base items are instant unless
-	 * a concrete item type supplies a duration.
+	 * is immediate and Draw presentation is skipped.
 	 */
 	virtual float GetEquipDuration() const;
 
@@ -61,18 +62,21 @@ public:
 	virtual void EndPresentationAction(const FGameplayTag& Action);
 
 	/**
-	 * Abilities (each paired with the input tag that activates it)
-	 * EquipmentComponent should grant to the wielder's ASC while this item
-	 * is wielded, and remove the moment it stops being wielded. Base
-	 * implementation grants nothing - most items (e.g. future
-	 * non-actionable items) have no abilities of their own.
+	 * Abilities (each paired with the input tag that activates it) granted to
+	 * the wielder's ASC while this item is wielded and removed when it stops
+	 * being wielded. Empty is valid for non-actionable items.
 	 */
-	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const { return {}; }
+	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const;
 
 	USkeletalMeshComponent* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMeshComponent* GetThirdPersonMesh() const { return ThirdPersonMesh; }
 
 protected:
+	virtual void BeginPlay() override;
+
+	/** Applies the generic presentation data supplied by GetItemDefinition(). */
+	virtual void ApplyItemDefinition();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<USceneComponent> SceneRoot;
 
@@ -81,4 +85,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Presentation")
 	TObjectPtr<USkeletalMeshComponent> ThirdPersonMesh;
+
+private:
+	/** Generic authored definition for this physical item. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveItemDefinition> ItemDefinition;
 };

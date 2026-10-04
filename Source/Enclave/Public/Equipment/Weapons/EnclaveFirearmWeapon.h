@@ -138,11 +138,11 @@ protected:
 	/** Server fills the magazine from the definition's MagazineCapacity - a freshly spawned weapon (loadout, respawn) starts full. */
 	virtual void BeginPlay() override;
 
-	virtual void ApplyWeaponDefinition() override;
+	virtual void ApplyItemDefinition() override;
 
 private:
 
-	/** WeaponDefinition, cast to this weapon's actual definition subtype. Null if this actor was misconfigured with a base (non-firearm) UEnclaveWeaponDefinition. */
+	/** ItemDefinition, resolved as this weapon's firearm definition subtype. Null if the actor was configured with a non-firearm definition. */
 	const UEnclaveFirearmWeaponDefinition* GetFirearmWeaponDefinition() const;
 
 	/** Assigns the muzzle flash asset to MuzzleFlashComponent and snaps it onto MeshComp's muzzle socket, matching MeshComp's own owner-visibility flags. Leaves the component with no asset (inactive) if InWeaponDefinition has no muzzle flash effect or the socket doesn't exist on MeshComp. */
@@ -216,7 +216,7 @@ private:
 	 * replaces spawning/destroying a fresh UNiagaraComponent on every shot,
 	 * which matters once automatic/charged weapons start re-triggering this
 	 * many times a second. Asset, socket, and owner-visibility flags are all
-	 * resolved once, in ApplyMuzzleFlashSocket via ApplyWeaponDefinition, not
+	 * resolved once, in ApplyMuzzleFlashSocket via ApplyItemDefinition, not
 	 * per shot. May end up with no asset assigned (and therefore inactive)
 	 * if the weapon definition has no muzzle flash effect or the socket
 	 * doesn't exist on that mesh.
