@@ -19,6 +19,10 @@
 #include "DrawDebugHelpers.h"
 #include "Debug/EnclaveDebug.h"
 
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
 // Debug visualization of "how did this weapon's shot travel" is this
 // weapon's own trace behavior, not the ability's concern.
 static TAutoConsoleVariable<bool> CVarDebugFireTrace(
@@ -61,6 +65,23 @@ void AEnclaveFirearmWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 
 	DOREPLIFETIME(AEnclaveFirearmWeapon, MagazineState);
 }
+
+#if WITH_EDITOR
+EDataValidationResult AEnclaveFirearmWeapon::IsDataValid(FDataValidationContext& Context) const
+{
+	Super::IsDataValid(Context);
+
+	if (!GetFirearmWeaponDefinition())
+	{
+		Context.AddError(NSLOCTEXT(
+			"EnclaveFirearmWeapon",
+			"InvalidFirearmDefinition",
+			"Firearm actors require ItemDefinition to be a UEnclaveFirearmWeaponDefinition."));
+	}
+
+	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;
+}
+#endif
 
 void AEnclaveFirearmWeapon::BeginPlay()
 {

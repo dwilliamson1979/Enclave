@@ -102,6 +102,11 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+#if WITH_EDITOR
+	/** Ensures firearm actors are configured with a firearm definition rather than a generic item/weapon definition. */
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
+
 	// AEnclaveItem - item-local presentation coordinated by AvatarPresentation.
 	virtual void StartPresentationAction(const FGameplayTag& Action, float Duration) override;
 	virtual void EndPresentationAction(const FGameplayTag& Action) override;
