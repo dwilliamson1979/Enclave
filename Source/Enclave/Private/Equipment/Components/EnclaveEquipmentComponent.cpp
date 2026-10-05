@@ -121,6 +121,9 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
 	UpdateWieldedItemActorVisibility(PreviousItem, nullptr);
 	UpdateWieldedItemPresentation(PreviousItem, nullptr);
 	LocallyWieldedItem.Reset();
+
+	// All GAS state owned by this Equipment instance has now been revoked.
+	ManagedAbilitySystem.Reset();
 }
 
 const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
@@ -441,6 +444,8 @@ void UEnclaveEquipmentComponent::BeginCurrentWieldedItemEquipWindow(AEnclaveItem
 		return;
 	}
 
+	ManagedAbilitySystem = ASC;
+
 	FGameplayEffectContextHandle EffectContext = ASC->MakeEffectContext();
 	EffectContext.AddSourceObject(Item);
 
@@ -492,7 +497,7 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItemEquipWindow()
 	const FActiveGameplayEffectHandle HandleToRemove = CurrentWieldedItemEquipEffectHandle;
 	CurrentWieldedItemEquipEffectHandle.Invalidate();
 
-	if (UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent())
+	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
 	{
 		ASC->RemoveActiveGameplayEffect(HandleToRemove);
 	}
@@ -579,16 +584,21 @@ UAbilitySystemComponent* UEnclaveEquipmentComponent::GetOwnerAbilitySystemCompon
 
 void UEnclaveEquipmentComponent::CancelActiveItemAbilities()
 {
-	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+	UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get();
 
 	if (!IsValid(ASC))
 	{
 		return;
 	}
 
-	FGameplayTagContainer ItemActionTags;
-	ItemActionTags.AddTag(EnclaveGameplayTags::Ability_Type_Action_Item);
-	ASC->CancelAbilities(&ItemActionTags, /*WithoutTags=*/ nullptr, /*Ignore=*/ nullptr);
+	// Lifecycle cleanup is ownership-scoped, not semantic. Cancel only the
+	// ability specs granted by this Equipment instance so a late teardown from
+	// an old pawn cannot cancel item abilities granted to a newer pawn on the
+	// same persistent ASC.
+	for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
+	{
+		ASC->CancelAbilityHandle(Handle);
+	}
 }
 
 void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
@@ -599,6 +609,8 @@ void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
 	{
 		return;
 	}
+
+	ManagedAbilitySystem = ASC;
 
 	for (const FEnclaveAbilityGrant& Grant : Item->GetAbilityGrants())
 	{
@@ -627,7 +639,7 @@ void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
 
 void UEnclaveEquipmentComponent::RemoveGrantedAbilities()
 {
-	if (UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent())
+	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
 	{
 		for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
 		{

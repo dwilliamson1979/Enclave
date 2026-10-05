@@ -124,6 +124,15 @@ private:
 	void GrantAbilitiesForItem(AEnclaveItem* Item);
 	void RemoveGrantedAbilities();
 
+	/**
+	 * The ASC that owns GrantedAbilityHandles and CurrentWieldedItemEquipEffectHandle.
+	 *
+	 * Stored explicitly because pawn teardown can clear the pawn's PlayerState before
+	 * UninitializeComponent runs. Cleanup must revoke the exact GAS state this
+	 * Equipment instance created without rediscovering the ASC through its owner.
+	 */
+	TWeakObjectPtr<UAbilitySystemComponent> ManagedAbilitySystem;
+
 	/** Handles for abilities currently granted for CurrentWieldedItem. Server-only bookkeeping, not replicated. */
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 
