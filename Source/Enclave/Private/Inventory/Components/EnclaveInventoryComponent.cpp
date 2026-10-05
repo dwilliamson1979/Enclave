@@ -10,6 +10,7 @@
 
 UEnclaveInventoryComponent::UEnclaveInventoryComponent()
 {
+	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
