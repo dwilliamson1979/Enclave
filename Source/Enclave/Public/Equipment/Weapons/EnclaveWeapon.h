@@ -4,51 +4,25 @@
 
 #include "CoreMinimal.h"
 #include "Equipment/Items/EnclaveItem.h"
-#include "Equipment/Interfaces/EnclaveWieldableInterface.h"
 #include "EnclaveWeapon.generated.h"
 
 class UEnclaveWeaponDefinition;
 
 /**
- * Base class for wieldable weapons.
+ * Base class for weapons.
  *
- * Defines common weapon representation and translates generic wieldable
- * actions into weapon-specific behavior.
- *
- * Networking and detailed firing/reloading mechanics are intentionally left
- * to more specialized weapon implementations as those systems are introduced.
+ * Generic physical-item configuration and behavior live on AEnclaveItem and
+ * UEnclaveItemDefinition. This type exists as the runtime weapon tier for
+ * behavior that is meaningful to weapons generally, while firearm-specific
+ * hit detection, ammo/reload state, and presentation remain on
+ * AEnclaveFirearmWeapon.
  */
 UCLASS(Abstract, Blueprintable)
-class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem, public IEnclaveWieldableInterface
+class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem
 {
 	GENERATED_BODY()
 
 public:
-
-	AEnclaveWeapon();
-
-	virtual FGameplayTag GetItemType() const override;
-
-	// IEnclaveWieldableInterface
-	virtual bool HandlePrimaryAction_Implementation(const FEnclaveInputEvent& InputEvent) override;
-	virtual bool HandleSecondaryAction_Implementation(const FEnclaveInputEvent& InputEvent) override;
-	virtual bool HandleTertiaryAction_Implementation(const FEnclaveInputEvent& InputEvent) override;
-
-	const UEnclaveWeaponDefinition* GetWeaponDefinition() const { return WeaponDefinition; }
-
-protected:
-
-	virtual void BeginPlay() override;
-
-	virtual bool TryPrimaryAction(const FEnclaveInputEvent& InputEvent);
-	virtual bool TrySecondaryAction(const FEnclaveInputEvent& InputEvent);
-	virtual bool TryTertiaryAction(const FEnclaveInputEvent& InputEvent);
-
-private:
-
-	void ApplyWeaponDefinition();
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveWeaponDefinition> WeaponDefinition;
-
+	/** ItemDefinition, resolved as this actor's weapon-definition subtype. */
+	const UEnclaveWeaponDefinition* GetWeaponDefinition() const;
 };

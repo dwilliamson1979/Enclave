@@ -3,35 +3,30 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataAsset.h"
+#include "Equipment/Data/EnclaveItemDefinition.h"
 #include "GameplayTagContainer.h"
 #include "EnclaveWeaponDefinition.generated.h"
 
-class USkeletalMesh;
-
+/**
+ * Weapon-specific authored data shared by every weapon definition.
+ *
+ * Generic item identity/capabilities, presentation meshes, equip timing, and
+ * granted abilities live on UEnclaveItemDefinition. This class adds only data
+ * whose semantics are specifically weapon-level. Firearm-only combat and
+ * presentation tuning lives one level further down on
+ * UEnclaveFirearmWeaponDefinition.
+ */
 UCLASS(BlueprintType)
-class ENCLAVE_API UEnclaveWeaponDefinition : public UPrimaryDataAsset
+class ENCLAVE_API UEnclaveWeaponDefinition : public UEnclaveItemDefinition
 {
 	GENERATED_BODY()
 
 public:
+	UEnclaveWeaponDefinition();
 
 	const FGameplayTagContainer& GetWeaponTags() const { return WeaponTags; }
-	const FGameplayTag& GetWeaponType() const { return WeaponType; }
-
-	USkeletalMesh* GetFirstPersonMesh() const { return FirstPersonMesh; }
-	USkeletalMesh* GetThirdPersonMesh() const { return ThirdPersonMesh; }
 
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon"))
 	FGameplayTagContainer WeaponTags;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Classification", meta = (AllowPrivateAccess = "true", Categories = "Weapon.Type"))
-	FGameplayTag WeaponType;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<USkeletalMesh> FirstPersonMesh;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<USkeletalMesh> ThirdPersonMesh;
 };

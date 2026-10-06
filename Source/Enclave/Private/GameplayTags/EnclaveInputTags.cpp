@@ -18,14 +18,17 @@ namespace EnclaveGameplayTags
 
 	// Input ItemActions
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item, "Input.Item", "Root tag for currently equipped item input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action, "Input.Item.Action", "Root tag for actions performed by the currently equipped item.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Primary, "Input.Item.Action.Primary", "Primary action for the currently equipped item.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Secondary, "Input.Item.Action.Secondary", "Secondary action for the currently equipped item.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Tertiary, "Input.Item.Action.Tertiary", "Tertiary action for the currently equipped item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item_Action_Reload, "Input.Item.Action.Reload", "Reload (or otherwise replenish) the currently equipped item.");
 
-	// Equipment EquipmentActions
+	// Equipment - Wieldable Selection
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment, "Input.Equipment", "Root tag for equipment-selection input.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Next_Wieldable, "Input.Equipment.Next.Wieldable", "Select the next available wieldable item.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Previous_Wieldable, "Input.Equipment.Previous.Wieldable", "Select the previous available wieldable item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Wieldable, "Input.Equipment.Wieldable", "Root tag for wieldable-item selection input.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Wieldable_Next, "Input.Equipment.Wieldable.Next", "Select the next available wieldable item.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Equipment_Wieldable_Previous, "Input.Equipment.Wieldable.Previous", "Select the previous available wieldable item.");
 
 	// Input - Gameplay / Item / Interaction Actions
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action, "Input.Action", "Root tag for gameplay action input.");
@@ -40,4 +43,4 @@ namespace EnclaveGameplayTags
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action_Item_Unequip, "Input.Action.Item.Unequip", "Unequip the currently equipped item.");
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action_Item_Drop, "Input.Action.Item.Drop", "Drop the currently equipped item.");
 	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Action_Interact, "Input.Action.Interact", "Primary interaction input.");
-}
+}

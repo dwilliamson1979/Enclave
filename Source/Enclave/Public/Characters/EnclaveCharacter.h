@@ -4,9 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "AbilitySystemInterface.h"
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
-#include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
+#include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "EnclaveCharacter.generated.h"
 
 class UCameraComponent;
@@ -15,14 +16,14 @@ class UEnclaveInputConfig;
 class UEnclaveInputRouterComponent;
 class UEnclaveCharacterMovementComponent;
 class UEnclaveViewComponent;
-class UEnclaveCombatComponent;
 class UEnclaveEquipmentComponent;
 class UEnclaveInventoryComponent;
-class UEnclaveItemAttachmentDefinition;
 class AEnclaveItem;
+class UEnclaveAvatarPresentationComponent;
+class UAbilitySystemComponent;
 
 UCLASS()
-class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveItemWielderInterface
+class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
 {
 	GENERATED_BODY()
 
@@ -33,6 +34,19 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
 
+	/**
+	 * Client-side counterpart to PossessedBy: fires when the replicated
+	 * PlayerState reference lands on a client, which happens on a different
+	 * timeline than server-side possession. Both paths must independently
+	 * (re)point the ASC's avatar at this Pawn - this is the single most
+	 * common GAS setup bug (abilities silently not working on one side of
+	 * the connection because actor info was only initialized on the other).
+	 */
+	virtual void OnRep_PlayerState() override;
+
+	// IAbilitySystemInterface
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
 	// Interface implementations
 
 	// IEnclaveInputReceiverInterface
@@ -41,18 +55,24 @@ public:
 	// IEnclaveInputConfigProviderInterface
 	virtual const UEnclaveInputConfig* GetInputConfig() const override;
 
-	// IEnclaveItemWielderInterface
-	virtual bool ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const override;
-
-	UEnclaveCharacterMovementComponent* GetEnclaveCharacterMovement() const;
+	// IEnclaveAnimDataProviderInterface
+	virtual FEnclaveAnimData GetAnimData() const override;
 
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
 private:
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh;
+	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
+	void InitializeAbilityActorInfo();
+
+	/** Authority only: exposes exactly one character representation to the Weapon trace channel for the selected match hit-detection mode. */
+	void ApplyWeaponHitDetectionCollisionPolicy();
+
+	// BlueprintReadOnly so BP_EnclaveCharacter's graph can reach it (e.g. to
+	// test Link Anim Class Layers before the equip-driven C++ path exists).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> SpringArmComp = nullptr;
@@ -69,9 +89,6 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInputConfig> InputConfig = nullptr;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveCombatComponent> CombatComp = nullptr;
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInventoryComponent> InventoryComp = nullptr;
 
@@ -81,6 +98,7 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UEnclaveItemAttachmentDefinition> ItemAttachmentDefinition = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Avatar Presentation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveAvatarPresentationComponent> AvatarPresentationComp;
+
 };

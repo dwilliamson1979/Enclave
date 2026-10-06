@@ -3,25 +3,40 @@
 #include "Characters/EnclaveCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+
+#include "AbilitySystemComponent.h"
+#include "Player/EnclavePlayerState.h"
 
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
-
-#include "Combat/EnclaveCombatComponent.h"
+#include "Characters/Components/EnclaveAvatarPresentationComponent.h"
 
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
-#include "Equipment/Data/EnclaveItemAttachmentDefinition.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "Collision/EnclaveCollisionChannels.h"
+#include "Game/EnclaveGameModeBase.h"
 
 #include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "Debug/EnclaveDebug.h"
+
+// Input tag tracing. Previously printed unconditionally on every input
+// event; now opt-in like the other Enclave.Debug.* toggles.
+static TAutoConsoleVariable<bool> CVarDebugInput(
+	TEXT("Enclave.Debug.Input"),
+	false,
+	TEXT("Log and print every input tag the character receives in ProcessInput."),
+	ECVF_Cheat);
 
 AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UEnclaveCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -60,19 +75,22 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	InputRouterComp = CreateDefaultSubobject<UEnclaveInputRouterComponent>(TEXT("InputRouterComp"));
 	ViewComp = CreateDefaultSubobject<UEnclaveViewComponent>(TEXT("ViewComp"));
 
-	CombatComp = CreateDefaultSubobject<UEnclaveCombatComponent>(TEXT("CombatComp"));
-	CombatComp->SetIsReplicated(true);
-
 	InventoryComp = CreateDefaultSubobject<UEnclaveInventoryComponent>(TEXT("InventoryComp"));
 	InventoryComp->SetIsReplicated(true);
 
 	EquipmentComp = CreateDefaultSubobject<UEnclaveEquipmentComponent>(TEXT("EquipmentComp"));
 	EquipmentComp->SetIsReplicated(true);
+
+	AvatarPresentationComp = CreateDefaultSubobject<UEnclaveAvatarPresentationComponent>(TEXT("AvatarPresentationComp"));
+	AvatarPresentationComp->SetPresentationMeshes(FirstPersonMesh, GetMesh());
 }
 
 void AEnclaveCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+
+	// Server-side: PlayerState is already valid by this point.
+	InitializeAbilityActorInfo();
 
 	if (!InventoryComp || !EquipmentComp || !InventoryComp->IsEmpty())
 	{
@@ -93,15 +111,113 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 	}
 }
 
+void AEnclaveCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	// Client-side: this is the owning client's independent notification that
+	// PlayerState (and therefore the ASC) is now valid. PossessedBy above
+	// only runs on the server - without this override, abilities would work
+	// for the host/listen-server player and silently fail for every client.
+	InitializeAbilityActorInfo();
+}
+
+void AEnclaveCharacter::InitializeAbilityActorInfo()
+{
+	AEnclavePlayerState* EnclavePlayerState = GetPlayerState<AEnclavePlayerState>();
+
+	if (!IsValid(EnclavePlayerState))
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = EnclavePlayerState->GetAbilitySystemComponent())
+	{
+		// Owner = PlayerState (persistent for the match), Avatar = this Pawn
+		// (expected to change on respawn). Safe to call more than once -
+		// GAS treats a repeat call with the same actors as a no-op.
+		ASC->InitAbilityActorInfo(EnclavePlayerState, this);
+	}
+}
+
+UAbilitySystemComponent* AEnclaveCharacter::GetAbilitySystemComponent() const
+{
+	const AEnclavePlayerState* EnclavePlayerState = GetPlayerState<AEnclavePlayerState>();
+	return IsValid(EnclavePlayerState) ? EnclavePlayerState->GetAbilitySystemComponent() : nullptr;
+}
+
 void AEnclaveCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	ApplyWeaponHitDetectionCollisionPolicy();
+
 	if (InputRouterComp)
 	{
-		InputRouterComp->RegisterInputHandler(GetEnclaveCharacterMovement());
+		InputRouterComp->RegisterInputHandler(Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement()));
 		InputRouterComp->RegisterInputHandler(ViewComp);
 		InputRouterComp->RegisterInputHandler(EquipmentComp);
+	}
+}
+
+void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy()
+{
+	// Fire hit detection is server-authoritative (UEnclaveGA_Fire only traces
+	// when HasAuthority), so clients do not get to choose their own target
+	// representation. Collision-response changes do not need to replicate.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UCapsuleComponent* Capsule = GetCapsuleComponent();
+	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();
+
+	if (!IsValid(Capsule) || !IsValid(ThirdPersonMesh))
+	{
+		return;
+	}
+
+	const AEnclaveGameModeBase* EnclaveGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
+
+	if (!IsValid(EnclaveGameMode))
+	{
+		ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s could not resolve AEnclaveGameModeBase; defaulting Weapon collision policy to Capsule.", *GetName());
+	}
+
+	const EEnclaveWeaponHitDetectionMode Mode = IsValid(EnclaveGameMode)
+		? EnclaveGameMode->GetWeaponHitDetectionMode()
+		: EEnclaveWeaponHitDetectionMode::Capsule;
+
+	switch (Mode)
+	{
+	case EEnclaveWeaponHitDetectionMode::SkeletalHitboxes:
+		// Movement still uses the capsule. Only Weapon queries ignore it and
+		// continue to the third-person mesh's Physics Asset bodies.
+		Capsule->SetCollisionResponseToChannel(ECC_Weapon, ECR_Ignore);
+		ThirdPersonMesh->SetCollisionResponseToChannel(ECC_Weapon, ECR_Block);
+
+		// A dedicated server has no rendering to force bone refreshes. Weapon
+		// traces depend on current Physics Asset body transforms, so skeletal
+		// hitbox mode explicitly keeps the authoritative body pose current.
+		ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
+		if (!ThirdPersonMesh->GetPhysicsAsset())
+		{
+			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s is using SkeletalHitboxes but its third-person mesh has no Physics Asset; Weapon traces cannot hit skeletal bodies.", *GetName());
+		}
+
+		if (ThirdPersonMesh->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+		{
+			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s is using SkeletalHitboxes but its third-person mesh collision is disabled; configure the CharacterMesh collision profile for query collision.", *GetName());
+		}
+		break;
+
+	case EEnclaveWeaponHitDetectionMode::Capsule:
+	default:
+		Capsule->SetCollisionResponseToChannel(ECC_Weapon, ECR_Block);
+		ThirdPersonMesh->SetCollisionResponseToChannel(ECC_Weapon, ECR_Ignore);
+		break;
 	}
 }
 
@@ -119,13 +235,10 @@ void AEnclaveCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 {
-	if (GEngine)
+	if (CVarDebugInput.GetValueOnGameThread())
 	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			2.0f,
-			FColor::Green,
-			FString::Printf(TEXT("AEnclaveCharacter::ProcessInput: %s"), *InputEvent.InputTag.ToString()));
+		ENCLAVE_LOG(LogEnclaveInput, Log, "%s ProcessInput: %s", *GetName(), *InputEvent.InputTag.ToString());
+		ENCLAVE_SCREEN(FString::Printf(TEXT("ProcessInput: %s"), *InputEvent.InputTag.ToString()), FColor::Green, 2.0f);
 	}
 
 	if (InputRouterComp)
@@ -139,41 +252,34 @@ const UEnclaveInputConfig* AEnclaveCharacter::GetInputConfig() const
 	return InputConfig;
 }
 
-UEnclaveCharacterMovementComponent* AEnclaveCharacter::GetEnclaveCharacterMovement() const
+FEnclaveAnimData AEnclaveCharacter::GetAnimData() const
 {
-	return Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement());
-}
+	FEnclaveAnimData AnimData;
 
-bool AEnclaveCharacter::ResolveWieldedItemAttachmentTargets(const FGameplayTag& ItemType, FEnclaveWieldedItemAttachmentTargets& OutTargets) const
-{
-	if (!ItemType.IsValid() || !IsValid(ItemAttachmentDefinition))
+	AnimData.LocalVelocity = GetActorRotation().UnrotateVector(GetVelocity());
+
+	// bIsCrouched is replicated by ACharacter, so this is correct on
+	// simulated proxies too.
+	AnimData.bIsCrouching = bIsCrouched;
+
+	if (const UCharacterMovementComponent* MovementComp = GetCharacterMovement())
 	{
-		return false;
+		AnimData.bIsFalling = MovementComp->IsFalling();
+
+		// KNOWN GAP: current acceleration is only meaningful on the server
+		// and the owning client - the engine doesn't replicate it to
+		// simulated proxies, so this reads false for other players. Nothing
+		// in the vertical slice depends on it (locomotion keys off speed).
+		// When start/stop transitions need it, replicate a compressed
+		// acceleration here (Lyra's FLyraReplicatedAcceleration pattern);
+		// anim instances won't change.
+		AnimData.bIsAccelerating = !MovementComp->GetCurrentAcceleration().IsNearlyZero();
 	}
 
-	const FEnclaveItemAttachmentMapping* AttachmentMapping = ItemAttachmentDefinition->FindAttachmentMapping(ItemType);
+	// Locally/server: controller rotation. Simulated proxies: rebuilt from
+	// ACharacter's replicated RemoteViewPitch, which arrives as 0..360 -
+	// normalize to -180..180 (effectively -90..90 for pitch).
+	AnimData.AimPitch = FRotator::NormalizeAxis(GetBaseAimRotation().Pitch);
 
-	if (!AttachmentMapping)
-	{
-		return false;
-	}
-
-	if (!IsValid(FirstPersonMesh) || !IsValid(GetMesh()))
-	{
-		return false;
-	}
-
-	if (AttachmentMapping->FirstPersonWieldedSocket.IsNone() ||
-		AttachmentMapping->ThirdPersonWieldedSocket.IsNone())
-	{
-		return false;
-	}
-
-	OutTargets.FirstPerson.ParentComponent = FirstPersonMesh;
-	OutTargets.FirstPerson.SocketName = AttachmentMapping->FirstPersonWieldedSocket;
-
-	OutTargets.ThirdPerson.ParentComponent = GetMesh();
-	OutTargets.ThirdPerson.SocketName = AttachmentMapping->ThirdPersonWieldedSocket;
-
-	return true;
+	return AnimData;
 }

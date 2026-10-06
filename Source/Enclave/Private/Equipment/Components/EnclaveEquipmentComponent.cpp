@@ -2,9 +2,18 @@
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 
-#include "Equipment/Interfaces/EnclaveItemWielderInterface.h"
-#include "Equipment/Interfaces/EnclaveWieldableInterface.h"
+#include "Characters/Interfaces/EnclaveAvatarPresentationInterface.h"
+#include "Abilities/Effects/EnclaveGE_ItemEquipping.h"
+#include "Debug/EnclaveDebug.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "GameplayTags/EnclaveInputTags.h"
+#include "GameplayTags/EnclaveItemTags.h"
+#include "GameplayTags/EnclavePresentationTags.h"
+#include "GameplayTags/EnclaveAbilityTags.h"
+
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
+#include "GameplayEffect.h"
 
 #include "Components/SkeletalMeshComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -25,6 +34,17 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 
 void UEnclaveEquipmentComponent::UninitializeComponent()
 {
+	AActor* OwnerActor = GetOwner();
+
+	// The ASC is PlayerState-owned and can outlive this Pawn. Revoke every
+	// Pawn/item-scoped gameplay contribution before this component goes away so
+	// a non-death teardown (travel, admin destruction, etc.) cannot leak specs or
+	// an active equip effect into the next avatar.
+	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		ClearCurrentWieldedItem();
+	}
+
 	UnbindItemSource();
 
 	Super::UninitializeComponent();
@@ -53,27 +73,57 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 
 	AEnclaveItem* PreviousItem = CurrentWieldedItem;
 
-	if (IsValid(PreviousItem))
-	{
-		SetWieldedPresentation(PreviousItem, false);
-	}
+	// A wield transition interrupts whatever the previously wielded item was
+	// doing before its specs are revoked. The cancellation is generic by GAS
+	// ability identity; Equipment knows no concrete Fire/Reload/etc. classes.
+	CancelActiveItemAbilities();
 
-	if (!AttachItemToOwner(Item))
-	{
-		if (IsValid(PreviousItem) && AttachItemToOwner(PreviousItem))
-		{
-			SetWieldedPresentation(PreviousItem, true);
-			PresentedWieldedItem = PreviousItem;
-		}
-
-		return false;
-	}
-
+	// Authority owns the gameplay transition. Presentation is notified only
+	// after the authoritative equipment state has been committed and cannot
+	// reject or roll it back.
+	RemoveGrantedAbilities();
 	CurrentWieldedItem = Item;
-	SetWieldedPresentation(CurrentWieldedItem, true);
-	PresentedWieldedItem = CurrentWieldedItem;
+
+	// Actor-level visibility is replicated gameplay state. Equipment owns this
+	// transition; AvatarPresentation only controls local mesh visibility.
+	UpdateWieldedItemActorVisibility(PreviousItem, CurrentWieldedItem);
+
+	BeginCurrentWieldedItemEquipWindow(CurrentWieldedItem);
+	GrantAbilitiesForItem(CurrentWieldedItem);
+
+	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
+	LocallyWieldedItem = CurrentWieldedItem;
 
 	return true;
+}
+
+void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
+{
+	AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	AEnclaveItem* PreviousItem = CurrentWieldedItem;
+
+	// Order matters: cancel active item work while its specs/source object still
+	// exist, then revoke the specs and any authoritative equip-window effect.
+	CancelActiveItemAbilities();
+	RemoveGrantedAbilities();
+	ClearCurrentWieldedItemEquipWindow();
+
+	CurrentWieldedItem = nullptr;
+
+	// The released item remains carried in the current slice, so gameplay hides
+	// the actor again. Presentation independently tears down its local mesh state.
+	UpdateWieldedItemActorVisibility(PreviousItem, nullptr);
+	UpdateWieldedItemPresentation(PreviousItem, nullptr);
+	LocallyWieldedItem.Reset();
+
+	// All GAS state owned by this Equipment instance has now been revoked.
+	ManagedAbilitySystem.Reset();
 }
 
 const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
@@ -93,19 +143,9 @@ bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEven
 		return HandlePreviousWieldableInput(InputEvent);
 	}
 
-	if (ItemPrimaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemPrimaryActionInputTag))
+	if (InputEvent.InputTag.MatchesTag(EnclaveGameplayTags::Input_Item_Action))
 	{
-		return HandleItemPrimaryInput(InputEvent);
-	}
-
-	if (ItemSecondaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemSecondaryActionInputTag))
-	{
-		return HandleItemSecondaryInput(InputEvent);
-	}
-
-	if (ItemTertiaryActionInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(ItemTertiaryActionInputTag))
-	{
-		return HandleItemTertiaryInput(InputEvent);
+		return HandleItemInput(InputEvent);
 	}
 
 	return false;
@@ -152,34 +192,62 @@ bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 	return IsValid(CurrentWieldedItem) ? WieldableCache.Num() > 1 : WieldableCache.Num() > 0;
 }
 
-bool UEnclaveEquipmentComponent::TryPerformItemPrimary(const FEnclaveInputEvent& InputEvent)
+bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& InputEvent)
 {
-	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
+	// For now, item abilities are press-to-activate. A later GAS input pass can
+	// forward pressed/released state generically for held, charged, automatic,
+	// or release-driven abilities without restoring action-specific handlers.
+	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
 	{
 		return false;
 	}
 
-	return IEnclaveWieldableInterface::Execute_HandlePrimaryAction(CurrentWieldedItem, InputEvent);
+	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(InputEvent.InputTag);
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!SpecHandle.IsValid() || !IsValid(ASC))
+	{
+		return false;
+	}
+
+	// A matching spec is the wielded item's declaration that it supports this
+	// input. Whether the action is currently legal belongs to the ability's
+	// CanActivateAbility/CommitAbility path, not Equipment.
+	return ASC->TryActivateAbility(SpecHandle);
 }
 
-bool UEnclaveEquipmentComponent::TryPerformItemSecondary(const FEnclaveInputEvent& InputEvent)
+FGameplayAbilitySpecHandle UEnclaveEquipmentComponent::FindWieldedItemAbilityForInput(const FGameplayTag& InputTag) const
 {
-	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
+	if (!InputTag.IsValid() || !IsValid(CurrentWieldedItem))
 	{
-		return false;
+		return FGameplayAbilitySpecHandle();
 	}
 
-	return IEnclaveWieldableInterface::Execute_HandleSecondaryAction(CurrentWieldedItem, InputEvent);
-}
+	const UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
 
-bool UEnclaveEquipmentComponent::TryPerformItemTertiary(const FEnclaveInputEvent& InputEvent)
-{
-	if (!IsValid(CurrentWieldedItem) || !CurrentWieldedItem->Implements<UEnclaveWieldableInterface>())
+	if (!IsValid(ASC))
 	{
-		return false;
+		return FGameplayAbilitySpecHandle();
 	}
 
-	return IEnclaveWieldableInterface::Execute_HandleTertiaryAction(CurrentWieldedItem, InputEvent);
+	// Replaces the Phase 2 "GrantedClasses[0] is the primary action"
+	// shortcut. Reads the ASC's activatable specs rather than
+	// GrantedAbilityHandles: that array is server-only bookkeeping (filled
+	// only where WieldItem's authority check passes), while the specs
+	// themselves - SourceObject and dynamic source tags included -
+	// replicate to the owning client, so this resolves identically on both
+	// sides for LocalPredicted activation. Matching on SourceObject as well
+	// as the tag keeps a stale spec from a just-swapped-out weapon (removal
+	// not yet replicated) from ever answering for the new one.
+	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	{
+		if (Spec.SourceObject.Get() == CurrentWieldedItem.Get() && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		{
+			return Spec.Handle;
+		}
+	}
+
+	return FGameplayAbilitySpecHandle();
 }
 
 void UEnclaveEquipmentComponent::RebuildInputFilters()
@@ -196,20 +264,7 @@ void UEnclaveEquipmentComponent::RebuildInputFilters()
 		InputFilters.AddTag(PreviousWieldableInputTag);
 	}
 
-	if (ItemPrimaryActionInputTag.IsValid())
-	{
-		InputFilters.AddTag(ItemPrimaryActionInputTag);
-	}
-
-	if (ItemSecondaryActionInputTag.IsValid())
-	{
-		InputFilters.AddTag(ItemSecondaryActionInputTag);
-	}
-
-	if (ItemTertiaryActionInputTag.IsValid())
-	{
-		InputFilters.AddTag(ItemTertiaryActionInputTag);
-	}
+	InputFilters.AddTag(EnclaveGameplayTags::Input_Item_Action);
 }
 
 bool UEnclaveEquipmentComponent::HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent)
@@ -230,21 +285,6 @@ bool UEnclaveEquipmentComponent::HandlePreviousWieldableInput(const FEnclaveInpu
 	}
 
 	return TryWieldPrevious();
-}
-
-bool UEnclaveEquipmentComponent::HandleItemPrimaryInput(const FEnclaveInputEvent& InputEvent)
-{
-	return TryPerformItemPrimary(InputEvent);
-}
-
-bool UEnclaveEquipmentComponent::HandleItemSecondaryInput(const FEnclaveInputEvent& InputEvent)
-{
-	return TryPerformItemSecondary(InputEvent);
-}
-
-bool UEnclaveEquipmentComponent::HandleItemTertiaryInput(const FEnclaveInputEvent& InputEvent)
-{
-	return TryPerformItemTertiary(InputEvent);
 }
 
 bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
@@ -355,7 +395,7 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 
 	for (const TObjectPtr<AEnclaveItem>& Item : ItemSource->GetSourceItems())
 	{
-		if (IsValid(Item) && Item->Implements<UEnclaveWieldableInterface>())
+		if (IsValid(Item) && Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
 		{
 			WieldableCache.Add(Item);
 		}
@@ -370,76 +410,150 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority() &&
 		IsValid(CurrentWieldedItem) && !WieldableCache.Contains(CurrentWieldedItem))
 	{
-		SetWieldedPresentation(CurrentWieldedItem, false);
-		CurrentWieldedItem = nullptr;
-		PresentedWieldedItem.Reset();
+		ClearCurrentWieldedItem();
 	}
 }
 
-bool UEnclaveEquipmentComponent::AttachItemToOwner(AEnclaveItem* Item)
+IEnclaveAvatarPresentationInterface* UEnclaveEquipmentComponent::GetAvatarPresentation() const
 {
-	if (!IsValid(Item) || !IsValid(Item->GetFirstPersonMesh()) || !IsValid(Item->GetThirdPersonMesh()))
-	{
-		return false;
-	}
-
-	AActor* OwnerActor = GetOwner();
-
-	if (!IsValid(OwnerActor))
-	{
-		return false;
-	}
-
-	IEnclaveItemWielderInterface* Wielder = Cast<IEnclaveItemWielderInterface>(OwnerActor);
-
-	if (!Wielder)
-	{
-		return false;
-	}
-
-	const FGameplayTag ItemType = Item->GetItemType();
-
-	if (!ItemType.IsValid())
-	{
-		return false;
-	}
-
-	FEnclaveWieldedItemAttachmentTargets AttachmentTargets;
-
-	if (!Wielder->ResolveWieldedItemAttachmentTargets(ItemType, AttachmentTargets))
-	{
-		return false;
-	}
-
-	if (!IsValid(AttachmentTargets.FirstPerson.ParentComponent) ||
-		!IsValid(AttachmentTargets.ThirdPerson.ParentComponent))
-	{
-		return false;
-	}
-
-	Item->AttachToActor(OwnerActor, FAttachmentTransformRules::KeepWorldTransform);
-
-	const bool bFirstPersonAttached = Item->GetFirstPersonMesh()->AttachToComponent(
-		AttachmentTargets.FirstPerson.ParentComponent,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		AttachmentTargets.FirstPerson.SocketName);
-
-	const bool bThirdPersonAttached = Item->GetThirdPersonMesh()->AttachToComponent(
-		AttachmentTargets.ThirdPerson.ParentComponent,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		AttachmentTargets.ThirdPerson.SocketName);
-
-	return bFirstPersonAttached && bThirdPersonAttached;
+	return IEnclaveAvatarPresentationInterface::FindAvatarPresentation(GetOwner());
 }
 
-void UEnclaveEquipmentComponent::SetWieldedPresentation(AEnclaveItem* Item, bool bWielded)
+void UEnclaveEquipmentComponent::BeginCurrentWieldedItemEquipWindow(AEnclaveItem* Item)
 {
+	ClearCurrentWieldedItemEquipWindow();
+
 	if (!IsValid(Item))
 	{
 		return;
 	}
 
-	Item->SetActorHiddenInGame(!bWielded);
+	const float EquipDuration = FMath::Max(0.0f, Item->GetEquipDuration());
+
+	if (EquipDuration <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!IsValid(ASC))
+	{
+		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: cannot enforce %.3fs equip window for %s because the owner has no AbilitySystemComponent; skipping the equip window."),
+			*GetNameSafe(GetOwner()), EquipDuration, *GetNameSafe(Item));
+		return;
+	}
+
+	ManagedAbilitySystem = ASC;
+
+	FGameplayEffectContextHandle EffectContext = ASC->MakeEffectContext();
+	EffectContext.AddSourceObject(Item);
+
+	FGameplayEffectSpecHandle EffectSpec = ASC->MakeOutgoingSpec(UEnclaveGE_ItemEquipping::StaticClass(), /*Level=*/ 1.0f, EffectContext);
+
+	if (!EffectSpec.IsValid())
+	{
+		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: failed to create the equip Gameplay Effect for %s; skipping the equip window."),
+			*GetNameSafe(GetOwner()), *GetNameSafe(Item));
+		return;
+	}
+
+	// The item definition owns the authored duration. The native GE owns the
+	// authoritative clock, State.Item.Equipping, and item-action blocking for
+	// exactly that window. Equipment keeps only the handle needed for early removal.
+	EffectSpec.Data->SetSetByCallerMagnitude(EnclaveGameplayTags::Data_Item_EquipDuration, EquipDuration);
+
+	const FActiveGameplayEffectHandle AppliedHandle = ASC->ApplyGameplayEffectSpecToSelf(*EffectSpec.Data.Get());
+
+	if (!AppliedHandle.IsValid() || !AppliedHandle.WasSuccessfullyApplied())
+	{
+		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: failed to apply the equip Gameplay Effect for %s; skipping the equip window."),
+			*GetNameSafe(GetOwner()), *GetNameSafe(Item));
+		return;
+	}
+
+	CurrentWieldedItemEquipEffectHandle = AppliedHandle;
+}
+
+bool UEnclaveEquipmentComponent::IsCurrentWieldedItemReadyForActions() const
+{
+	if (!IsValid(CurrentWieldedItem))
+	{
+		return false;
+	}
+
+	const UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	return IsValid(ASC) && !ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Item_Equipping);
+}
+
+void UEnclaveEquipmentComponent::ClearCurrentWieldedItemEquipWindow()
+{
+	if (!CurrentWieldedItemEquipEffectHandle.IsValid())
+	{
+		return;
+	}
+
+	const FActiveGameplayEffectHandle HandleToRemove = CurrentWieldedItemEquipEffectHandle;
+	CurrentWieldedItemEquipEffectHandle.Invalidate();
+
+	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
+	{
+		ASC->RemoveActiveGameplayEffect(HandleToRemove);
+	}
+}
+
+void UEnclaveEquipmentComponent::UpdateWieldedItemActorVisibility(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem)
+{
+	// This helper is called only from authority-owned wield transitions. The
+	// replicated actor flag represents gameplay/world visibility: carried but
+	// unwielded items are hidden, while the currently wielded item is visible.
+	if (IsValid(PreviousItem) && PreviousItem != NewItem)
+	{
+		PreviousItem->SetActorHiddenInGame(true);
+	}
+
+	if (IsValid(NewItem))
+	{
+		NewItem->SetActorHiddenInGame(false);
+	}
+}
+
+void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem)
+{
+	IEnclaveAvatarPresentationInterface* AvatarPresentation = GetAvatarPresentation();
+
+	if (!AvatarPresentation)
+	{
+		return;
+	}
+
+	// AvatarPresentation owns the persistent presentation state it applied, so
+	// always let it tear that state down before reconciliation. This still works
+	// when PreviousItem has already been destroyed and the local weak pointer is stale.
+	AvatarPresentation->ClearWieldedItemPresentation();
+
+	if (IsValid(NewItem))
+	{
+		AvatarPresentation->PresentWieldedItem(NewItem);
+
+		const float EquipDuration = FMath::Max(0.0f, NewItem->GetEquipDuration());
+
+		// Equipment owns the semantic wield transition. A zero-duration equip is
+		// immediately Ready and therefore has no Draw transition to present.
+		// Positive durations explicitly report Draw so presentation can conform
+		// its animation/choreography to the authoritative gameplay window.
+		if (PreviousItem != NewItem && EquipDuration > KINDA_SMALL_NUMBER)
+		{
+			FEnclaveItemPresentationActionEvent DrawEvent;
+			DrawEvent.Item = NewItem;
+			DrawEvent.ItemType = NewItem->GetItemType();
+			DrawEvent.Action = EnclaveGameplayTags::Presentation_Item_Action_Draw;
+			DrawEvent.Lifecycle = EEnclaveItemPresentationActionLifecycle::OneShot;
+			DrawEvent.Duration = EquipDuration;
+			AvatarPresentation->HandleItemPresentationAction(DrawEvent);
+		}
+	}
 }
 
 void UEnclaveEquipmentComponent::ServerTryWieldNext_Implementation()
@@ -452,21 +566,94 @@ void UEnclaveEquipmentComponent::ServerTryWieldPrevious_Implementation()
 	TryWieldPrevious();
 }
 
-void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()
+UAbilitySystemComponent* UEnclaveEquipmentComponent::GetOwnerAbilitySystemComponent() const
 {
-	if (AEnclaveItem* PreviousPresentedItem = PresentedWieldedItem.Get();
-		IsValid(PreviousPresentedItem) && PreviousPresentedItem != CurrentWieldedItem)
+	const AActor* OwnerActor = GetOwner();
+
+	if (!IsValid(OwnerActor))
 	{
-		SetWieldedPresentation(PreviousPresentedItem, false);
+		return nullptr;
 	}
 
-	if (IsValid(CurrentWieldedItem) && AttachItemToOwner(CurrentWieldedItem))
+	// Deliberately goes through the interface rather than casting to
+	// AEnclaveCharacter - Equipment doesn't need to know who hosts the ASC,
+	// only that its owner exposes one (same principle as ItemSource above).
+	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(OwnerActor);
+	return AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
+}
+
+void UEnclaveEquipmentComponent::CancelActiveItemAbilities()
+{
+	UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get();
+
+	if (!IsValid(ASC))
 	{
-		SetWieldedPresentation(CurrentWieldedItem, true);
-		PresentedWieldedItem = CurrentWieldedItem;
+		return;
 	}
-	else
+
+	// Lifecycle cleanup is ownership-scoped, not semantic. Cancel only the
+	// ability specs granted by this Equipment instance so a late teardown from
+	// an old pawn cannot cancel item abilities granted to a newer pawn on the
+	// same persistent ASC.
+	for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
 	{
-		PresentedWieldedItem.Reset();
+		ASC->CancelAbilityHandle(Handle);
 	}
+}
+
+void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
+{
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+
+	if (!IsValid(ASC) || !IsValid(Item))
+	{
+		return;
+	}
+
+	ManagedAbilitySystem = ASC;
+
+	for (const FEnclaveAbilityGrant& Grant : Item->GetAbilityGrants())
+	{
+		if (!Grant.AbilityClass)
+		{
+			continue;
+		}
+
+		// SourceObject = Item: lets the ability later identify which weapon
+		// activated it (via GetCurrentAbilitySpec()->SourceObject) without
+		// Equipment needing to pass that context through some other path.
+		FGameplayAbilitySpec AbilitySpec(Grant.AbilityClass, /*Level=*/ 1, /*InputID=*/ INDEX_NONE, /*SourceObject=*/ Item);
+
+		// The input binding rides on the spec itself (dynamic source tags
+		// replicate with the spec), which is what
+		// FindWieldedItemAbilityForInput matches against.
+		if (Grant.InputTag.IsValid())
+		{
+			AbilitySpec.GetDynamicSpecSourceTags().AddTag(Grant.InputTag);
+		}
+		const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(AbilitySpec);
+
+		GrantedAbilityHandles.Add(Handle);
+	}
+}
+
+void UEnclaveEquipmentComponent::RemoveGrantedAbilities()
+{
+	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
+	{
+		for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
+		{
+			ASC->ClearAbility(Handle);
+		}
+	}
+
+	GrantedAbilityHandles.Reset();
+}
+
+void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()
+{
+	AEnclaveItem* PreviousItem = LocallyWieldedItem.Get();
+
+	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
+	LocallyWieldedItem = CurrentWieldedItem;
 }

@@ -27,9 +27,17 @@ class ENCLAVE_API UEnclaveInventoryComponent : public UActorComponent, public IE
 public:
 	UEnclaveInventoryComponent();
 
+	virtual void UninitializeComponent() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	AEnclaveItem* SpawnItem(TSubclassOf<AEnclaveItem> ItemClass);
+
+	/**
+	 * Authority-only teardown for all currently carried items. Membership is
+	 * cleared and observers are notified before the actors are destroyed so
+	 * Equipment can release a wielded item while its SourceObject is still valid.
+	 */
+	void DestroyAllItems();
 
 	bool AddItem(AEnclaveItem* Item);
 	bool RemoveItem(AEnclaveItem* Item);

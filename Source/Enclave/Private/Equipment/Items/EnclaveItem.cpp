@@ -5,6 +5,8 @@
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 
+#include "Equipment/Data/EnclaveItemDefinition.h"
+
 AEnclaveItem::AEnclaveItem()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -26,7 +28,9 @@ AEnclaveItem::AEnclaveItem()
 
 	ThirdPersonMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("ThirdPersonMesh"));
 	ThirdPersonMesh->SetupAttachment(SceneRoot);
-	ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	// Remote item montages can carry gameplay-relevant cosmetic notifies such as reload audio.
+	// Keep montages advancing while off-screen without paying for full pose evaluation.
+	ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
 	ThirdPersonMesh->SetReceivesDecals(false);
 	ThirdPersonMesh->SetCastShadow(true);
 	ThirdPersonMesh->SetOnlyOwnerSee(false);
@@ -34,7 +38,59 @@ AEnclaveItem::AEnclaveItem()
 	ThirdPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
+void AEnclaveItem::BeginPlay()
+{
+	Super::BeginPlay();
+
+	ApplyItemDefinition();
+}
+
+const UEnclaveItemDefinition* AEnclaveItem::GetItemDefinition() const
+{
+	return ItemDefinition;
+}
+
 FGameplayTag AEnclaveItem::GetItemType() const
 {
-	return FGameplayTag();
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) ? Definition->GetItemType() : FGameplayTag();
+}
+
+bool AEnclaveItem::HasItemCapability(const FGameplayTag& CapabilityTag) const
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) && Definition->HasItemCapability(CapabilityTag);
+}
+
+float AEnclaveItem::GetEquipDuration() const
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) ? Definition->GetEquipDuration() : 0.0f;
+}
+
+TArray<FEnclaveAbilityGrant> AEnclaveItem::GetAbilityGrants() const
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) ? Definition->GetAbilityGrants() : TArray<FEnclaveAbilityGrant>();
+}
+
+void AEnclaveItem::StartPresentationAction(const FGameplayTag& Action, float Duration)
+{
+}
+
+void AEnclaveItem::EndPresentationAction(const FGameplayTag& Action)
+{
+}
+
+void AEnclaveItem::ApplyItemDefinition()
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+
+	if (!IsValid(Definition))
+	{
+		return;
+	}
+
+	FirstPersonMesh->SetSkeletalMesh(Definition->GetFirstPersonMesh());
+	ThirdPersonMesh->SetSkeletalMesh(Definition->GetThirdPersonMesh());
 }

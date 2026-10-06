@@ -9,6 +9,7 @@ class UEnhancedInputComponent;
 class UEnclaveInputConfig;
 class IEnclaveInputReceiverInterface;
 class IEnclaveInputConfigProviderInterface;
+class UEnclaveCombatFeedbackComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclavePlayerController : public APlayerController
@@ -19,9 +20,18 @@ public:
 
 	AEnclavePlayerController();
 
+	/**
+	 * Development-only lifecycle test. Recreates this controller's pawn while
+	 * preserving the PlayerState-owned ASC so stale item specs/effects are easy
+	 * to detect across repeated respawns.
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugRespawn();
+
 protected:
 
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void AcknowledgePossession(APawn* P) override;
 	virtual void OnUnPossess() override;
 
 	virtual void BeginPlay() override;
@@ -36,6 +46,11 @@ protected:
 	virtual bool CanProcessInput(const FEnclaveInputEvent& InputEvent) const;
 
 private:
+
+	UFUNCTION(Server, Reliable)
+	void ServerEnclaveDebugRespawn();
+
+	void PerformDebugRespawn();
 
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag);
 
@@ -57,4 +72,13 @@ private:
 	TObjectPtr<const UEnclaveInputConfig> ActiveAvatarInputConfig = nullptr;
 
 	TArray<uint32> ActiveInputBindingHandles;
+
+	/**
+	 * Hosts local-player combat feedback (hit marker today). Implements
+	 * IEnclaveHitFeedbackInterface - callers (e.g. UEnclaveGA_Fire) find it
+	 * via FindComponentByInterface rather than depending on this class, the
+	 * same idiom UEnclaveEquipmentComponent uses to find its item source.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveCombatFeedbackComponent> CombatFeedbackComp = nullptr;
 };
