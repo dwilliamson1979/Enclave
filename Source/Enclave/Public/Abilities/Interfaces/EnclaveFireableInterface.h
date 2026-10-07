@@ -36,7 +36,7 @@ class ENCLAVE_API IEnclaveFireableInterface
 public:
 	/**
 	 * Performs this thing's own hit-detection and returns whatever it hit,
-	 * each with its own computed Damage/DamageEffectClass already set
+	 * each with its own computed per-hit Damage already set
 	 * (FEnclaveHitResult) - a single hitscan trace today
 	 * (AEnclaveFirearmWeapon::PerformFireHitDetection), a multi-pellet cone
 	 * or a projectile spawn later without any change to UEnclaveGA_Fire.

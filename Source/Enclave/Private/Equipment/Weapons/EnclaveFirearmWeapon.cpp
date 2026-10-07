@@ -390,15 +390,11 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 
 	if (bHit)
 	{
-		// Damage and DamageEffectClass are both computed here, not read
-		// separately by the ability - flat GetDamageAmount()/
-		// GetDamageEffectClass() today, but this is the seam for per-hit
-		// variation later (HitResult.BoneName for a headshot multiplier,
-		// HitResult.Distance for falloff, a different effect class for a
-		// different pellet) without touching UEnclaveGA_Fire at all.
+		// Damage is computed here rather than by the ability. Flat damage today,
+		// but this remains the seam for per-hit variation later (bone/headshot,
+		// distance falloff, pellet-specific tuning) without coupling Fire to it.
 		FEnclaveHitResult EnclaveHitResult(HitResult);
 		EnclaveHitResult.Damage = FirearmWeaponDefinition->GetDamageAmount();
-		EnclaveHitResult.DamageEffectClass = FirearmWeaponDefinition->GetDamageEffectClass();
 		Results.Add(EnclaveHitResult);
 	}
 

@@ -20,7 +20,8 @@ class UAbilitySystemComponent;
  * risk a client/server mismatch for no visible benefit.
  *
  * This class owns the GAS lifecycle (commit, authority gating, cue
- * triggering, effect application, cooldown) and nothing else - it never
+ * triggering, cooldown) and the handoff of confirmed hits into Enclave's
+ * common damage contract. It never
  * references AEnclaveWeapon, UEnclaveWeaponDefinition, or any other
  * concrete class outside its own domain. Everything about *how* the
  * triggering thing fires (its trace/hit-scan shape, its damage amount, its
@@ -46,14 +47,12 @@ class UAbilitySystemComponent;
  * and calls it, the same FindComponentByInterface idiom
  * UEnclaveEquipmentComponent uses for its item source.
  *
- * DamageEffectClass is NOT configured here - it lives on
- * FEnclaveHitResult, stamped on per-hit by whatever implements
- * IEnclaveFireableInterface (AEnclaveWeapon, from its
- * UEnclaveWeaponDefinition). Different weapons - and in principle
- * different hits within the same shot - can need genuinely different
- * damage effects (an EMP hit modifying Shields/Electronics instead of
- * Health), not just a different magnitude, so this ability treats it as
- * per-hit data rather than a single shared class it owns.
+ * Damage application is target-implementation agnostic. The fireable returns
+ * positive per-hit damage in FEnclaveHitResult; this ability turns each hit
+ * into FEnclaveDamageRequest and submits it through UEnclaveDamageStatics.
+ * Simple and GAS-backed targets therefore share the same external contract,
+ * and future damage semantics belong in the request/routing layers rather
+ * than leaking GameplayEffect classes into the weapon hit result.
  *
  * Ammo (Phase 4) is optional and also comes from the triggering source,
  * via IEnclaveAmmoConsumerInterface. An empty magazine does not fail
@@ -89,8 +88,8 @@ protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
 private:
-	/** SourceASC/AvatarActor are resolved once in ActivateAbility and passed in here, rather than each callee re-deriving them from ActorInfo on its own. */
-	void PerformHitDetection(const FGameplayAbilitySpecHandle& Handle, const FGameplayAbilityActorInfo* ActorInfo, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);
+	/** Server-only hit detection followed by target-agnostic Enclave damage dispatch for each confirmed hit. */
+	void PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor);
 
 	/** Executes CueTag (GameplayCue.Item.Action.Fire, or .DryFire on an empty magazine) with the triggering source in EffectCauser/SourceObject and the ASC avatar as the cue target. UEnclaveGameplayCueNotify fans the cue out to avatar presentation and item-local cue response. Runs on the predicting owning client as well as the server. Presentation only. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
 	void ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);

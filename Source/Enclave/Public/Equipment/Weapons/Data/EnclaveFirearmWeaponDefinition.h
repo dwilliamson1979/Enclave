@@ -13,7 +13,7 @@ class USoundBase;
 
 /**
  * Firearm-specific weapon data: item-local fire/reload presentation and
- * ranged-combat tuning (damage, trace range, cooldown/damage effects).
+ * ranged-combat tuning (damage, trace range, cooldown effect).
  *
  * Split out of the generic UEnclaveWeaponDefinition (2026-09-23) because
  * none of this means anything for a non-firearm wieldable (a knife, a
@@ -51,14 +51,6 @@ public:
 	// when a concrete gameplay requirement needs it.
 	TSubclassOf<UGameplayEffect> GetCooldownEffectClass() const { return CooldownEffectClass; }
 
-	// This weapon's damage-application GE, stamped onto each
-	// FEnclaveHitResult::DamageEffectClass at trace time - deliberately
-	// per-weapon rather than shared, since damage type (ballistic, energy,
-	// fire, an EMP hit that only touches a Shields/Electronics attribute)
-	// is a property of what fired, not something UEnclaveGA_Fire should
-	// assume is the same for everyone implementing IEnclaveFireableInterface.
-	TSubclassOf<UGameplayEffect> GetDamageEffectClass() const { return DamageEffectClass; }
-
 	// Phase 4: magazine + reload. Read by AEnclaveFirearmWeapon, which is
 	// what UEnclaveGA_Fire/UEnclaveGA_Reload actually talk to (through
 	// IEnclaveAmmoConsumerInterface/IEnclaveReloadableInterface) - neither
@@ -88,7 +80,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Fire Cue", meta = (AllowPrivateAccess = "true"))
 	FName MuzzleSocketName = "Muzzle";
 
-	/** Flat damage applied per successful hit. Positive; UEnclaveGA_Fire negates it when setting the SetByCaller magnitude. */
+	/** Flat positive damage submitted per successful hit. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
 	float DamageAmount = 20.0f;
 
@@ -99,10 +91,6 @@ private:
 	/** Fire-rate cooldown Gameplay Effect for this firearm definition (e.g. GE_Fire_Cooldown_Rifle). Its granted cooldown tag should live under Cooldown.Item.*. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UGameplayEffect> CooldownEffectClass;
-
-	/** Instant Gameplay Effect this weapon's hits apply. Must carry a modifier on the target attribute with magnitude "Set by Caller", tag Data.Damage. Per-weapon (not shared) so different damage types can route to different attributes - e.g. an EMP weapon's effect modifying Shields/Electronics instead of Health. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
 	/** Rounds a full magazine holds; the weapon spawns full. 0 = no magazine at all (never runs dry, never reloads). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Ammo", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
