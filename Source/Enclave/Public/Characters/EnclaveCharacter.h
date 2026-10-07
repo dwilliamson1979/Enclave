@@ -22,6 +22,7 @@ class AEnclaveItem;
 class UEnclaveAvatarPresentationComponent;
 class UAbilitySystemComponent;
 class UEnclaveGASHealthComponent;
+class UEnclaveAvatarLifecycleComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
@@ -112,6 +113,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveGASHealthComponent> HealthComp = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lifecycle", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveAvatarLifecycleComponent> LifecycleComp = nullptr;
 
 	/** Non-owning cache of the PlayerState-owned ASC currently initialized for this avatar. */
 	TWeakObjectPtr<UAbilitySystemComponent> CachedAbilitySystemComponent;

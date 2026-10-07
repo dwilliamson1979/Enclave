@@ -20,6 +20,7 @@
 #include "Characters/Components/EnclaveViewComponent.h"
 #include "Characters/Components/EnclaveAvatarPresentationComponent.h"
 #include "Health/Components/EnclaveGASHealthComponent.h"
+#include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
@@ -87,6 +88,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	AvatarPresentationComp->SetPresentationMeshes(FirstPersonMesh, GetMesh());
 
 	HealthComp = CreateDefaultSubobject<UEnclaveGASHealthComponent>(TEXT("HealthComp"));
+	LifecycleComp = CreateDefaultSubobject<UEnclaveAvatarLifecycleComponent>(TEXT("LifecycleComp"));
 }
 
 void AEnclaveCharacter::PossessedBy(AController* NewController)

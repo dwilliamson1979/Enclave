@@ -18,4 +18,5 @@ namespace EnclaveGameplayTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Item_Reloading, "State.Item.Reloading", "Observable state while the current item reload action is active.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Item_Equipping, "State.Item.Equipping", "Observable state while the current wield relationship is within its authoritative equip window.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Lifecycle_Dead, "State.Lifecycle.Dead", "Authoritative lifecycle state while the current avatar is dead.");
 }

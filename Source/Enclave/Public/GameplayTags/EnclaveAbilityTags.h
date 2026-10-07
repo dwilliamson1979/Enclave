@@ -41,4 +41,7 @@ namespace EnclaveGameplayTags
 
 	/** Granted by the authoritative equip-window Gameplay Effect while the current wield relationship is not ready for item actions. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Equipping);
+
+	/** Granted while the current avatar is in the Dead lifecycle state. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Lifecycle_Dead);
 }
