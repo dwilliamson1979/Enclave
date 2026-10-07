@@ -10,6 +10,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "Abilities/Interfaces/EnclaveAbilitySystemConsumerInterface.h"
 #include "Player/EnclavePlayerState.h"
 
 #include "Input/Components/EnclaveInputRouterComponent.h"
@@ -114,6 +115,16 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 	}
 }
 
+void AEnclaveCharacter::UnPossessed()
+{
+	// The ASC is PlayerState-owned and may outlive this Pawn. Only tear down
+	// avatar-local consumers here; do not clear the ASC's global actor info,
+	// because a replacement avatar may initialize against the same ASC.
+	UninitializeAbilitySystemConsumers();
+
+	Super::UnPossessed();
+}
+
 void AEnclaveCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
@@ -128,28 +139,71 @@ void AEnclaveCharacter::OnRep_PlayerState()
 void AEnclaveCharacter::InitializeAbilityActorInfo()
 {
 	AEnclavePlayerState* EnclavePlayerState = GetPlayerState<AEnclavePlayerState>();
+	UAbilitySystemComponent* ASC = IsValid(EnclavePlayerState) ? EnclavePlayerState->GetAbilitySystemComponent() : nullptr;
 
-	if (!IsValid(EnclavePlayerState))
+	if (!IsValid(ASC))
+	{
+		UninitializeAbilitySystemConsumers();
+		return;
+	}
+
+	// Owner = PlayerState (persistent for the match), Avatar = this Pawn
+	// (expected to change on respawn). Safe to call more than once - GAS
+	// treats a repeat call with the same actors as a no-op.
+	ASC->InitAbilityActorInfo(EnclavePlayerState, this);
+
+	if (CachedAbilitySystemComponent.Get() == ASC)
 	{
 		return;
 	}
 
-	if (UAbilitySystemComponent* ASC = EnclavePlayerState->GetAbilitySystemComponent())
-	{
-		// Owner = PlayerState (persistent for the match), Avatar = this Pawn
-		// (expected to change on respawn). Safe to call more than once -
-		// GAS treats a repeat call with the same actors as a no-op.
-		ASC->InitAbilityActorInfo(EnclavePlayerState, this);
+	// A Character should normally see only one ASC during its lifetime, but
+	// explicitly unwind an old binding before accepting a different one.
+	UninitializeAbilitySystemConsumers();
+	CachedAbilitySystemComponent = ASC;
+	InitializeAbilitySystemConsumers(ASC);
+}
 
-		if (HealthComp)
+void AEnclaveCharacter::InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent)
+{
+	if (!IsValid(AbilitySystemComponent))
+	{
+		return;
+	}
+
+	const TArray<UActorComponent*> Consumers = GetComponentsByInterface(UEnclaveAbilitySystemConsumerInterface::StaticClass());
+
+	for (UActorComponent* Component : Consumers)
+	{
+		if (IEnclaveAbilitySystemConsumerInterface* Consumer = Cast<IEnclaveAbilitySystemConsumerInterface>(Component))
 		{
-			HealthComp->InitializeWithAbilitySystem(ASC);
+			Consumer->InitializeWithAbilitySystem(AbilitySystemComponent);
 		}
 	}
 }
 
+void AEnclaveCharacter::UninitializeAbilitySystemConsumers()
+{
+	const TArray<UActorComponent*> Consumers = GetComponentsByInterface(UEnclaveAbilitySystemConsumerInterface::StaticClass());
+
+	for (UActorComponent* Component : Consumers)
+	{
+		if (IEnclaveAbilitySystemConsumerInterface* Consumer = Cast<IEnclaveAbilitySystemConsumerInterface>(Component))
+		{
+			Consumer->UninitializeFromAbilitySystem();
+		}
+	}
+
+	CachedAbilitySystemComponent.Reset();
+}
+
 UAbilitySystemComponent* AEnclaveCharacter::GetAbilitySystemComponent() const
 {
+	if (UAbilitySystemComponent* CachedASC = CachedAbilitySystemComponent.Get())
+	{
+		return CachedASC;
+	}
+
 	const AEnclavePlayerState* EnclavePlayerState = GetPlayerState<AEnclavePlayerState>();
 	return IsValid(EnclavePlayerState) ? EnclavePlayerState->GetAbilitySystemComponent() : nullptr;
 }
@@ -166,6 +220,15 @@ void AEnclaveCharacter::BeginPlay()
 		InputRouterComp->RegisterInputHandler(ViewComp);
 		InputRouterComp->RegisterInputHandler(EquipmentComp);
 	}
+}
+
+void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// Covers client teardown and destruction paths where UnPossessed may not be
+	// observed locally. Consumer uninitialization is intentionally idempotent.
+	UninitializeAbilitySystemConsumers();
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy()

@@ -34,6 +34,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
+	virtual void UnPossessed() override;
 
 	/**
 	 * Client-side counterpart to PossessedBy: fires when the replicated
@@ -62,10 +63,17 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
 	void InitializeAbilityActorInfo();
+
+	/** Initializes all avatar components that opt into the ASC-consumer contract. */
+	void InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent);
+
+	/** Removes ASC bindings from all avatar components currently consuming it. */
+	void UninitializeAbilitySystemConsumers();
 
 	/** Authority only: exposes exactly one character representation to the Weapon trace channel for the selected match hit-detection mode. */
 	void ApplyWeaponHitDetectionCollisionPolicy();
@@ -104,5 +112,8 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveGASHealthComponent> HealthComp = nullptr;
+
+	/** Non-owning cache of the PlayerState-owned ASC currently initialized for this avatar. */
+	TWeakObjectPtr<UAbilitySystemComponent> CachedAbilitySystemComponent;
 
 };

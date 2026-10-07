@@ -18,63 +18,90 @@ UEnclaveGASHealthComponent::UEnclaveGASHealthComponent()
 
 void UEnclaveGASHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* InAbilitySystemComponent)
 {
-	if (AbilitySystemComponent == InAbilitySystemComponent && HealthChangedDelegateHandle.IsValid() && MaxHealthChangedDelegateHandle.IsValid())
+	if (AbilitySystemComponent.Get() == InAbilitySystemComponent && HealthChangedDelegateHandle.IsValid() && MaxHealthChangedDelegateHandle.IsValid())
 	{
 		return;
 	}
 
 	UninitializeFromAbilitySystem();
 
-	if (!IsValid(InAbilitySystemComponent) || !InAbilitySystemComponent->GetSet<UEnclaveAttributeSet>())
+	if (!IsValid(InAbilitySystemComponent))
+	{
+		return;
+	}
+
+	const UEnclaveAttributeSet* AttributeSet = InAbilitySystemComponent->GetSet<UEnclaveAttributeSet>();
+	if (!IsValid(AttributeSet))
 	{
 		return;
 	}
 
 	AbilitySystemComponent = InAbilitySystemComponent;
 
-	HealthChangedDelegateHandle = AbilitySystemComponent
+	HealthChangedDelegateHandle = InAbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UEnclaveAttributeSet::GetHealthAttribute())
 		.AddUObject(this, &UEnclaveGASHealthComponent::HandleHealthChanged);
 
-	MaxHealthChangedDelegateHandle = AbilitySystemComponent
+	MaxHealthChangedDelegateHandle = InAbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UEnclaveAttributeSet::GetMaxHealthAttribute())
 		.AddUObject(this, &UEnclaveGASHealthComponent::HandleMaxHealthChanged);
+
+	InitializeAvatarHealthIfNeeded(InAbilitySystemComponent, AttributeSet);
+}
+
+void UEnclaveGASHealthComponent::InitializeAvatarHealthIfNeeded(UAbilitySystemComponent* InAbilitySystemComponent, const UEnclaveAttributeSet* AttributeSet)
+{
+	AActor* Owner = GetOwner();
+
+	if (bHasInitializedAvatarHealth || !IsValid(Owner) || !Owner->HasAuthority() || !IsValid(InAbilitySystemComponent) || !IsValid(AttributeSet))
+	{
+		return;
+	}
+
+	// The ASC/AttributeSet live on PlayerState and survive Pawn replacement, so
+	// their Health value also survives unless a new avatar explicitly initializes
+	// it. This component instance is avatar-scoped: initialize exactly once for
+	// its lifetime, using the ASC's current MaxHealth as the new avatar's health.
+	bHasInitializedAvatarHealth = true;
+	InAbilitySystemComponent->SetNumericAttributeBase(UEnclaveAttributeSet::GetHealthAttribute(), AttributeSet->GetMaxHealth());
 }
 
 void UEnclaveGASHealthComponent::UninitializeFromAbilitySystem()
 {
-	if (IsValid(AbilitySystemComponent))
+	if (UAbilitySystemComponent* ASC = AbilitySystemComponent.Get())
 	{
 		if (HealthChangedDelegateHandle.IsValid())
 		{
-			AbilitySystemComponent
-				->GetGameplayAttributeValueChangeDelegate(UEnclaveAttributeSet::GetHealthAttribute())
+			ASC->GetGameplayAttributeValueChangeDelegate(UEnclaveAttributeSet::GetHealthAttribute())
 				.Remove(HealthChangedDelegateHandle);
 		}
 
 		if (MaxHealthChangedDelegateHandle.IsValid())
 		{
-			AbilitySystemComponent
-				->GetGameplayAttributeValueChangeDelegate(UEnclaveAttributeSet::GetMaxHealthAttribute())
+			ASC->GetGameplayAttributeValueChangeDelegate(UEnclaveAttributeSet::GetMaxHealthAttribute())
 				.Remove(MaxHealthChangedDelegateHandle);
 		}
 	}
 
 	HealthChangedDelegateHandle.Reset();
 	MaxHealthChangedDelegateHandle.Reset();
-	AbilitySystemComponent = nullptr;
+	AbilitySystemComponent.Reset();
 }
 
 bool UEnclaveGASHealthComponent::ReceiveDamage(const FEnclaveDamageRequest& DamageRequest)
 {
 	AActor* Owner = GetOwner();
-	if (!IsValid(Owner) || !Owner->HasAuthority() || !IsValid(AbilitySystemComponent) || DamageRequest.Damage <= 0.0f || IsHealthDepleted())
+	UAbilitySystemComponent* TargetASC = AbilitySystemComponent.Get();
+
+	if (!IsValid(Owner) || !Owner->HasAuthority() || !IsValid(TargetASC) || DamageRequest.Damage <= 0.0f || IsHealthDepleted())
 	{
 		return false;
 	}
 
+	// Source is operation context, not a lifecycle relationship. Resolve it per
+	// damage request rather than caching an attacker that can change every hit.
 	UAbilitySystemComponent* SourceASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(DamageRequest.SourceActor.Get());
-	UAbilitySystemComponent* EffectSourceASC = IsValid(SourceASC) ? SourceASC : AbilitySystemComponent.Get();
+	UAbilitySystemComponent* EffectSourceASC = IsValid(SourceASC) ? SourceASC : TargetASC;
 
 	FGameplayEffectContextHandle ContextHandle = EffectSourceASC->MakeEffectContext();
 
@@ -98,13 +125,13 @@ bool UEnclaveGASHealthComponent::ReceiveDamage(const FEnclaveDamageRequest& Dama
 
 	const float OldHealth = GetHealth();
 
-	if (EffectSourceASC == AbilitySystemComponent)
+	if (EffectSourceASC == TargetASC)
 	{
-		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+		TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 	}
 	else
 	{
-		EffectSourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), AbilitySystemComponent);
+		EffectSourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
 	}
 
 	return GetHealth() < OldHealth;
@@ -118,15 +145,17 @@ void UEnclaveGASHealthComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 float UEnclaveGASHealthComponent::GetHealthValue() const
 {
-	return IsValid(AbilitySystemComponent)
-		? AbilitySystemComponent->GetNumericAttribute(UEnclaveAttributeSet::GetHealthAttribute())
+	const UAbilitySystemComponent* ASC = AbilitySystemComponent.Get();
+	return IsValid(ASC)
+		? ASC->GetNumericAttribute(UEnclaveAttributeSet::GetHealthAttribute())
 		: 0.0f;
 }
 
 float UEnclaveGASHealthComponent::GetMaxHealthValue() const
 {
-	return IsValid(AbilitySystemComponent)
-		? AbilitySystemComponent->GetNumericAttribute(UEnclaveAttributeSet::GetMaxHealthAttribute())
+	const UAbilitySystemComponent* ASC = AbilitySystemComponent.Get();
+	return IsValid(ASC)
+		? ASC->GetNumericAttribute(UEnclaveAttributeSet::GetMaxHealthAttribute())
 		: 0.0f;
 }
 

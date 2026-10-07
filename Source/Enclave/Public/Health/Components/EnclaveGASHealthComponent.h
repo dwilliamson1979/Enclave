@@ -5,11 +5,13 @@
 #include "CoreMinimal.h"
 #include "Health/Components/EnclaveHealthComponent.h"
 #include "Combat/Interfaces/EnclaveDamageReceiverInterface.h"
+#include "Abilities/Interfaces/EnclaveAbilitySystemConsumerInterface.h"
 #include "EnclaveGASHealthComponent.generated.h"
 
 struct FEnclaveDamageRequest;
 struct FOnAttributeChangeData;
 class UAbilitySystemComponent;
+class UEnclaveAttributeSet;
 
 /**
  * GAS-backed implementation of the shared Enclave health abstraction.
@@ -25,18 +27,16 @@ class UAbilitySystemComponent;
  * IEnclaveDamageReceiverInterface without changing the health abstraction.
  */
 UCLASS(Blueprintable, ClassGroup = (Enclave), meta = (BlueprintSpawnableComponent))
-class ENCLAVE_API UEnclaveGASHealthComponent : public UEnclaveHealthComponent, public IEnclaveDamageReceiverInterface
+class ENCLAVE_API UEnclaveGASHealthComponent : public UEnclaveHealthComponent, public IEnclaveDamageReceiverInterface, public IEnclaveAbilitySystemConsumerInterface
 {
 	GENERATED_BODY()
 
 public:
 	UEnclaveGASHealthComponent();
 
-	/** Binds this component to the ASC that owns its health attributes. */
-	void InitializeWithAbilitySystem(UAbilitySystemComponent* InAbilitySystemComponent);
-
-	/** Removes GAS attribute delegate bindings and clears the current ASC. */
-	void UninitializeFromAbilitySystem();
+	// IEnclaveAbilitySystemConsumerInterface
+	virtual void InitializeWithAbilitySystem(UAbilitySystemComponent* InAbilitySystemComponent) override;
+	virtual void UninitializeFromAbilitySystem() override;
 
 	// IEnclaveDamageReceiverInterface
 	virtual bool ReceiveDamage(const FEnclaveDamageRequest& DamageRequest) override;
@@ -48,11 +48,19 @@ protected:
 	virtual float GetMaxHealthValue() const override;
 
 private:
+	void InitializeAvatarHealthIfNeeded(UAbilitySystemComponent* InAbilitySystemComponent, const UEnclaveAttributeSet* AttributeSet);
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData);
 
-	UPROPERTY(Transient)
-	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent = nullptr;
+	/** Non-owning cache of the ASC this avatar component is currently bound to. */
+	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+
+	/**
+	 * True once this component instance has initialized the Health for its avatar.
+	 * Intentionally survives ASC unbinding so re-possessing the same Pawn does not heal it.
+	 * A respawn creates a new Pawn/component instance and therefore gets one fresh initialization.
+	 */
+	bool bHasInitializedAvatarHealth = false;
 
 	FDelegateHandle HealthChangedDelegateHandle;
 	FDelegateHandle MaxHealthChangedDelegateHandle;
