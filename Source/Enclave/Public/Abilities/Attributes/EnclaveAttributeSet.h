@@ -22,12 +22,14 @@
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
 /**
- * Health and MaxHealth. Phase 2 adds the clamping logic that was
- * deliberately deferred in Phase 0: PreAttributeChange guards direct
- * attribute writes (e.g. from an Initter or a non-Effect setter),
- * PostGameplayEffectExecute guards the result of an applied Gameplay Effect
- * (the Fire ability's damage effect) specifically. Both are needed - they
- * run at different points and neither substitutes for the other.
+ * Core vitality attributes for GAS-backed Enclave actors.
+ *
+ * Health and MaxHealth are persistent replicated attributes. Damage is a
+ * transient meta attribute: damage Gameplay Effects add a positive amount to
+ * Damage, PostGameplayEffectExecute consumes it, resets it to zero, and then
+ * subtracts that amount from Health. Keeping incoming damage separate from
+ * Health gives future armor/resistance/execution calculations a clean seam
+ * without changing Health's meaning or requiring negative damage magnitudes.
  */
 UCLASS()
 class ENCLAVE_API UEnclaveAttributeSet : public UAttributeSet
@@ -49,6 +51,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxHealth, Category = "Attributes|Health")
 	FGameplayAttributeData MaxHealth;
 	ENCLAVE_ATTRIBUTE_ACCESSORS(UEnclaveAttributeSet, MaxHealth)
+
+	/** Transient incoming damage accumulator. Not replicated. */
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Health")
+	FGameplayAttributeData Damage;
+	ENCLAVE_ATTRIBUTE_ACCESSORS(UEnclaveAttributeSet, Damage)
 
 protected:
 	UFUNCTION()

@@ -9,15 +9,13 @@ UEnclaveAttributeSet::UEnclaveAttributeSet()
 {
 	InitHealth(100.0f);
 	InitMaxHealth(100.0f);
+	InitDamage(0.0f);
 }
 
 void UEnclaveAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 
-	// Guards any direct write to Health (an Initter, a non-Effect setter) -
-	// separate from, and not a substitute for, PostGameplayEffectExecute
-	// below, which guards the result of an applied Gameplay Effect.
 	if (Attribute == GetHealthAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
@@ -28,10 +26,21 @@ void UEnclaveAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCal
 {
 	Super::PostGameplayEffectExecute(Data);
 
-	// Clamps the result of a Gameplay Effect (the Fire ability's damage
-	// effect, going forward). Phase 2 does not yet add a "died" event/tag
-	// here on reaching 0 - that belongs with the game mode's respawn/death
-	// handling, not the Attribute Set itself.
+	if (Data.EvaluatedData.Attribute == GetDamageAttribute())
+	{
+		const float IncomingDamage = GetDamage();
+		SetDamage(0.0f);
+
+		if (IncomingDamage > 0.0f)
+		{
+			SetHealth(FMath::Clamp(GetHealth() - IncomingDamage, 0.0f, GetMaxHealth()));
+		}
+
+		return;
+	}
+
+	// Preserve support for older/test Gameplay Effects that still modify
+	// Health directly while the project transitions to the Damage meta attribute.
 	if (Data.EvaluatedData.Attribute == GetHealthAttribute())
 	{
 		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));

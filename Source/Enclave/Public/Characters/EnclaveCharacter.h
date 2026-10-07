@@ -21,6 +21,7 @@ class UEnclaveInventoryComponent;
 class AEnclaveItem;
 class UEnclaveAvatarPresentationComponent;
 class UAbilitySystemComponent;
+class UEnclaveGASHealthComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
@@ -100,5 +101,8 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Avatar Presentation", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveAvatarPresentationComponent> AvatarPresentationComp;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveGASHealthComponent> HealthComp = nullptr;
 
 };

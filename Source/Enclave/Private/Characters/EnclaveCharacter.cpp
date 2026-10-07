@@ -18,6 +18,7 @@
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
 #include "Characters/Components/EnclaveAvatarPresentationComponent.h"
+#include "Health/Components/EnclaveGASHealthComponent.h"
 
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
@@ -83,6 +84,8 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 
 	AvatarPresentationComp = CreateDefaultSubobject<UEnclaveAvatarPresentationComponent>(TEXT("AvatarPresentationComp"));
 	AvatarPresentationComp->SetPresentationMeshes(FirstPersonMesh, GetMesh());
+
+	HealthComp = CreateDefaultSubobject<UEnclaveGASHealthComponent>(TEXT("HealthComp"));
 }
 
 void AEnclaveCharacter::PossessedBy(AController* NewController)
@@ -137,6 +140,11 @@ void AEnclaveCharacter::InitializeAbilityActorInfo()
 		// (expected to change on respawn). Safe to call more than once -
 		// GAS treats a repeat call with the same actors as a no-op.
 		ASC->InitAbilityActorInfo(EnclavePlayerState, this);
+
+		if (HealthComp)
+		{
+			HealthComp->InitializeWithAbilitySystem(ASC);
+		}
 	}
 }
 
