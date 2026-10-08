@@ -62,6 +62,9 @@ private:
 	 */
 	bool bHasInitializedAvatarHealth = false;
 
+	/** Operation-scoped requests currently being applied; the top entry supplies depletion attribution. */
+	TArray<FEnclaveDamageRequest> ActiveDamageRequests;
+
 	FDelegateHandle HealthChangedDelegateHandle;
 	FDelegateHandle MaxHealthChangedDelegateHandle;
 };

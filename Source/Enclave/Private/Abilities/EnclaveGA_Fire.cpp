@@ -199,6 +199,7 @@ void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* Actor
 		DamageRequest.SourceActor = AvatarActor;
 		DamageRequest.DamageCauser = DamageCauser;
 		DamageRequest.HitResult = HitResult;
+		DamageRequest.DamageTags = HitResult.DamageTags;
 
 		if (!UEnclaveDamageStatics::ApplyDamage(Target, DamageRequest))
 		{

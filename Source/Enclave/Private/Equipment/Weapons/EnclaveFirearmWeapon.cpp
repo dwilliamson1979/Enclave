@@ -395,6 +395,7 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 		// distance falloff, pellet-specific tuning) without coupling Fire to it.
 		FEnclaveHitResult EnclaveHitResult(HitResult);
 		EnclaveHitResult.Damage = FirearmWeaponDefinition->GetDamageAmount();
+		EnclaveHitResult.DamageTags = FirearmWeaponDefinition->GetDamageTags();
 		Results.Add(EnclaveHitResult);
 	}
 

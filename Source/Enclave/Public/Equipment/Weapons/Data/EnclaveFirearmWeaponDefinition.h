@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Equipment/Weapons/Data/EnclaveWeaponDefinition.h"
+#include "GameplayTagContainer.h"
 #include "EnclaveFirearmWeaponDefinition.generated.h"
 
 class UGameplayEffect;
@@ -27,6 +28,8 @@ class ENCLAVE_API UEnclaveFirearmWeaponDefinition : public UEnclaveWeaponDefinit
 
 public:
 
+	UEnclaveFirearmWeaponDefinition();
+
 	// Read by AEnclaveFirearmWeapon's item-local presentation response. This
 	// data asset has no idea a Gameplay Cue or AvatarPresentation exists; it
 	// simply exposes the firearm's own cosmetic data.
@@ -42,6 +45,7 @@ public:
 	// (e.g. a multi-trace shotgun), not for tuning.
 	float GetDamageAmount() const { return DamageAmount; }
 	float GetTraceRange() const { return TraceRange; }
+	const FGameplayTagContainer& GetDamageTags() const { return DamageTags; }
 
 	// This firearm definition's fire-rate cooldown GE. The GE owns the
 	// cooldown channel tag (currently e.g. Cooldown.Item.Rifle.Fire). The
@@ -87,6 +91,14 @@ private:
 	/** Max hitscan trace distance from the camera view point. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))
 	float TraceRange = 10000.0f;
+
+	/**
+	 * Semantic damage classification copied into each hit/damage request.
+	 * Existing firearms default to Damage.Type.Ballistic; specialized firearms
+	 * can replace or extend this in their definition asset.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (Categories = "Damage", AllowPrivateAccess = "true"))
+	FGameplayTagContainer DamageTags;
 
 	/** Fire-rate cooldown Gameplay Effect for this firearm definition (e.g. GE_Fire_Cooldown_Rifle). Its granted cooldown tag should live under Cooldown.Item.*. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Combat", meta = (AllowPrivateAccess = "true"))

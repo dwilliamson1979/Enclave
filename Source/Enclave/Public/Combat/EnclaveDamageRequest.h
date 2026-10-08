@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/HitResult.h"
+#include "GameplayTagContainer.h"
 #include "EnclaveDamageRequest.generated.h"
 
 class AActor;
@@ -48,4 +49,12 @@ struct ENCLAVE_API FEnclaveDamageRequest
 	/** Optional spatial/contact context for hit-based damage. May be empty for non-hit damage such as hazards. */
 	UPROPERTY(BlueprintReadWrite, Category = "Combat|Damage")
 	FHitResult HitResult;
+
+	/**
+	 * Semantic description of the damage, independent of how a receiver
+	 * implements it. Examples: Damage.Type.Ballistic or
+	 * Damage.Source.Environment.
+	 */
+	UPROPERTY(BlueprintReadWrite, Category = "Combat|Damage", meta = (Categories = "Damage"))
+	FGameplayTagContainer DamageTags;
 };

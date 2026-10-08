@@ -20,6 +20,20 @@ void UEnclaveAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribut
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
 	}
+	else if (Attribute == GetMaxHealthAttribute())
+	{
+		NewValue = FMath::Max(0.0f, NewValue);
+	}
+}
+
+void UEnclaveAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
+{
+	Super::PostAttributeChange(Attribute, OldValue, NewValue);
+
+	if (Attribute == GetMaxHealthAttribute() && GetHealth() > NewValue)
+	{
+		SetHealth(NewValue);
+	}
 }
 
 void UEnclaveAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)

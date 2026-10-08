@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/HitResult.h"
+#include "GameplayTagContainer.h"
 #include "EnclaveHitResult.generated.h"
 
 /**
@@ -37,4 +38,8 @@ struct ENCLAVE_API FEnclaveHitResult : public FHitResult
 	/** Positive damage this specific hit should submit to Enclave's damage system. */
 	UPROPERTY(BlueprintReadWrite, Category = "Combat")
 	float Damage = 0.0f;
+
+	/** Semantic damage classification supplied by the source that produced this hit. */
+	UPROPERTY(BlueprintReadWrite, Category = "Combat", meta = (Categories = "Damage"))
+	FGameplayTagContainer DamageTags;
 };

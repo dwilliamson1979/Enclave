@@ -125,6 +125,11 @@ bool UEnclaveGASHealthComponent::ReceiveDamage(const FEnclaveDamageRequest& Dama
 
 	const float OldHealth = GetHealth();
 
+	// Attribute-change delegates execute synchronously while the Gameplay Effect
+	// is being applied. Keep the operation context on a stack so depletion can
+	// preserve the exact request that caused it, including nested damage.
+	ActiveDamageRequests.Add(DamageRequest);
+
 	if (EffectSourceASC == TargetASC)
 	{
 		TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
@@ -133,6 +138,8 @@ bool UEnclaveGASHealthComponent::ReceiveDamage(const FEnclaveDamageRequest& Dama
 	{
 		EffectSourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
 	}
+
+	ActiveDamageRequests.Pop(EAllowShrinking::No);
 
 	return GetHealth() < OldHealth;
 }
@@ -161,7 +168,8 @@ float UEnclaveGASHealthComponent::GetMaxHealthValue() const
 
 void UEnclaveGASHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& ChangeData)
 {
-	NotifyHealthChanged(ChangeData.OldValue, ChangeData.NewValue);
+	const FEnclaveDamageRequest* DamageRequest = ActiveDamageRequests.IsEmpty() ? nullptr : &ActiveDamageRequests.Last();
+	NotifyHealthChanged(ChangeData.OldValue, ChangeData.NewValue, DamageRequest);
 }
 
 void UEnclaveGASHealthComponent::HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData)

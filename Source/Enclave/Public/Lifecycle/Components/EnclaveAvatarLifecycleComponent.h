@@ -5,10 +5,22 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Abilities/Interfaces/EnclaveAbilitySystemConsumerInterface.h"
+#include "Combat/EnclaveDamageRequest.h"
 #include "EnclaveAvatarLifecycleComponent.generated.h"
 
 class UAbilitySystemComponent;
 class UEnclaveHealthComponent;
+class UEnclaveAvatarLifecycleComponent;
+
+
+UENUM(BlueprintType)
+enum class EEnclaveAvatarLifecycleState : uint8
+{
+	Alive,
+	Dead
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnclaveAvatarDiedSignature, UEnclaveAvatarLifecycleComponent*, LifecycleComponent, FEnclaveDamageRequest, DamageRequest);
 
 /**
  * Avatar-scoped bridge from health depletion into semantic lifecycle state.
@@ -31,13 +43,23 @@ class ENCLAVE_API UEnclaveAvatarLifecycleComponent : public UActorComponent, pub
 public:
 	UEnclaveAvatarLifecycleComponent();
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 	// IEnclaveAbilitySystemConsumerInterface
 	virtual void InitializeWithAbilitySystem(UAbilitySystemComponent* InAbilitySystemComponent) override;
 	virtual void UninitializeFromAbilitySystem() override;
 
-	/** True while the bound ASC owns State.Lifecycle.Dead. */
+	/** Current body-owned lifecycle state. This remains valid even after ASC unbinding. */
+	UFUNCTION(BlueprintPure, Category = "Lifecycle")
+	EEnclaveAvatarLifecycleState GetLifecycleState() const { return LifecycleState; }
+
+	/** True while this specific avatar/body is dead. */
 	UFUNCTION(BlueprintPure, Category = "Lifecycle")
 	bool IsDead() const;
+
+	/** Authority-side semantic death notification carrying the terminal damage request. */
+	UPROPERTY(BlueprintAssignable, Category = "Lifecycle")
+	FEnclaveAvatarDiedSignature OnAvatarDied;
 
 protected:
 	virtual void BeginPlay() override;
@@ -45,10 +67,19 @@ protected:
 
 private:
 	UFUNCTION()
-	void HandleHealthDepleted(UEnclaveHealthComponent* DepletedHealthComponent);
+	void HandleHealthDepleted(UEnclaveHealthComponent* DepletedHealthComponent, FEnclaveDamageRequest DamageRequest);
 
 	void InitializeAvatarLifecycleIfNeeded(UAbilitySystemComponent* InAbilitySystemComponent);
-	void EnterDeadState();
+	void EnterDeadState(const FEnclaveDamageRequest& DamageRequest);
+	void SetLifecycleState(EEnclaveAvatarLifecycleState NewState);
+	void HandleLifecycleStateChanged(EEnclaveAvatarLifecycleState OldState, EEnclaveAvatarLifecycleState NewState);
+	void ApplyDeadMovementPolicy();
+
+	UFUNCTION()
+	void OnRep_LifecycleState(EEnclaveAvatarLifecycleState OldState);
+
+	UPROPERTY(ReplicatedUsing = OnRep_LifecycleState)
+	EEnclaveAvatarLifecycleState LifecycleState = EEnclaveAvatarLifecycleState::Alive;
 
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 	TWeakObjectPtr<UEnclaveHealthComponent> HealthComponent;

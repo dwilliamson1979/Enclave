@@ -15,6 +15,7 @@
 
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
+#include "GameplayTags/EnclaveInputTags.h"
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
@@ -68,6 +69,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	FirstPersonMesh->SetOwnerNoSee(false);
 	FirstPersonMesh->bCastDynamicShadow = false;
 	FirstPersonMesh->SetReceivesDecals(false);
+	FirstPersonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	FirstPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 	FirstPersonMesh->PrimaryComponentTick.TickGroup = TG_PrePhysics;
 
@@ -314,10 +316,28 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 		ENCLAVE_SCREEN(FString::Printf(TEXT("ProcessInput: %s"), *InputEvent.InputTag.ToString()), FColor::Green, 2.0f);
 	}
 
+	if (!IsInputAllowedForLifecycle(InputEvent.InputTag))
+	{
+		return;
+	}
+
 	if (InputRouterComp)
 	{
 		InputRouterComp->RouteInput(InputEvent);
 	}
+}
+
+bool AEnclaveCharacter::IsInputAllowedForLifecycle(const FGameplayTag& InputTag) const
+{
+	if (!IsValid(LifecycleComp) || !LifecycleComp->IsDead())
+	{
+		return true;
+	}
+
+	// Keep view control available for death-camera/spectator transition work.
+	// Every other semantic input currently routed through the avatar represents
+	// gameplay intent and is blocked while this body is dead.
+	return InputTag.MatchesTagExact(EnclaveGameplayTags::Input_Avatar_Look);
 }
 
 const UEnclaveInputConfig* AEnclaveCharacter::GetInputConfig() const

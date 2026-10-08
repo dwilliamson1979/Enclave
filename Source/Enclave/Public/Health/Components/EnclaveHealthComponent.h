@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Combat/EnclaveDamageRequest.h"
 #include "EnclaveHealthComponent.generated.h"
 
 class AActor;
@@ -13,7 +14,7 @@ class UEnclaveHealthComponent;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnclaveHealthChangedSignature, UEnclaveHealthComponent*, HealthComponent, float, OldHealth, float, NewHealth);
 
 /** Fired once for each transition from positive health to zero health. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEnclaveHealthDepletedSignature, UEnclaveHealthComponent*, HealthComponent);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnclaveHealthDepletedSignature, UEnclaveHealthComponent*, HealthComponent, FEnclaveDamageRequest, DamageRequest);
 
 /** Fired whenever the maximum-health value changes. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnclaveMaxHealthChangedSignature, UEnclaveHealthComponent*, HealthComponent, float, OldMaxHealth, float, NewMaxHealth);
@@ -83,7 +84,7 @@ protected:
 	virtual float GetMaxHealthValue() const PURE_VIRTUAL(UEnclaveHealthComponent::GetMaxHealthValue, return 0.0f;);
 
 	/** Shared notification path used by concrete implementations on authority and from RepNotifies. */
-	void NotifyHealthChanged(float OldHealth, float NewHealth);
+	void NotifyHealthChanged(float OldHealth, float NewHealth, const FEnclaveDamageRequest* DamageRequest = nullptr);
 
 	/** Shared notification path used by concrete implementations on authority and from RepNotifies. */
 	void NotifyMaxHealthChanged(float OldMaxHealth, float NewMaxHealth);

@@ -38,7 +38,7 @@ bool UEnclaveSimpleHealthComponent::ReceiveDamage(const FEnclaveDamageRequest& D
 	const float OldHealth = Health;
 	Health = FMath::Clamp(Health - DamageRequest.Damage, 0.0f, MaxHealth);
 
-	NotifyHealthChanged(OldHealth, Health);
+	NotifyHealthChanged(OldHealth, Health, &DamageRequest);
 	return !FMath::IsNearlyEqual(OldHealth, Health);
 }
 

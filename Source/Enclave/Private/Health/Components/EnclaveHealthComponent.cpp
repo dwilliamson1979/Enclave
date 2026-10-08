@@ -40,7 +40,7 @@ bool UEnclaveHealthComponent::IsHealthDepleted() const
 	return !HasHealthRemaining();
 }
 
-void UEnclaveHealthComponent::NotifyHealthChanged(float OldHealth, float NewHealth)
+void UEnclaveHealthComponent::NotifyHealthChanged(float OldHealth, float NewHealth, const FEnclaveDamageRequest* DamageRequest)
 {
 	if (FMath::IsNearlyEqual(OldHealth, NewHealth))
 	{
@@ -51,7 +51,7 @@ void UEnclaveHealthComponent::NotifyHealthChanged(float OldHealth, float NewHeal
 
 	if (OldHealth > 0.0f && NewHealth <= 0.0f)
 	{
-		OnHealthDepleted.Broadcast(this);
+		OnHealthDepleted.Broadcast(this, DamageRequest ? *DamageRequest : FEnclaveDamageRequest());
 	}
 }
 
