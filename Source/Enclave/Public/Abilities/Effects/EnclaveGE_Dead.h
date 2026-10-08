@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameplayEffect.h"
+#include "Abilities/Effects/EnclaveAvatarScopedGameplayEffect.h"
 #include "EnclaveGE_Dead.generated.h"
 
 /**
@@ -16,7 +16,7 @@
  * ownership cleanup remain separate concerns.
  */
 UCLASS()
-class ENCLAVE_API UEnclaveGE_Dead : public UGameplayEffect
+class ENCLAVE_API UEnclaveGE_Dead : public UEnclaveAvatarScopedGameplayEffect
 {
 	GENERATED_BODY()
 

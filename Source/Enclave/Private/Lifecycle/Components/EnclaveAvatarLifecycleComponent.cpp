@@ -98,11 +98,9 @@ void UEnclaveAvatarLifecycleComponent::InitializeAvatarLifecycleIfNeeded(UAbilit
 
 	bHasInitializedAvatarLifecycle = true;
 
-	// Dead belongs to the previous avatar but the ASC belongs to PlayerState and
-	// persists across respawn. A genuinely new avatar explicitly clears the
-	// previous avatar's Dead effect. The new component's body-owned state begins
-	// Alive independently of the shared ASC.
-	InAbilitySystemComponent->RemoveActiveGameplayEffectBySourceEffect(UEnclaveGE_Dead::StaticClass(), nullptr, -1);
+	// Persistent-ASC effect cleanup is owned by the Character's ASC/avatar
+	// initialization boundary and runs before consumers are initialized. This
+	// component owns only this body's replicated lifecycle identity.
 	SetLifecycleState(EEnclaveAvatarLifecycleState::Alive);
 }
 

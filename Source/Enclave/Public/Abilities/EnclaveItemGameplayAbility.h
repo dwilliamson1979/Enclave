@@ -21,4 +21,12 @@ class ENCLAVE_API UEnclaveItemGameplayAbility : public UEnclaveGameplayAbility
 
 public:
 	UEnclaveItemGameplayAbility();
+
+protected:
+	/**
+	 * Item-supplied cooldowns belong to the current avatar/item relationship.
+	 * Tag the outgoing cooldown spec as avatar-scoped even when the authored
+	 * cooldown GE is a generic Blueprint asset.
+	 */
+	virtual void ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
 };

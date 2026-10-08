@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameplayEffect.h"
+#include "Abilities/Effects/EnclaveAvatarScopedGameplayEffect.h"
 #include "EnclaveGE_ItemEquipping.generated.h"
 
 /**
@@ -16,7 +16,7 @@
  * Equipment never needs to know any concrete item-action ability types.
  */
 UCLASS()
-class ENCLAVE_API UEnclaveGE_ItemEquipping : public UGameplayEffect
+class ENCLAVE_API UEnclaveGE_ItemEquipping : public UEnclaveAvatarScopedGameplayEffect
 {
 	GENERATED_BODY()
 

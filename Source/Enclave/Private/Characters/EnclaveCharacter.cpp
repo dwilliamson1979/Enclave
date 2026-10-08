@@ -16,6 +16,7 @@
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
 #include "GameplayTags/EnclaveInputTags.h"
+#include "GameplayTags/EnclaveEffectTags.h"
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
@@ -151,6 +152,11 @@ void AEnclaveCharacter::InitializeAbilityActorInfo()
 		return;
 	}
 
+	// The ASC survives Pawn replacement. Remove state that belonged to its old
+	// avatar before rebinding ActorInfo to this Pawn, so removal callbacks/cues
+	// cannot accidentally resolve against the replacement avatar.
+	InitializeAvatarScopedGameplayEffectsIfNeeded(ASC);
+
 	// Owner = PlayerState (persistent for the match), Avatar = this Pawn
 	// (expected to change on respawn). Safe to call more than once - GAS
 	// treats a repeat call with the same actors as a no-op.
@@ -166,6 +172,24 @@ void AEnclaveCharacter::InitializeAbilityActorInfo()
 	UninitializeAbilitySystemConsumers();
 	CachedAbilitySystemComponent = ASC;
 	InitializeAbilitySystemConsumers(ASC);
+}
+
+void AEnclaveCharacter::InitializeAvatarScopedGameplayEffectsIfNeeded(UAbilitySystemComponent* AbilitySystemComponent)
+{
+	if (!HasAuthority() || !IsValid(AbilitySystemComponent) || AvatarScopeInitializedAbilitySystem.Get() == AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AvatarScopeInitializedAbilitySystem = AbilitySystemComponent;
+
+	FGameplayTagContainer AvatarScopeTags;
+	AvatarScopeTags.AddTag(EnclaveGameplayTags::Effect_Scope_Avatar);
+
+	// Asset/dynamic asset tags classify the active effect itself; they are not
+	// actor-owned state. Remove only effects explicitly marked for one avatar
+	// lifetime, preserving Player-scoped or unclassified persistent ASC state.
+	AbilitySystemComponent->RemoveActiveEffectsWithTags(AvatarScopeTags);
 }
 
 void AEnclaveCharacter::InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent)

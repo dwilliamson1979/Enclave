@@ -30,10 +30,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnclaveAvatarDiedSignature, UEncla
  * current Enclave character policy: depleted Health transitions the avatar to
  * State.Lifecycle.Dead through GAS.
  *
- * The ASC is PlayerState-owned and survives Pawn replacement, so Dead also
- * survives unless the next avatar explicitly clears it. Each new instance of
- * this component resets the previous avatar's Dead effect exactly once when it
- * first binds to the persistent ASC. Rebinding the same Pawn does not revive it.
+ * The ASC is PlayerState-owned and survives Pawn replacement. Avatar-scoped
+ * Gameplay Effects are cleaned at the Character's ASC/avatar initialization
+ * boundary before consumers bind; this component independently owns this
+ * body's replicated lifecycle identity.
  */
 UCLASS(Blueprintable, ClassGroup = (Enclave), meta = (BlueprintSpawnableComponent))
 class ENCLAVE_API UEnclaveAvatarLifecycleComponent : public UActorComponent, public IEnclaveAbilitySystemConsumerInterface
@@ -85,8 +85,8 @@ private:
 	TWeakObjectPtr<UEnclaveHealthComponent> HealthComponent;
 
 	/**
-	 * Survives ASC unbinding so re-possessing this same Pawn does not clear Dead.
-	 * A respawn creates a new component instance and therefore one fresh reset.
+	 * Survives ASC unbinding so re-possessing this same Pawn does not reset the
+	 * body-owned lifecycle state. A respawn creates a new component instance.
 	 */
 	bool bHasInitializedAvatarLifecycle = false;
 };
