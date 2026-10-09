@@ -9,6 +9,7 @@
 #include "Net/UnrealNetwork.h"
 
 #include "Abilities/Effects/EnclaveGE_Dead.h"
+#include "Abilities/Effects/EnclaveGameplayEffectScopePolicy.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
 #include "Health/Components/EnclaveHealthComponent.h"
 
@@ -114,9 +115,15 @@ void UEnclaveAvatarLifecycleComponent::EnterDeadState(const FEnclaveDamageReques
 		return;
 	}
 
-	// Body identity is avatar-owned and survives ASC unbinding. GAS still owns
-	// the semantic action-cancel/block state for the currently controlled avatar.
+	// Body identity is avatar-owned and survives ASC unbinding.
 	SetLifecycleState(EEnclaveAvatarLifecycleState::Dead);
+
+	// End this body's transient GAS state immediately. Run the sweep before
+	// GE_Dead is applied so GE_Dead itself requires no special-case exclusion.
+	// Player-scoped effects are the only active effects allowed to survive.
+	FEnclaveGameplayEffectScopePolicy::RemoveAvatarLifetimeEffects(
+		ASC,
+		EEnclaveAvatarEffectCleanupReason::Death);
 
 	FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
 

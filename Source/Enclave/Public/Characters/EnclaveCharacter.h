@@ -80,8 +80,8 @@ private:
 	/** Removes ASC bindings from all avatar components currently consuming it. */
 	void UninitializeAbilitySystemConsumers();
 
-	/** Clears effects explicitly scoped to a previous avatar exactly once for this Pawn lifetime. */
-	void InitializeAvatarScopedGameplayEffectsIfNeeded(UAbilitySystemComponent* AbilitySystemComponent);
+	/** Applies persistent-ASC effect lifetime policy exactly once before this Pawn binds as avatar. */
+	void InitializeAvatarEffectScopeIfNeeded(UAbilitySystemComponent* AbilitySystemComponent);
 
 	/** Authority only: exposes exactly one character representation to the Weapon trace channel for the selected match hit-detection mode. */
 	void ApplyWeaponHitDetectionCollisionPolicy();
@@ -128,10 +128,10 @@ private:
 	TWeakObjectPtr<UAbilitySystemComponent> CachedAbilitySystemComponent;
 
 	/**
-	 * Remembers which persistent ASC has already had its previous avatar state
+	 * Remembers which persistent ASC has already had its previous avatar-lifetime state
 	 * swept for this Pawn. It deliberately survives UnPossessed so re-binding
 	 * this same Pawn to the same ASC does not clear valid effects or revive it.
 	 */
-	TWeakObjectPtr<UAbilitySystemComponent> AvatarScopeInitializedAbilitySystem;
+	TWeakObjectPtr<UAbilitySystemComponent> AvatarEffectScopeInitializedAbilitySystem;
 
 };

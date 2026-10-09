@@ -30,10 +30,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnclaveAvatarDiedSignature, UEncla
  * current Enclave character policy: depleted Health transitions the avatar to
  * State.Lifecycle.Dead through GAS.
  *
- * The ASC is PlayerState-owned and survives Pawn replacement. Avatar-scoped
- * Gameplay Effects are cleaned at the Character's ASC/avatar initialization
- * boundary before consumers bind; this component independently owns this
- * body's replicated lifecycle identity.
+ * The ASC is PlayerState-owned and survives Pawn replacement. Avatar-lifetime
+ * Gameplay Effects are swept immediately on death and again defensively before
+ * a replacement avatar binds. Only explicitly Player-scoped active effects may
+ * survive that boundary. This component independently owns this body's replicated
+ * lifecycle identity.
  */
 UCLASS(Blueprintable, ClassGroup = (Enclave), meta = (BlueprintSpawnableComponent))
 class ENCLAVE_API UEnclaveAvatarLifecycleComponent : public UActorComponent, public IEnclaveAbilitySystemConsumerInterface

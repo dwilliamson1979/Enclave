@@ -10,12 +10,12 @@
 #include "GameFramework/CharacterMovementComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "Abilities/Effects/EnclaveGameplayEffectScopePolicy.h"
 #include "Abilities/Interfaces/EnclaveAbilitySystemConsumerInterface.h"
 #include "Player/EnclavePlayerState.h"
 
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
-#include "GameplayTags/EnclaveEffectTags.h"
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Characters/Components/EnclaveViewComponent.h"
@@ -154,7 +154,7 @@ void AEnclaveCharacter::InitializeAbilityActorInfo()
 	// The ASC survives Pawn replacement. Remove state that belonged to its old
 	// avatar before rebinding ActorInfo to this Pawn, so removal callbacks/cues
 	// cannot accidentally resolve against the replacement avatar.
-	InitializeAvatarScopedGameplayEffectsIfNeeded(ASC);
+	InitializeAvatarEffectScopeIfNeeded(ASC);
 
 	// Owner = PlayerState (persistent for the match), Avatar = this Pawn
 	// (expected to change on respawn). Safe to call more than once - GAS
@@ -173,22 +173,21 @@ void AEnclaveCharacter::InitializeAbilityActorInfo()
 	InitializeAbilitySystemConsumers(ASC);
 }
 
-void AEnclaveCharacter::InitializeAvatarScopedGameplayEffectsIfNeeded(UAbilitySystemComponent* AbilitySystemComponent)
+void AEnclaveCharacter::InitializeAvatarEffectScopeIfNeeded(UAbilitySystemComponent* AbilitySystemComponent)
 {
-	if (!HasAuthority() || !IsValid(AbilitySystemComponent) || AvatarScopeInitializedAbilitySystem.Get() == AbilitySystemComponent)
+	if (!HasAuthority() || !IsValid(AbilitySystemComponent) || AvatarEffectScopeInitializedAbilitySystem.Get() == AbilitySystemComponent)
 	{
 		return;
 	}
 
-	AvatarScopeInitializedAbilitySystem = AbilitySystemComponent;
+	AvatarEffectScopeInitializedAbilitySystem = AbilitySystemComponent;
 
-	FGameplayTagContainer AvatarScopeTags;
-	AvatarScopeTags.AddTag(EnclaveGameplayTags::Effect_Scope_Avatar);
-
-	// Asset/dynamic asset tags classify the active effect itself; they are not
-	// actor-owned state. Remove only effects explicitly marked for one avatar
-	// lifetime, preserving Player-scoped or unclassified persistent ASC state.
-	AbilitySystemComponent->RemoveActiveEffectsWithTags(AvatarScopeTags);
+	// The PlayerState ASC outlives its Pawn. Only effects explicitly classified
+	// Effect.Scope.Player may survive into this new avatar. Avatar-scoped and
+	// unclassified active effects are removed before ActorInfo/consumers bind.
+	FEnclaveGameplayEffectScopePolicy::RemoveAvatarLifetimeEffects(
+		AbilitySystemComponent,
+		EEnclaveAvatarEffectCleanupReason::AvatarReplacement);
 }
 
 void AEnclaveCharacter::InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent)

@@ -17,6 +17,9 @@
  * Duration/infinite effects such as death, equip windows, burns, slows and
  * temporary avatar buffs should derive from this class when they must not
  * carry into a replacement Pawn. Instant effects do not need a lifetime scope.
+ *
+ * Enclave treats unscoped active effects as avatar-lifetime state during cleanup
+ * (with a warning), so only Effect.Scope.Player is allowed to persist by default.
  */
 UCLASS(Abstract)
 class ENCLAVE_API UEnclaveAvatarScopedGameplayEffect : public UGameplayEffect
