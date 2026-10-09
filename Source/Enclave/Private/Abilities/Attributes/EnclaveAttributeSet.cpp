@@ -12,18 +12,18 @@ UEnclaveAttributeSet::UEnclaveAttributeSet()
 	InitDamage(0.0f);
 }
 
+void UEnclaveAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const
+{
+	Super::PreAttributeBaseChange(Attribute, NewValue);
+
+	ClampAttributeValue(Attribute, NewValue);
+}
+
 void UEnclaveAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 
-	if (Attribute == GetHealthAttribute())
-	{
-		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
-	}
-	else if (Attribute == GetMaxHealthAttribute())
-	{
-		NewValue = FMath::Max(0.0f, NewValue);
-	}
+	ClampAttributeValue(Attribute, NewValue);
 }
 
 void UEnclaveAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
@@ -49,10 +49,19 @@ void UEnclaveAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCal
 		{
 			SetHealth(FMath::Clamp(GetHealth() - IncomingDamage, 0.0f, GetMaxHealth()));
 		}
-
-		return;
 	}
+}
 
+void UEnclaveAttributeSet::ClampAttributeValue(const FGameplayAttribute& Attribute, float& NewValue) const
+{
+	if (Attribute == GetHealthAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
+	}
+	else if (Attribute == GetMaxHealthAttribute())
+	{
+		NewValue = FMath::Max(0.0f, NewValue);
+	}
 }
 
 void UEnclaveAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
