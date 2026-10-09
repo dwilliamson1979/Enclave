@@ -131,6 +131,19 @@ const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
 	return InputFilters;
 }
 
+EEnclaveInputNetworkPolicy UEnclaveEquipmentComponent::GetInputNetworkPolicy(const FEnclaveInputEvent& InputEvent) const
+{
+	if ((NextWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextWieldableInputTag)) ||
+		(PreviousWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousWieldableInputTag)))
+	{
+		return EEnclaveInputNetworkPolicy::ServerAuthoritative;
+	}
+
+	// Item actions remain local here because their Gameplay Abilities own their
+	// own prediction/replication/authority path.
+	return EEnclaveInputNetworkPolicy::Local;
+}
+
 bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEvent)
 {
 	if (NextWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextWieldableInputTag))
@@ -155,15 +168,9 @@ bool UEnclaveEquipmentComponent::TryWieldNext()
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (!IsValid(OwnerActor))
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
 	{
 		return false;
-	}
-
-	if (!OwnerActor->HasAuthority())
-	{
-		ServerTryWieldNext();
-		return true;
 	}
 
 	return TryWieldInDirection(1);
@@ -173,15 +180,9 @@ bool UEnclaveEquipmentComponent::TryWieldPrevious()
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (!IsValid(OwnerActor))
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
 	{
 		return false;
-	}
-
-	if (!OwnerActor->HasAuthority())
-	{
-		ServerTryWieldPrevious();
-		return true;
 	}
 
 	return TryWieldInDirection(-1);
@@ -554,16 +555,6 @@ void UEnclaveEquipmentComponent::UpdateWieldedItemPresentation(AEnclaveItem* Pre
 			AvatarPresentation->HandleItemPresentationAction(DrawEvent);
 		}
 	}
-}
-
-void UEnclaveEquipmentComponent::ServerTryWieldNext_Implementation()
-{
-	TryWieldNext();
-}
-
-void UEnclaveEquipmentComponent::ServerTryWieldPrevious_Implementation()
-{
-	TryWieldPrevious();
 }
 
 UAbilitySystemComponent* UEnclaveEquipmentComponent::GetOwnerAbilitySystemComponent() const

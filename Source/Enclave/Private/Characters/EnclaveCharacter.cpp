@@ -15,7 +15,6 @@
 
 #include "Input/Components/EnclaveInputRouterComponent.h"
 #include "Input/Core/EnclaveInputConfig.h"
-#include "GameplayTags/EnclaveInputTags.h"
 #include "GameplayTags/EnclaveEffectTags.h"
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
@@ -340,28 +339,24 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 		ENCLAVE_SCREEN(FString::Printf(TEXT("ProcessInput: %s"), *InputEvent.InputTag.ToString()), FColor::Green, 2.0f);
 	}
 
-	if (!IsInputAllowedForLifecycle(InputEvent.InputTag))
-	{
-		return;
-	}
-
 	if (InputRouterComp)
 	{
 		InputRouterComp->RouteInput(InputEvent);
 	}
 }
 
-bool AEnclaveCharacter::IsInputAllowedForLifecycle(const FGameplayTag& InputTag) const
+bool AEnclaveCharacter::CanProcessAvatarInput(const FEnclaveInputEvent& InputEvent) const
 {
-	if (!IsValid(LifecycleComp) || !LifecycleComp->IsDead())
+	if (!InputEvent.IsValid())
 	{
-		return true;
+		return false;
 	}
 
-	// Keep view control available for death-camera/spectator transition work.
-	// Every other semantic input currently routed through the avatar represents
-	// gameplay intent and is blocked while this body is dead.
-	return InputTag.MatchesTagExact(EnclaveGameplayTags::Input_Avatar_Look);
+	// Lifecycle is an avatar-policy implementation detail. Routers and gameplay
+	// systems ask only whether this semantic input may currently be processed.
+	// A future observer pawn can expose an entirely different policy/config
+	// without adding death-specific exceptions here.
+	return !IsValid(LifecycleComp) || !LifecycleComp->IsDead();
 }
 
 const UEnclaveInputConfig* AEnclaveCharacter::GetInputConfig() const

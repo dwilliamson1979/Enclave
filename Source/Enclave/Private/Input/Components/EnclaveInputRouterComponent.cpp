@@ -1,24 +1,80 @@
 #include "Input/Components/EnclaveInputRouterComponent.h"
 
+#include "Input/Interfaces/EnclaveAvatarInputPolicyInterface.h"
+
 UEnclaveInputRouterComponent::UEnclaveInputRouterComponent()
 {
+	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = false;
+
+	// Required for the component-owned ServerRouteInput RPC. The owning Pawn
+	// supplies network ownership; this component supplies the centralized
+	// semantic input boundary.
+	SetIsReplicatedByDefault(true);
+}
+
+void UEnclaveInputRouterComponent::InitializeComponent()
+{
+	Super::InitializeComponent();
+
+	AvatarInputPolicy = Cast<IEnclaveAvatarInputPolicyInterface>(GetOwner());
 }
 
 bool UEnclaveInputRouterComponent::RouteInput(const FEnclaveInputEvent& InputEvent)
+{
+	if (!CanRouteInput(InputEvent))
+	{
+		return false;
+	}
+
+	return RouteInputInternal(InputEvent, false);
+}
+
+bool UEnclaveInputRouterComponent::CanRouteInput(const FEnclaveInputEvent& InputEvent) const
 {
 	if (!InputEvent.IsValid())
 	{
 		return false;
 	}
 
+	return AvatarInputPolicy == nullptr || AvatarInputPolicy->CanProcessAvatarInput(InputEvent);
+}
+
+bool UEnclaveInputRouterComponent::RouteInputInternal(const FEnclaveInputEvent& InputEvent, bool bServerAuthoritativeOnly)
+{
 	RemoveInvalidHandlers();
+
+	const AActor* OwnerActor = GetOwner();
+	const bool bHasAuthority = IsValid(OwnerActor) && OwnerActor->HasAuthority();
 
 	for (FEnclaveInputHandlerEntry& Entry : Handlers)
 	{
 		if (!Entry.MatchesInput(InputEvent.InputTag))
 		{
 			continue;
+		}
+
+		const EEnclaveInputNetworkPolicy NetworkPolicy = Entry.HandlerInterface->GetInputNetworkPolicy(InputEvent);
+
+		if (bServerAuthoritativeOnly)
+		{
+			if (NetworkPolicy != EEnclaveInputNetworkPolicy::ServerAuthoritative)
+			{
+				continue;
+			}
+
+			if (Entry.HandlerInterface->HandleInput(InputEvent))
+			{
+				return true;
+			}
+
+			continue;
+		}
+
+		if (NetworkPolicy == EEnclaveInputNetworkPolicy::ServerAuthoritative && !bHasAuthority)
+		{
+			ServerRouteInput(InputEvent);
+			return true;
 		}
 
 		if (Entry.HandlerInterface->HandleInput(InputEvent))
@@ -28,6 +84,20 @@ bool UEnclaveInputRouterComponent::RouteInput(const FEnclaveInputEvent& InputEve
 	}
 
 	return false;
+}
+
+void UEnclaveInputRouterComponent::ServerRouteInput_Implementation(FEnclaveInputEvent InputEvent)
+{
+	// Re-evaluate the same avatar policy against authoritative state. A client
+	// may legitimately be one replication interval behind; the server decides.
+	if (!CanRouteInput(InputEvent))
+	{
+		return;
+	}
+
+	// Security boundary: the generic RPC may only invoke handlers that explicitly
+	// opted this input into server-authoritative routing.
+	RouteInputInternal(InputEvent, true);
 }
 
 void UEnclaveInputRouterComponent::RegisterInputHandler(UObject* Handler, int32 Priority)

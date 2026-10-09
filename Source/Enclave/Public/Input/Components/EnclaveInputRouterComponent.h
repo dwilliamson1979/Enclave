@@ -7,6 +7,8 @@
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
 #include "EnclaveInputRouterComponent.generated.h"
 
+class IEnclaveAvatarInputPolicyInterface;
+
 /**
  * Runtime registration information for one input handler.
  *
@@ -117,6 +119,8 @@ public:
 
 	UEnclaveInputRouterComponent();
 
+	virtual void InitializeComponent() override;
+
 	/**
 	 * Routes an input event through the registered handlers.
 	 *
@@ -159,6 +163,22 @@ public:
 
 private:
 
+	/** Returns true when the owner avatar's current policy permits this event. */
+	bool CanRouteInput(const FEnclaveInputEvent& InputEvent) const;
+
+	/**
+	 * Routes through matching handlers.
+	 *
+	 * When bServerAuthoritativeOnly is true, handlers whose input policy is not
+	 * ServerAuthoritative are ignored. This prevents a client from using the
+	 * generic server RPC to invoke Local/GAS-predicted input paths directly.
+	 */
+	bool RouteInputInternal(const FEnclaveInputEvent& InputEvent, bool bServerAuthoritativeOnly);
+
+	/** Central network boundary for discrete server-authoritative avatar input. */
+	UFUNCTION(Server, Reliable)
+	void ServerRouteInput(FEnclaveInputEvent InputEvent);
+
 	/**
 	 * Sorts handlers from highest to lowest priority.
 	 */
@@ -168,6 +188,9 @@ private:
 	 * Removes entries whose underlying UObject is no longer valid.
 	 */
 	void RemoveInvalidHandlers();
+
+	/** Stable for the lifetime of this component because the owning avatar does not change. */
+	IEnclaveAvatarInputPolicyInterface* AvatarInputPolicy = nullptr;
 
 	UPROPERTY()
 	TArray<FEnclaveInputHandlerEntry> Handlers;

@@ -50,6 +50,18 @@ public:
 	virtual const FGameplayTagContainer& GetInputFilters() const = 0;
 
 	/**
+	 * Returns where this specific semantic input should execute.
+	 *
+	 * Most handlers are local by default. Handlers that own discrete
+	 * server-authoritative commands may opt individual input events into the
+	 * router's central server relay instead of defining their own RPCs.
+	 */
+	virtual EEnclaveInputNetworkPolicy GetInputNetworkPolicy(const FEnclaveInputEvent& InputEvent) const
+	{
+		return EEnclaveInputNetworkPolicy::Local;
+	}
+
+	/**
 	 * Handles a semantic input event.
 	 *
 	 * Return true if this handler consumes the event.

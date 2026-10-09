@@ -69,6 +69,7 @@ public:
 
 	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
+	virtual EEnclaveInputNetworkPolicy GetInputNetworkPolicy(const FEnclaveInputEvent& InputEvent) const override;
 	virtual bool HandleInput(const FEnclaveInputEvent& InputEvent) override;
 
 	bool TryWieldNext();
@@ -135,12 +136,6 @@ private:
 
 	/** Handles for abilities currently granted for CurrentWieldedItem. Server-only bookkeeping, not replicated. */
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
-
-	UFUNCTION(Server, Reliable)
-	void ServerTryWieldNext();
-
-	UFUNCTION(Server, Reliable)
-	void ServerTryWieldPrevious();
 
 	/** Semantic input tag used to request the next available wieldable item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))

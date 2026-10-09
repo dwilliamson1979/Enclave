@@ -51,6 +51,26 @@ struct ENCLAVE_API FEnclaveInputActionBinding
 };
 
 /**
+ * Describes where a semantic input handler expects its command to execute.
+ *
+ * Local:
+ *   The handler executes on the machine that received the physical input.
+ *   This includes local movement/view handling and GAS abilities that own
+ *   their own prediction/networking model.
+ *
+ * ServerAuthoritative:
+ *   The owning client's router relays the semantic event to the server and
+ *   does not execute that handler locally. The authoritative router rechecks
+ *   avatar input policy before dispatching it.
+ */
+UENUM()
+enum class EEnclaveInputNetworkPolicy : uint8
+{
+	Local,
+	ServerAuthoritative
+};
+
+/**
  * Framework-neutral representation of a semantic player input event.
  *
  * The PlayerController converts Enhanced Input callbacks into this structure.

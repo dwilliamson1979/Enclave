@@ -7,6 +7,7 @@
 #include "AbilitySystemInterface.h"
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
+#include "Input/Interfaces/EnclaveAvatarInputPolicyInterface.h"
 #include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "EnclaveCharacter.generated.h"
 
@@ -25,7 +26,7 @@ class UEnclaveGASHealthComponent;
 class UEnclaveAvatarLifecycleComponent;
 
 UCLASS()
-class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
+class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
 {
 	GENERATED_BODY()
 
@@ -58,6 +59,9 @@ public:
 	// IEnclaveInputConfigProviderInterface
 	virtual const UEnclaveInputConfig* GetInputConfig() const override;
 
+	// IEnclaveAvatarInputPolicyInterface
+	virtual bool CanProcessAvatarInput(const FEnclaveInputEvent& InputEvent) const override;
+
 	// IEnclaveAnimDataProviderInterface
 	virtual FEnclaveAnimData GetAnimData() const override;
 
@@ -81,9 +85,6 @@ private:
 
 	/** Authority only: exposes exactly one character representation to the Weapon trace channel for the selected match hit-detection mode. */
 	void ApplyWeaponHitDetectionCollisionPolicy();
-
-	/** Current lifecycle policy for semantic input. Dead avatars retain look input only. */
-	bool IsInputAllowedForLifecycle(const FGameplayTag& InputTag) const;
 
 	// BlueprintReadOnly so BP_EnclaveCharacter's graph can reach it (e.g. to
 	// test Link Anim Class Layers before the equip-driven C++ path exists).
