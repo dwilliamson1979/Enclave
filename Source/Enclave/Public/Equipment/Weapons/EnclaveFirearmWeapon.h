@@ -63,8 +63,8 @@ class USoundBase;
  *
  * Owns everything that only makes sense for something that fires:
  * - IEnclaveFireableInterface, this weapon's contract with UEnclaveGA_Fire
- *   (PerformFireHitDetection owns the line trace itself, including its own
- *   debug visualization and its own choice of aim source; GetFireCooldownEffectClass
+ *   (PerformFireHitDetection selects aim/range and delegates the line trace
+ *   to the hit-registration subsystem; GetFireCooldownEffectClass
  *   exposes this weapon's fire-rate cooldown GE).
  * - Item-local presentation for semantic Presentation.Item.Action.* events,
  *   coordinated by UEnclaveAvatarPresentationComponent. The firearm owns its

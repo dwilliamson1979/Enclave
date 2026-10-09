@@ -21,6 +21,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Hit Detection")
 	EEnclaveWeaponHitDetectionMode GetWeaponHitDetectionMode() const { return WeaponHitDetectionMode; }
 
+	/** Server-only match policy change. Reconfigures already spawned characters. */
+	UFUNCTION(BlueprintCallable, Category = "Combat|Hit Detection")
+	void SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode NewMode);
+
+	/** Server console: EnclaveSetHitRegistrationMode Capsule|SkeletalHitboxes */
+	UFUNCTION(Exec)
+	void EnclaveSetHitRegistrationMode(const FString& ModeName);
+
 protected:
 	/**
 	 * Reads optional server travel/startup overrides before any players spawn.

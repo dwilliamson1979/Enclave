@@ -10,26 +10,18 @@
 
 #include "Equipment/Weapons/Data/EnclaveFirearmWeaponDefinition.h"
 #include "GameplayTags/EnclavePresentationTags.h"
-#include "Collision/EnclaveCollisionChannels.h"
+#include "Combat/EnclaveHitRegistrationSubsystem.h"
 
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Actor.h"
-#include "DrawDebugHelpers.h"
+
 #include "Debug/EnclaveDebug.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
-
-// Debug visualization of "how did this weapon's shot travel" is this
-// weapon's own trace behavior, not the ability's concern.
-static TAutoConsoleVariable<bool> CVarDebugFireTrace(
-	TEXT("Enclave.Debug.FireTrace"),
-	false,
-	TEXT("Draw debug lines and log hit results for a weapon's PerformFireHitDetection."),
-	ECVF_Cheat);
 
 // Magazine count visibility before a HUD exists - logs + on-screen print on
 // every change, server side on write and client side on replication.
@@ -336,57 +328,24 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 	}
 
 	UWorld* World = GetWorld();
+	UEnclaveHitRegistrationSubsystem* Registration = World ? World->GetSubsystem<UEnclaveHitRegistrationSubsystem>() : nullptr;
+	if (!Registration) { return Results; }
 
-	if (!IsValid(World))
-	{
-		return Results;
-	}
-
-	// Aim from the instigator's own eyes, not a muzzle socket - standard for
-	// hitscan shooters, since a muzzle-origin trace can hit geometry the
-	// crosshair is clearly not aimed at (corners, low walls) whenever the
-	// gun model leads or trails the camera. Resolved here rather than being
-	// handed in by the ability, so this weapon (or any other
-	// IEnclaveFireableInterface implementation) decides its own aim source -
-	// GetActorEyesViewPoint works for both a player-controlled pawn and an
-	// AI-controlled one, but a future non-eye-based Fireable (a deployed
-	// turret tracking its own target) is free to ignore InstigatorToIgnore's
-	// eyes entirely and compute something else.
+	// The firearm owns aim source, range and damage; registration owns how the
+	// authoritative shot intersects the currently selected target geometry.
+	// FUTURE: replace present-time eyes with validated client shot intent
+	// without changing Fireable -> GA_Fire -> DamageRequest semantics.
 	FVector ViewLocation;
 	FRotator ViewRotation;
 	InstigatorToIgnore->GetActorEyesViewPoint(ViewLocation, ViewRotation);
 
-	const FVector TraceEnd = ViewLocation + (ViewRotation.Vector() * FirearmWeaponDefinition->GetTraceRange());
-
-	FCollisionQueryParams QueryParams;
-	QueryParams.AddIgnoredActor(InstigatorToIgnore);
-
-	// Also ignore anything attached to the instigator (this weapon
-	// included), since it's effectively part of the instigator for trace
-	// purposes.
-	TArray<AActor*> AttachedActors;
-	InstigatorToIgnore->GetAttachedActors(AttachedActors);
-	QueryParams.AddIgnoredActors(AttachedActors);
+	FEnclaveHitscanQuery Query;
+	Query.Start = ViewLocation;
+	Query.End = ViewLocation + (ViewRotation.Vector() * FirearmWeaponDefinition->GetTraceRange());
+	Query.Instigator = InstigatorToIgnore;
 
 	FHitResult HitResult;
-	const bool bHit = World->LineTraceSingleByChannel(HitResult, ViewLocation, TraceEnd, ECC_Weapon, QueryParams);
-
-	if (CVarDebugFireTrace.GetValueOnGameThread())
-	{
-		DrawDebugLine(World, ViewLocation, bHit ? HitResult.ImpactPoint : TraceEnd, bHit ? FColor::Green : FColor::Red, false, 2.0f, 0, 1.0f);
-
-		const FString BoneName = HitResult.BoneName.IsNone() ? TEXT("None") : HitResult.BoneName.ToString();
-
-		ENCLAVE_NET_LOG(
-			LogEnclaveWeapon,
-			Log,
-			this,
-			FString::Printf(
-				TEXT("fire trace hit=%s component=%s bone=%s"),
-				*GetNameSafe(HitResult.GetActor()),
-				*GetNameSafe(HitResult.GetComponent()),
-				*BoneName));
-	}
+	const bool bHit = Registration->RegisterHitscan(Query, HitResult);
 
 	if (bHit)
 	{
