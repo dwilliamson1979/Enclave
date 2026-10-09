@@ -26,7 +26,7 @@ public:
 	/** Server-only notification; listeners configure their own collision representation. */
 	FEnclaveWeaponHitDetectionModeChanged& OnWeaponHitDetectionModeChanged() { return WeaponHitDetectionModeChanged; }
 
-	/** Server-only match policy change. Reconfigures already spawned characters. */
+	/** Authority-only match policy change. Locked after match start in Shipping/Test; development builds permit live testing. */
 	UFUNCTION(BlueprintCallable, Category = "Combat|Hit Detection")
 	void SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode NewMode);
 

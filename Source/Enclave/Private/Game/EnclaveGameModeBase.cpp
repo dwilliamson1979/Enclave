@@ -48,6 +48,17 @@ void AEnclaveGameModeBase::InitGame(const FString& MapName, const FString& Optio
 void AEnclaveGameModeBase::SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode NewMode)
 {
 	if (!HasAuthority()) { return; }
+
+	// Production policy is immutable after match start. Development builds may
+	// deliberately switch modes mid-match to test live collision transitions.
+	// Keep this guard in the setter: Blueprint callers must obey it too.
+#if UE_BUILD_SHIPPING || UE_BUILD_TEST
+	if (HasMatchStarted())
+	{
+		UE_LOG(LogEnclaveCombat, Warning, TEXT("Cannot change hit registration mode after match start in production builds."));
+		return;
+	}
+#endif
 	if (NewMode != EEnclaveWeaponHitDetectionMode::Capsule &&
 		NewMode != EEnclaveWeaponHitDetectionMode::SkeletalHitboxes)
 	{
@@ -65,7 +76,7 @@ void AEnclaveGameModeBase::SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionM
 
 	// FUTURE: replicate selected policy via GameState for HUD / spectators.
 	// FUTURE: invalidate/reseed rewind history when switching geometry.
-	// Production matches should lock this policy after match start.
+	// Shipping/Test builds lock this policy after match start.
 }
 
 void AEnclaveGameModeBase::EnclaveSetHitRegistrationMode(const FString& ModeName)

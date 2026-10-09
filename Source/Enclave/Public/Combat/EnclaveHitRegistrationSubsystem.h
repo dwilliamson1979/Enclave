@@ -46,6 +46,9 @@ class ENCLAVE_API UEnclaveHitRegistrationSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+
+	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
+
 	/** Returns true only when a blocking hit was registered; server only. */
 	bool RegisterHitscan(const FEnclaveHitscanQuery& Query, FHitResult& OutHit) const;
 

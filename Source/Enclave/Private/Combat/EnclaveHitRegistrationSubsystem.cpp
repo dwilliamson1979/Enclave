@@ -15,6 +15,18 @@ static TAutoConsoleVariable<bool> CVarDebugFireTrace(
 	TEXT("Draw authoritative hitscan rays and log blocking hits."),
 	ECVF_Cheat);
 
+bool UEnclaveHitRegistrationSubsystem::ShouldCreateSubsystem(UObject* Outer) const
+{
+	if (!Super::ShouldCreateSubsystem(Outer))
+	{
+		return false;
+	}
+
+	// For a UWorldSubsystem, Outer is its owning UWorld. Skip remote client worlds.
+	const UWorld* World = Cast<UWorld>(Outer);
+	return World && World->GetNetMode() != NM_Client;
+}
+
 bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuery& Query, FHitResult& OutHit) const
 {
 	OutHit = FHitResult();
