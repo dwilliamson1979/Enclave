@@ -6,8 +6,6 @@
 
 #include "Debug/EnclaveDebug.h"
 #include "Player/EnclavePlayerState.h"
-#include "Characters/EnclaveCharacter.h"
-#include "EngineUtils.h"
 
 AEnclaveGameModeBase::AEnclaveGameModeBase()
 {
@@ -61,10 +59,7 @@ void AEnclaveGameModeBase::SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionM
 	WeaponHitDetectionMode = NewMode;
 	// On the game thread, finish collision-policy transition before the next
 	// authoritative shot trace. Existing pawns must transition as well as new ones.
-	for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
-	{
-		It->ApplyWeaponHitDetectionCollisionPolicy();
-	}
+	WeaponHitDetectionModeChanged.Broadcast(WeaponHitDetectionMode);
 	UE_LOG(LogEnclaveCombat, Log, TEXT("Active hit registration mode: %s"),
 		GetEnclaveWeaponHitDetectionModeName(WeaponHitDetectionMode));
 
@@ -75,6 +70,7 @@ void AEnclaveGameModeBase::SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionM
 
 void AEnclaveGameModeBase::EnclaveSetHitRegistrationMode(const FString& ModeName)
 {
+#if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (ModeName.Equals(TEXT("Capsule"), ESearchCase::IgnoreCase))
 	{
 		SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode::Capsule);
@@ -87,4 +83,8 @@ void AEnclaveGameModeBase::EnclaveSetHitRegistrationMode(const FString& ModeName
 	{
 		UE_LOG(LogEnclaveCombat, Warning, TEXT("Usage: EnclaveSetHitRegistrationMode Capsule|SkeletalHitboxes"));
 	}
+#else
+	// The reflected Exec function remains declared for UHT compatibility, but cannot change match rules.
+	(void)ModeName;
+#endif
 }

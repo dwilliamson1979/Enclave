@@ -7,6 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
+#include "Debug/EnclaveDebug.h"
 
 static TAutoConsoleVariable<bool> CVarDebugFireTrace(
 	TEXT("Enclave.Debug.FireTrace"),
@@ -57,7 +58,7 @@ bool UEnclaveHitRegistrationSubsystem::TraceCurrentGeometry(const FEnclaveHitsca
 	{
 		DrawDebugLine(World, Query.Start, bHit ? OutHit.ImpactPoint : Query.End,
 			bHit ? FColor::Green : FColor::Red, false, 2.0f, 0, 1.0f);
-		UE_LOG(LogTemp, Log, TEXT("Enclave hit registration mode=%s hit=%s component=%s bone=%s"),
+		ENCLAVE_LOG(LogEnclaveCombat, Log, "Hit registration mode=%s hit=%s component=%s bone=%s",
 			GetEnclaveWeaponHitDetectionModeName(Mode), *GetNameSafe(OutHit.GetActor()),
 			*GetNameSafe(OutHit.GetComponent()), *OutHit.BoneName.ToString());
 	}

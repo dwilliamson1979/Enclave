@@ -238,7 +238,14 @@ void AEnclaveCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	ApplyWeaponHitDetectionCollisionPolicy();
+	if (HasAuthority())
+	{
+		if (AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr)
+		{
+			GameMode->OnWeaponHitDetectionModeChanged().AddUObject(this, &AEnclaveCharacter::OnWeaponHitDetectionModeChanged);
+		}
+		ApplyWeaponHitDetectionCollisionPolicy();
+	}
 
 	if (InputRouterComp)
 	{
@@ -253,6 +260,14 @@ void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// Covers client teardown and destruction paths where UnPossessed may not be
 	// observed locally. Consumer uninitialization is intentionally idempotent.
 	UninitializeAbilitySystemConsumers();
+
+	if (HasAuthority())
+	{
+		if (AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr)
+		{
+			GameMode->OnWeaponHitDetectionModeChanged().RemoveAll(this);
+		}
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -286,6 +301,21 @@ void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy()
 		? EnclaveGameMode->GetWeaponHitDetectionMode()
 		: EEnclaveWeaponHitDetectionMode::Capsule;
 
+	ApplyWeaponHitDetectionCollisionPolicy(Mode);
+}
+
+void AEnclaveCharacter::OnWeaponHitDetectionModeChanged(EEnclaveWeaponHitDetectionMode NewMode)
+{
+	ApplyWeaponHitDetectionCollisionPolicy(NewMode);
+}
+
+void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy(EEnclaveWeaponHitDetectionMode Mode)
+{
+	if (!HasAuthority()) { return; }
+	UCapsuleComponent* Capsule = GetCapsuleComponent();
+	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();
+	if (!IsValid(Capsule) || !IsValid(ThirdPersonMesh)) { return; }
+
 	switch (Mode)
 	{
 	case EEnclaveWeaponHitDetectionMode::SkeletalHitboxes:
@@ -297,6 +327,11 @@ void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy()
 		// A dedicated server has no rendering to force bone refreshes. Weapon
 		// traces depend on current Physics Asset body transforms, so skeletal
 		// hitbox mode explicitly keeps the authoritative body pose current.
+		if (!bSavedThirdPersonAnimTickOption)
+		{
+			SavedThirdPersonAnimTickOption = ThirdPersonMesh->VisibilityBasedAnimTickOption;
+			bSavedThirdPersonAnimTickOption = true;
+		}
 		ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 
 		if (!ThirdPersonMesh->GetPhysicsAsset())
@@ -314,6 +349,11 @@ void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy()
 	default:
 		Capsule->SetCollisionResponseToChannel(ECC_Weapon, ECR_Block);
 		ThirdPersonMesh->SetCollisionResponseToChannel(ECC_Weapon, ECR_Ignore);
+		if (bSavedThirdPersonAnimTickOption)
+		{
+			ThirdPersonMesh->VisibilityBasedAnimTickOption = SavedThirdPersonAnimTickOption;
+			bSavedThirdPersonAnimTickOption = false;
+		}
 		break;
 	}
 }

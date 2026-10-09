@@ -15,8 +15,12 @@ class AActor;
  *
  * FUTURE - Shot intent / rewind (not implemented):
  *   Client sends untrusted (timestamp, aim origin, aim direction) via GAS Target Data.
- *   Server validates against historical shooter view, active weapon, range,
- *   spread, fire cadence and a bounded rewind window before constructing this query.
+ *   UEnclaveGA_Fire receives GAS Target Data, validates timing and delegates
+ *   authoritative plausibility checks. The IEnclaveFireableInterface contract
+ *   must be extended to accept a validated shot input (or a server-generated
+ *   fallback for AI/turrets); AEnclaveFirearmWeapon then builds this query.
+ *   Validate shooter pose, origin/direction, obstacles, weapon, cadence, spread
+ *   and range. Target rewind is a separate, later feature.
  *   Registration can then choose present-time or historical target geometry.
  */
 struct ENCLAVE_API FEnclaveHitscanQuery

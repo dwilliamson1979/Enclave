@@ -7,6 +7,8 @@
 #include "Collision/EnclaveCollisionChannels.h"
 #include "EnclaveGameModeBase.generated.h"
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FEnclaveWeaponHitDetectionModeChanged, EEnclaveWeaponHitDetectionMode);
+
 /**
  * Authoritative match rules for Enclave.
  */
@@ -21,11 +23,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Hit Detection")
 	EEnclaveWeaponHitDetectionMode GetWeaponHitDetectionMode() const { return WeaponHitDetectionMode; }
 
+	/** Server-only notification; listeners configure their own collision representation. */
+	FEnclaveWeaponHitDetectionModeChanged& OnWeaponHitDetectionModeChanged() { return WeaponHitDetectionModeChanged; }
+
 	/** Server-only match policy change. Reconfigures already spawned characters. */
 	UFUNCTION(BlueprintCallable, Category = "Combat|Hit Detection")
 	void SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode NewMode);
 
-	/** Server console: EnclaveSetHitRegistrationMode Capsule|SkeletalHitboxes */
+	/** Development-only behavior: this Exec entry point does nothing in Test/Shipping. */
 	UFUNCTION(Exec)
 	void EnclaveSetHitRegistrationMode(const FString& ModeName);
 
@@ -37,6 +42,8 @@ protected:
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
 private:
+	FEnclaveWeaponHitDetectionModeChanged WeaponHitDetectionModeChanged;
+
 	/**
 	 * Character representation used by authoritative Weapon traces for this match.
 	 *

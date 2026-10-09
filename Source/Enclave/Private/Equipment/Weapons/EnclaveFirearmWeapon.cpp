@@ -333,8 +333,11 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 
 	// The firearm owns aim source, range and damage; registration owns how the
 	// authoritative shot intersects the currently selected target geometry.
-	// FUTURE: replace present-time eyes with validated client shot intent
-	// without changing Fireable -> GA_Fire -> DamageRequest semantics.
+	// FUTURE: GA_Fire receives client shot intent as GAS Target Data. Extend
+	// IEnclaveFireableInterface::PerformFireHitDetection to accept validated
+	// shot input (with a server-generated fallback for AI/turrets). The firearm
+	// chooses the query origin/direction; registration resolves the collision.
+	// Downstream FEnclaveHitResult -> DamageRequest remains unchanged.
 	FVector ViewLocation;
 	FRotator ViewRotation;
 	InstigatorToIgnore->GetActorEyesViewPoint(ViewLocation, ViewRotation);
