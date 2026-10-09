@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameplayEffect.h"
+#include "Abilities/Effects/EnclaveGameplayEffect.h"
 #include "EnclaveGE_Damage.generated.h"
 
 /**
@@ -14,7 +14,7 @@
  * attribute and converts it into Health loss in PostGameplayEffectExecute.
  */
 UCLASS()
-class ENCLAVE_API UEnclaveGE_Damage : public UGameplayEffect
+class ENCLAVE_API UEnclaveGE_Damage : public UEnclaveGameplayEffect
 {
 	GENERATED_BODY()
 
