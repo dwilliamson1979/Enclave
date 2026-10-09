@@ -16,7 +16,7 @@ namespace EnclaveGameplayTags
 	/** Wielded-item reload action. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Item_Reload);
 
-	/** Set-by-caller magnitude tag used on damage Gameplay Effects (e.g. GE_Fire_Damage). */
+	/** Set-by-caller magnitude tag used by the generic Enclave damage GameplayEffect. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
 	/** Set-by-caller duration used by the current wield relationship's equipping Gameplay Effect. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Item_EquipDuration);

@@ -53,12 +53,6 @@ void UEnclaveAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCal
 		return;
 	}
 
-	// Preserve support for older/test Gameplay Effects that still modify
-	// Health directly while the project transitions to the Damage meta attribute.
-	if (Data.EvaluatedData.Attribute == GetHealthAttribute())
-	{
-		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
-	}
 }
 
 void UEnclaveAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

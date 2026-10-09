@@ -122,6 +122,7 @@ bool UEnclaveGASHealthComponent::ReceiveDamage(const FEnclaveDamageRequest& Dama
 	}
 
 	SpecHandle.Data->SetSetByCallerMagnitude(EnclaveGameplayTags::Data_Damage, DamageRequest.Damage);
+	SpecHandle.Data->AppendDynamicAssetTags(DamageRequest.DamageTags);
 
 	const float OldHealth = GetHealth();
 

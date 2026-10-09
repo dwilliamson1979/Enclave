@@ -133,14 +133,21 @@ const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
 
 EEnclaveInputNetworkPolicy UEnclaveEquipmentComponent::GetInputNetworkPolicy(const FEnclaveInputEvent& InputEvent) const
 {
-	if ((NextWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextWieldableInputTag)) ||
-		(PreviousWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousWieldableInputTag)))
+	const bool bIsWieldInput =
+		(NextWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextWieldableInputTag)) ||
+		(PreviousWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousWieldableInputTag));
+
+	// Wielding is a discrete command. Only relay the Started edge; forwarding
+	// Triggered/Ongoing/Completed would create redundant reliable RPCs and a held
+	// key could otherwise emit one every frame depending on the InputAction setup.
+	if (bIsWieldInput && InputEvent.TriggerEvent == ETriggerEvent::Started)
 	{
 		return EEnclaveInputNetworkPolicy::ServerAuthoritative;
 	}
 
 	// Item actions remain local here because their Gameplay Abilities own their
-	// own prediction/replication/authority path.
+	// own prediction/replication/authority path. Non-Started wield events are
+	// also local no-ops; HandleInput already ignores them.
 	return EEnclaveInputNetworkPolicy::Local;
 }
 
