@@ -6,6 +6,7 @@
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/EnclaveAbilityGrant.h"
+#include "Equipment/Data/EnclaveItemActionBinding.h"
 #include "EnclaveItemDefinition.generated.h"
 
 class USkeletalMesh;
@@ -32,6 +33,9 @@ public:
 
 	float GetEquipDuration() const { return EquipDuration; }
 	const TArray<FEnclaveAbilityGrant>& GetAbilityGrants() const { return AbilityGrants; }
+
+    /** Returns an explicit action-slot override, or nullptr for legacy grant-based resolution. */
+    const FEnclaveItemActionBinding* FindActionBinding(const FGameplayTag& InputTag) const;
 
 protected:
 	/** Adds a default capability from a concrete definition constructor. */
@@ -76,4 +80,11 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Abilities", meta = (AllowPrivateAccess = "true", TitleProperty = "InputTag"))
 	TArray<FEnclaveAbilityGrant> AbilityGrants;
+
+    /** Optional contextual slot overrides. Omitted slots retain existing item-grant behavior.
+     * Use each InputTag at most once; duplicate entries are ambiguous and the first wins.
+     * CharacterFallback is a declaration only until character-action routing is added.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Abilities", meta = (AllowPrivateAccess = "true", TitleProperty = "InputTag"))
+    TArray<FEnclaveItemActionBinding> ActionBindings;
 };

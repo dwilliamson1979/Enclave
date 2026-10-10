@@ -6,6 +6,7 @@
 #include "Abilities/Effects/EnclaveGE_ItemEquipping.h"
 #include "Debug/EnclaveDebug.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "Equipment/Data/EnclaveItemDefinition.h"
 #include "GameplayTags/EnclaveInputTags.h"
 #include "GameplayTags/EnclaveItemTags.h"
 #include "GameplayTags/EnclavePresentationTags.h"
@@ -208,6 +209,30 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
 	{
 		return false;
+	}
+
+	// A contextual binding changes the meaning of this slot, not the physical
+	// mapping or the ability-grant ownership model. Existing definitions that
+	// omit ActionBindings retain their exact previous behavior.
+	const UEnclaveItemDefinition* Definition = IsValid(CurrentWieldedItem) ? CurrentWieldedItem->GetItemDefinition() : nullptr;
+	if (IsValid(Definition))
+	{
+		if (const FEnclaveItemActionBinding* Binding = Definition->FindActionBinding(InputEvent.InputTag))
+		{
+			switch (Binding->Mode)
+			{
+			case EEnclaveItemActionBindingMode::Suppressed:
+				return true;
+			case EEnclaveItemActionBindingMode::CharacterFallback:
+				// Phase 1 declares the fallback; it must not activate the item's
+				// ability while character-ability routing is not implemented.
+				return false;
+			case EEnclaveItemActionBindingMode::ItemAbility:
+				break;
+			default:
+				return false;
+			}
+		}
 	}
 
 	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(InputEvent.InputTag);
