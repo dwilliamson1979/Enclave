@@ -240,11 +240,15 @@ void AEnclaveCharacter::BeginPlay()
 
 	if (HasAuthority())
 	{
-		if (AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr)
-		{
-			GameMode->OnWeaponHitDetectionModeChanged().AddUObject(this, &AEnclaveCharacter::OnWeaponHitDetectionModeChanged);
-		}
-		ApplyWeaponHitDetectionCollisionPolicy();
+		AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
+		EEnclaveWeaponHitDetectionMode HitDetectionMode = IsValid(GameMode) ? GameMode->GetWeaponHitDetectionMode() : EEnclaveWeaponHitDetectionMode::Capsule;
+
+		if (!IsValid(GameMode))
+			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s could not resolve AEnclaveGameModeBase; defaulting Weapon collision policy to Capsule.", *GetName());
+		else
+			GameMode->OnWeaponHitDetectionModeChanged().AddUObject(this, &AEnclaveCharacter::HandleOnWeaponHitDetectionModeChanged);
+
+		ApplyWeaponHitDetectionCollisionPolicy(HitDetectionMode);
 	}
 
 	if (InputRouterComp)
@@ -272,39 +276,7 @@ void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy()
-{
-	// Fire hit detection is server-authoritative (UEnclaveGA_Fire only traces
-	// when HasAuthority), so clients do not get to choose their own target
-	// representation. Collision-response changes do not need to replicate.
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	UCapsuleComponent* Capsule = GetCapsuleComponent();
-	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();
-
-	if (!IsValid(Capsule) || !IsValid(ThirdPersonMesh))
-	{
-		return;
-	}
-
-	const AEnclaveGameModeBase* EnclaveGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
-
-	if (!IsValid(EnclaveGameMode))
-	{
-		ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s could not resolve AEnclaveGameModeBase; defaulting Weapon collision policy to Capsule.", *GetName());
-	}
-
-	const EEnclaveWeaponHitDetectionMode Mode = IsValid(EnclaveGameMode)
-		? EnclaveGameMode->GetWeaponHitDetectionMode()
-		: EEnclaveWeaponHitDetectionMode::Capsule;
-
-	ApplyWeaponHitDetectionCollisionPolicy(Mode);
-}
-
-void AEnclaveCharacter::OnWeaponHitDetectionModeChanged(EEnclaveWeaponHitDetectionMode NewMode)
+void AEnclaveCharacter::HandleOnWeaponHitDetectionModeChanged(EEnclaveWeaponHitDetectionMode NewMode)
 {
 	ApplyWeaponHitDetectionCollisionPolicy(NewMode);
 }
@@ -312,8 +284,10 @@ void AEnclaveCharacter::OnWeaponHitDetectionModeChanged(EEnclaveWeaponHitDetecti
 void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy(EEnclaveWeaponHitDetectionMode Mode)
 {
 	if (!HasAuthority()) { return; }
+
 	UCapsuleComponent* Capsule = GetCapsuleComponent();
 	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();
+
 	if (!IsValid(Capsule) || !IsValid(ThirdPersonMesh)) { return; }
 
 	switch (Mode)

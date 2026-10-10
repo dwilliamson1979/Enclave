@@ -85,9 +85,9 @@ private:
 	/** Applies persistent-ASC effect lifetime policy exactly once before this Pawn binds as avatar. */
 	void InitializeAvatarEffectScopeIfNeeded(UAbilitySystemComponent* AbilitySystemComponent);
 
-	/** Authority only: configure this pawn for the currently selected server match policy. */
-	void ApplyWeaponHitDetectionCollisionPolicy();
-	void OnWeaponHitDetectionModeChanged(EEnclaveWeaponHitDetectionMode NewMode);
+	/** Responds to authoritative match hit-detection policy changes. */
+	void HandleOnWeaponHitDetectionModeChanged(EEnclaveWeaponHitDetectionMode NewMode);
+	/** Applies the selected policy to this character's collision components. Authority only. */
 	void ApplyWeaponHitDetectionCollisionPolicy(EEnclaveWeaponHitDetectionMode Mode);
 
 	// Preserve the configured animation tick behavior when temporarily forcing skeletal hitboxes.
