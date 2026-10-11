@@ -13,6 +13,7 @@
 #include "GameplayTags/EnclaveAbilityTags.h"
 
 #include "AbilitySystemComponent.h"
+#include "Abilities/EnclaveAbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayEffect.h"
 
@@ -35,6 +36,7 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 
 void UEnclaveEquipmentComponent::UninitializeComponent()
 {
+	ReleaseHeldItemInputs();
 	AActor* OwnerActor = GetOwner();
 
 	// The ASC is PlayerState-owned and can outlive this Pawn. Revoke every
@@ -203,29 +205,47 @@ bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 
 bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& InputEvent)
 {
-	// For now, item abilities are press-to-activate. A later GAS input pass can
-	// forward pressed/released state generically for held, charged, automatic,
-	// or release-driven abilities without restoring action-specific handlers.
+	const FGameplayTag& InputTag = InputEvent.InputTag;
+	const bool bRelease = InputEvent.TriggerEvent == ETriggerEvent::Completed || InputEvent.TriggerEvent == ETriggerEvent::Canceled;
+
+	// Never re-resolve a release against a newly wielded item. A revoked spec
+	// is tolerated by the ASC (e.g. the weapon was switched mid-hold).
+	if (bRelease)
+	{
+		FGameplayAbilitySpecHandle HeldHandle;
+		if (!HeldItemInputSpecs.RemoveAndCopyValue(InputTag, HeldHandle))
+		{
+			return false;
+		}
+		if (UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent()))
+		{
+			ASC->ReleaseAbilityInput(HeldHandle);
+		}
+		return true;
+	}
+
 	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
 	{
 		return false;
 	}
 
-	// A contextual binding changes the meaning of this slot, not the physical
-	// mapping or the ability-grant ownership model. Existing definitions that
-	// omit ActionBindings retain their exact previous behavior.
+	// Ignore duplicate presses; do not rebind the same held input to new equipment.
+	if (HeldItemInputSpecs.Contains(InputTag))
+	{
+		return true;
+	}
+
 	const UEnclaveItemDefinition* Definition = IsValid(CurrentWieldedItem) ? CurrentWieldedItem->GetItemDefinition() : nullptr;
 	if (IsValid(Definition))
 	{
-		if (const FEnclaveItemActionBinding* Binding = Definition->FindActionBinding(InputEvent.InputTag))
+		if (const FEnclaveItemActionBinding* Binding = Definition->FindActionBinding(InputTag))
 		{
 			switch (Binding->Mode)
 			{
 			case EEnclaveItemActionBindingMode::Suppressed:
 				return true;
 			case EEnclaveItemActionBindingMode::CharacterFallback:
-				// Phase 1 declares the fallback; it must not activate the item's
-				// ability while character-ability routing is not implemented.
+				// Character capability routing belongs to Phase 4.
 				return false;
 			case EEnclaveItemActionBindingMode::ItemAbility:
 				break;
@@ -235,18 +255,30 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 		}
 	}
 
-	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(InputEvent.InputTag);
-	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
-
+	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(InputTag);
+	UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent());
 	if (!SpecHandle.IsValid() || !IsValid(ASC))
 	{
 		return false;
 	}
 
-	// A matching spec is the wielded item's declaration that it supports this
-	// input. Whether the action is currently legal belongs to the ability's
-	// CanActivateAbility/CommitAbility path, not Equipment.
-	return ASC->TryActivateAbility(SpecHandle);
+	// Remember the spec even when activation is blocked; release still needs
+	// to clear InputPressed and must not activate a different ability.
+	HeldItemInputSpecs.Add(InputTag, SpecHandle);
+	return ASC->PressAbilityInput(SpecHandle);
+}
+
+void UEnclaveEquipmentComponent::ReleaseHeldItemInputs()
+{
+	UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent());
+	if (IsValid(ASC))
+	{
+		for (const TPair<FGameplayTag, FGameplayAbilitySpecHandle>& Entry : HeldItemInputSpecs)
+		{
+			ASC->ReleaseAbilityInput(Entry.Value);
+		}
+	}
+	HeldItemInputSpecs.Reset();
 }
 
 FGameplayAbilitySpecHandle UEnclaveEquipmentComponent::FindWieldedItemAbilityForInput(const FGameplayTag& InputTag) const

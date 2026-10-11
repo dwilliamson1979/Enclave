@@ -84,6 +84,12 @@ private:
 
 	bool HandleItemInput(const FEnclaveInputEvent& InputEvent);
 
+	/** Clears local held-input bookkeeping; revoked specs are safe to release later. */
+	void ReleaseHeldItemInputs();
+
+	/** A press owns its resolved spec until release, even if CurrentWieldedItem changes. */
+	TMap<FGameplayTag, FGameplayAbilitySpecHandle> HeldItemInputSpecs;
+
 	/**
 	 * The granted ability spec (on the owner's ASC) whose SourceObject is
 	 * CurrentWieldedItem and whose dynamic spec source tags contain

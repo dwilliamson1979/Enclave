@@ -2,13 +2,13 @@
 
 #include "Player/EnclavePlayerState.h"
 
-#include "AbilitySystemComponent.h"
+#include "Abilities/EnclaveAbilitySystemComponent.h"
 
 #include "Abilities/Attributes/EnclaveAttributeSet.h"
 
 AEnclavePlayerState::AEnclavePlayerState()
 {
-	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent = CreateDefaultSubobject<UEnclaveAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 
 	// Mixed: full ability/effect/cue replication to the owning client, minimal

@@ -37,7 +37,11 @@ bool UEnclaveInputRouterComponent::CanRouteInput(const FEnclaveInputEvent& Input
 		return false;
 	}
 
-	return AvatarInputPolicy == nullptr || AvatarInputPolicy->CanProcessAvatarInput(InputEvent);
+	// Releases are cleanup edges: gameplay policy may block new presses,
+	// but must never suppress release/cancel for an already-held ability.
+	const bool bIsRelease = InputEvent.TriggerEvent == ETriggerEvent::Completed ||
+		InputEvent.TriggerEvent == ETriggerEvent::Canceled;
+	return bIsRelease || AvatarInputPolicy == nullptr || AvatarInputPolicy->CanProcessAvatarInput(InputEvent);
 }
 
 bool UEnclaveInputRouterComponent::RouteInputInternal(const FEnclaveInputEvent& InputEvent, bool bServerAuthoritativeOnly)

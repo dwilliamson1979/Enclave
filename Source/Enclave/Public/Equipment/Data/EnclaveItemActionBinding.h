@@ -10,9 +10,9 @@
 UENUM(BlueprintType)
 enum class EEnclaveItemActionBindingMode : uint8
 {
-    ItemAbility UMETA(DisplayName = "Item Ability"),
-    CharacterFallback UMETA(DisplayName = "Character Fallback"),
-    Suppressed UMETA(DisplayName = "Suppressed")
+	ItemAbility UMETA(DisplayName = "Item Ability"),
+	CharacterFallback UMETA(DisplayName = "Character Fallback"),
+	Suppressed UMETA(DisplayName = "Suppressed")
 };
 
 /**
@@ -27,17 +27,17 @@ enum class EEnclaveItemActionBindingMode : uint8
 USTRUCT(BlueprintType)
 struct ENCLAVE_API FEnclaveItemActionBinding
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (Categories = "Input.Item.Action"))
-    FGameplayTag InputTag;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (Categories = "Input.Item.Action"))
+	FGameplayTag InputTag;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-    EEnclaveItemActionBindingMode Mode = EEnclaveItemActionBindingMode::ItemAbility;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	EEnclaveItemActionBindingMode Mode = EEnclaveItemActionBindingMode::ItemAbility;
 
-    /** Target semantic character command (e.g. Input.Avatar.Aim) for CharacterFallback.
-     * Used by the future character ability dispatcher; not activated in Phase 1.
-     */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (Categories = "Input", EditCondition = "Mode == EEnclaveItemActionBindingMode::CharacterFallback", EditConditionHides))
-    FGameplayTag CharacterInputTag;
+	/** Target semantic character command (e.g. Input.Avatar.Aim) for CharacterFallback.
+	 * Used by the future character ability dispatcher; not activated in Phase 1.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (Categories = "Input", EditCondition = "Mode == EEnclaveItemActionBindingMode::CharacterFallback", EditConditionHides))
+	FGameplayTag CharacterInputTag;
 };
