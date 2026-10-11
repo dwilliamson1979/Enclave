@@ -229,9 +229,8 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 		return false;
 	}
 
-	// A new Started for this action means the previous press has ended, even if
-	// its Completed/Canceled event was not routed (e.g. a press-only binding).
-	// Release the old spec rather than redirecting its release to current equipment.
+	// A new Started while this input is tracked means a configured release
+	// event was missed. Release the old spec before handling the new press.
 	FGameplayAbilitySpecHandle StaleHandle;
 	if (HeldItemInputSpecs.RemoveAndCopyValue(InputTag, StaleHandle))
 	{
@@ -274,7 +273,9 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 	{
 		HeldItemInputSpecs.Add(InputTag, SpecHandle);
 	}
-	return ASC->PressAbilityInput(SpecHandle, InputEvent.bRoutesReleaseEvents);
+	return InputEvent.bRoutesReleaseEvents
+		? ASC->PressAbilityInput(SpecHandle)
+		: ASC->ActivateAbilityFromInput(SpecHandle);
 }
 
 void UEnclaveEquipmentComponent::ReleaseHeldItemInputs()

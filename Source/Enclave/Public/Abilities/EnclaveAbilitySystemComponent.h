@@ -12,8 +12,10 @@ class ENCLAVE_API UEnclaveAbilitySystemComponent : public UAbilitySystemComponen
 	GENERATED_BODY()
 
 public:
-	/** Activate on press. Only release-aware bindings retain GAS InputPressed state. */
-	bool PressAbilityInput(FGameplayAbilitySpecHandle Handle, bool bRoutesReleaseEvents);
+	/** Activate a press-only ability without latching GAS InputPressed. */
+	bool ActivateAbilityFromInput(FGameplayAbilitySpecHandle Handle);
+	/** Press a release-aware ability and retain GAS InputPressed until ReleaseAbilityInput. */
+	bool PressAbilityInput(FGameplayAbilitySpecHandle Handle);
 	/** Send release to the same ability spec, not one resolved from current equipment. */
 	void ReleaseAbilityInput(FGameplayAbilitySpecHandle Handle);
 

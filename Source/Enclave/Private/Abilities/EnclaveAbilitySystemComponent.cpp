@@ -12,7 +12,7 @@ FPredictionKey GetActiveInstancePredictionKey(const FGameplayAbilitySpec& Spec)
 }
 }
 
-bool UEnclaveAbilitySystemComponent::PressAbilityInput(FGameplayAbilitySpecHandle Handle, bool bRoutesReleaseEvents)
+bool UEnclaveAbilitySystemComponent::ActivateAbilityFromInput(FGameplayAbilitySpecHandle Handle)
 {
 	FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(Handle);
 	if (!Spec)
@@ -20,11 +20,16 @@ bool UEnclaveAbilitySystemComponent::PressAbilityInput(FGameplayAbilitySpecHandl
 		return false;
 	}
 
-	// Started-only actions (e.g. Reload) do not have a release edge.
-	// Do not latch InputPressed or create a synthetic release for them.
-	if (!bRoutesReleaseEvents)
+	// Press-only actions do not latch InputPressed or need a release edge.
+	return Spec->IsActive() || TryActivateAbility(Handle);
+}
+
+bool UEnclaveAbilitySystemComponent::PressAbilityInput(FGameplayAbilitySpecHandle Handle)
+{
+	FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(Handle);
+	if (!Spec)
 	{
-		return Spec->IsActive() || TryActivateAbility(Handle);
+		return false;
 	}
 
 	if (!Spec->InputPressed)
