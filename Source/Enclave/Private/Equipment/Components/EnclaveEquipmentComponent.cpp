@@ -229,10 +229,16 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 		return false;
 	}
 
-	// Ignore duplicate presses; do not rebind the same held input to new equipment.
-	if (HeldItemInputSpecs.Contains(InputTag))
+	// A new Started for this action means the previous press has ended, even if
+	// its Completed/Canceled event was not routed (e.g. a press-only binding).
+	// Release the old spec rather than redirecting its release to current equipment.
+	FGameplayAbilitySpecHandle StaleHandle;
+	if (HeldItemInputSpecs.RemoveAndCopyValue(InputTag, StaleHandle))
 	{
-		return true;
+		if (UEnclaveAbilitySystemComponent* StaleASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent()))
+		{
+			StaleASC->ReleaseAbilityInput(StaleHandle);
+		}
 	}
 
 	const UEnclaveItemDefinition* Definition = IsValid(CurrentWieldedItem) ? CurrentWieldedItem->GetItemDefinition() : nullptr;
@@ -262,10 +268,13 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 		return false;
 	}
 
-	// Remember the spec even when activation is blocked; release still needs
-	// to clear InputPressed and must not activate a different ability.
-	HeldItemInputSpecs.Add(InputTag, SpecHandle);
-	return ASC->PressAbilityInput(SpecHandle);
+	// Only a binding with release events needs an equipment-level hold.
+	// Started-only abilities end through their own gameplay lifecycle.
+	if (InputEvent.bRoutesReleaseEvents)
+	{
+		HeldItemInputSpecs.Add(InputTag, SpecHandle);
+	}
+	return ASC->PressAbilityInput(SpecHandle, InputEvent.bRoutesReleaseEvents);
 }
 
 void UEnclaveEquipmentComponent::ReleaseHeldItemInputs()

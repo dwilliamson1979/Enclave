@@ -84,7 +84,7 @@ struct ENCLAVE_API FEnclaveInputEvent
 
 	FEnclaveInputEvent() = default;
 
-	FEnclaveInputEvent(const FGameplayTag& InInputTag, const FInputActionValue& InValue, ETriggerEvent InTriggerEvent) : InputTag(InInputTag), Value(InValue), TriggerEvent(InTriggerEvent)
+	FEnclaveInputEvent(const FGameplayTag& InInputTag, const FInputActionValue& InValue, ETriggerEvent InTriggerEvent, bool bInRoutesReleaseEvents = false) : InputTag(InInputTag), Value(InValue), TriggerEvent(InTriggerEvent), bRoutesReleaseEvents(bInRoutesReleaseEvents)
 	{
 	}
 
@@ -108,6 +108,10 @@ struct ENCLAVE_API FEnclaveInputEvent
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Input")
 	ETriggerEvent TriggerEvent = ETriggerEvent::None;
+
+	/** True when this input binding is configured to route Completed or Canceled. */
+	UPROPERTY(BlueprintReadOnly, Category = "Input")
+	bool bRoutesReleaseEvents = false;
 
 	/**
 	 * Returns true when this event contains enough information to be routed.

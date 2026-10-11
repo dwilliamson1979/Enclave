@@ -147,9 +147,9 @@ bool AEnclavePlayerController::CanProcessInput(const FEnclaveInputEvent& InputEv
 	return InputEvent.IsValid() && CachedInputReceiver != nullptr;
 }
 
-void AEnclavePlayerController::HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag)
+void AEnclavePlayerController::HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents)
 {
-	const FEnclaveInputEvent InputEvent(InputTag, Value, TriggerEvent);
+	const FEnclaveInputEvent InputEvent(InputTag, Value, TriggerEvent, bRoutesReleaseEvents);
 
 	if (!CanProcessInput(InputEvent))
 	{
@@ -298,6 +298,9 @@ void AEnclavePlayerController::BindInputConfigActions(UEnhancedInputComponent& E
 			continue;
 		}
 
+		const bool bRoutesReleaseEvents = Binding.TriggerEvents.Contains(ETriggerEvent::Completed) ||
+			Binding.TriggerEvents.Contains(ETriggerEvent::Canceled);
+
 		for (const ETriggerEvent TriggerEvent : Binding.TriggerEvents)
 		{
 			if (TriggerEvent == ETriggerEvent::None)
@@ -314,7 +317,7 @@ void AEnclavePlayerController::BindInputConfigActions(UEnhancedInputComponent& E
 
 			BoundPairs.Add(PairKey);
 
-			const FEnhancedInputActionEventBinding& EnhancedBinding = EnhancedInput.BindAction(Binding.InputAction, TriggerEvent, this, &AEnclavePlayerController::HandleInput, TriggerEvent, Binding.InputTag);
+			const FEnhancedInputActionEventBinding& EnhancedBinding = EnhancedInput.BindAction(Binding.InputAction, TriggerEvent, this, &AEnclavePlayerController::HandleInput, TriggerEvent, Binding.InputTag, bRoutesReleaseEvents);
 
 			ActiveInputBindingHandles.Add(EnhancedBinding.GetHandle());
 		}

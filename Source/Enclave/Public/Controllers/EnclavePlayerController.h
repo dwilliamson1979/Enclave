@@ -52,7 +52,7 @@ private:
 
 	void PerformDebugRespawn();
 
-	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag);
+	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents);
 
 	void RefreshPossessedPawnInputState();
 

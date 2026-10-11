@@ -12,8 +12,8 @@ class ENCLAVE_API UEnclaveAbilitySystemComponent : public UAbilitySystemComponen
 	GENERATED_BODY()
 
 public:
-	/** Record a press and attempt activation. Repeated presses are harmless. */
-	bool PressAbilityInput(FGameplayAbilitySpecHandle Handle);
+	/** Activate on press. Only release-aware bindings retain GAS InputPressed state. */
+	bool PressAbilityInput(FGameplayAbilitySpecHandle Handle, bool bRoutesReleaseEvents);
 	/** Send release to the same ability spec, not one resolved from current equipment. */
 	void ReleaseAbilityInput(FGameplayAbilitySpecHandle Handle);
 
