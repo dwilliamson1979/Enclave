@@ -89,7 +89,7 @@ void AEnclaveFirearmWeapon::BeginPlay()
 
 const UEnclaveFirearmWeaponDefinition* AEnclaveFirearmWeapon::GetFirearmWeaponDefinition() const
 {
-	return Cast<UEnclaveFirearmWeaponDefinition>(GetWeaponDefinition());
+	return GetItemDefinitionAs<UEnclaveFirearmWeaponDefinition>();
 }
 
 void AEnclaveFirearmWeapon::ApplyItemDefinition()

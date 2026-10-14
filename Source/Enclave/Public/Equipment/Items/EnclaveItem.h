@@ -6,9 +6,9 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/EnclaveAbilityGrant.h"
+#include "Equipment/Data/EnclaveItemDefinition.h"
 #include "EnclaveItem.generated.h"
 
-class UEnclaveItemDefinition;
 class USceneComponent;
 class USkeletalMeshComponent;
 
@@ -30,6 +30,19 @@ public:
 
 	/** Definition supplying this actor's generic authored item data. */
 	virtual const UEnclaveItemDefinition* GetItemDefinition() const;
+
+	/** Retrieve an item definition of a specific subtype; returns nullptr on a type mismatch. */
+	template <typename TDefinition>
+	const TDefinition* GetItemDefinitionAs() const
+	{
+		static_assert(TIsDerivedFrom<TDefinition, UEnclaveItemDefinition>::IsDerived,
+			"TDefinition must derive from UEnclaveItemDefinition.");
+		return Cast<TDefinition>(GetItemDefinition());
+	}
+
+	/** Blueprint access to the authored definition; cast the result to the desired subtype. */
+	UFUNCTION(BlueprintPure, Category = "Item", meta = (DisplayName = "Get Item Definition"))
+	UEnclaveItemDefinition* GetItemDefinitionForBlueprint() const;
 
 	virtual FGameplayTag GetItemType() const;
 

@@ -50,6 +50,11 @@ const UEnclaveItemDefinition* AEnclaveItem::GetItemDefinition() const
 	return ItemDefinition;
 }
 
+UEnclaveItemDefinition* AEnclaveItem::GetItemDefinitionForBlueprint() const
+{
+	return const_cast<UEnclaveItemDefinition*>(GetItemDefinition());
+}
+
 FGameplayTag AEnclaveItem::GetItemType() const
 {
 	const UEnclaveItemDefinition* Definition = GetItemDefinition();

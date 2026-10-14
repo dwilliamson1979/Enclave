@@ -6,8 +6,6 @@
 #include "Equipment/Items/EnclaveItem.h"
 #include "EnclaveWeapon.generated.h"
 
-class UEnclaveWeaponDefinition;
-
 /**
  * Base class for weapons.
  *
@@ -21,8 +19,4 @@ UCLASS(Abstract, Blueprintable)
 class ENCLAVE_API AEnclaveWeapon : public AEnclaveItem
 {
 	GENERATED_BODY()
-
-public:
-	/** ItemDefinition, resolved as this actor's weapon-definition subtype. */
-	const UEnclaveWeaponDefinition* GetWeaponDefinition() const;
 };
