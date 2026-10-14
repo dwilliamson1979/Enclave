@@ -14,6 +14,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
+#include "Equipment/Items/EnclaveItem.h"
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
 AEnclavePlayerController::AEnclavePlayerController()
@@ -85,6 +86,81 @@ void AEnclavePlayerController::PerformDebugRespawn()
 	GameMode->RestartPlayer(this);
 
 	ENCLAVE_LOG(LogEnclaveCharacter, Log, "EnclaveDebugRespawn complete. New pawn: %s", *GetNameSafe(GetPawn()));
+#endif
+}
+
+void AEnclavePlayerController::EnclaveDebugRemoveWieldedItem()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (HasAuthority())
+	{
+		PerformDebugRemoveWieldedItem();
+		return;
+	}
+
+	ServerEnclaveDebugRemoveWieldedItem();
+#endif
+}
+
+void AEnclavePlayerController::ServerEnclaveDebugRemoveWieldedItem_Implementation()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	PerformDebugRemoveWieldedItem();
+#endif
+}
+
+void AEnclavePlayerController::PerformDebugRemoveWieldedItem()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	APawn* ControlledPawn = GetPawn();
+	if (!IsValid(ControlledPawn))
+	{
+		ENCLAVE_LOG(LogEnclaveInventory, Warning, "EnclaveDebugRemoveWieldedItem: no valid possessed Pawn.");
+		return;
+	}
+
+	UEnclaveEquipmentComponent* Equipment = ControlledPawn->FindComponentByClass<UEnclaveEquipmentComponent>();
+	UEnclaveInventoryComponent* Inventory = ControlledPawn->FindComponentByClass<UEnclaveInventoryComponent>();
+	if (!IsValid(Equipment) || !IsValid(Inventory))
+	{
+		ENCLAVE_LOG(LogEnclaveInventory, Warning, "EnclaveDebugRemoveWieldedItem: %s requires Equipment and Inventory components.", *GetNameSafe(ControlledPawn));
+		return;
+	}
+
+	AEnclaveItem* ItemToRemove = Equipment->GetCurrentWieldedItem();
+	if (!IsValid(ItemToRemove))
+	{
+		ENCLAVE_LOG(LogEnclaveInventory, Warning, "EnclaveDebugRemoveWieldedItem: %s has no wielded item.", *GetNameSafe(ControlledPawn));
+		return;
+	}
+
+	// Only regular inventory membership authorizes removal. This explicitly
+	// excludes Equipment's persistent default item without a special item flag.
+	if (!Inventory->ContainsItem(ItemToRemove))
+	{
+		ENCLAVE_LOG(LogEnclaveInventory, Log, "EnclaveDebugRemoveWieldedItem: %s is not in ordinary Inventory; leaving it intact.", *GetNameSafe(ItemToRemove));
+		return;
+	}
+
+	// RemoveItem broadcasts the source change synchronously. Equipment can
+	// cancel/revoke the outgoing item's abilities and wield the default while
+	// the old item actor and its GAS SourceObject are still valid.
+	if (!Inventory->RemoveItem(ItemToRemove))
+	{
+		ENCLAVE_LOG(LogEnclaveInventory, Warning, "EnclaveDebugRemoveWieldedItem: failed to remove %s.", *GetNameSafe(ItemToRemove));
+		return;
+	}
+
+	ENCLAVE_LOG(LogEnclaveInventory, Log, "EnclaveDebugRemoveWieldedItem: removed %s from %s; now wielded: %s.",
+		*GetNameSafe(ItemToRemove), *GetNameSafe(ControlledPawn), *GetNameSafe(Equipment->GetCurrentWieldedItem()));
+
+	// This is a destructive development-only test, not a world-drop mechanic.
+	ItemToRemove->Destroy();
 #endif
 }
 

@@ -32,6 +32,8 @@ class IEnclaveAvatarPresentationInterface;
  * subset of exposed items that are wieldable, and refreshes that cache only
  * when the source reports a change - it never polls the source directly.
  *
+ * An optional persistent default item is the one Equipment-owned exception to
+ * external item sourcing. It is never inserted into the inventory source.
  * Inventory/storage responsibilities do not belong here.
  */
 UCLASS(ClassGroup = (Enclave), meta = (BlueprintSpawnableComponent))
@@ -44,8 +46,21 @@ public:
 
 	// UActorComponent
 	virtual void InitializeComponent() override;
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void UninitializeComponent() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/**
+	 * Spawns the configured default item once on authority. Does not select it:
+	 * starting inventory retains priority, and callers choose when to wield.
+	 */
+	void InitializePersistentDefaultItem();
+
+	/** Explicitly select the persistent default item via the normal wield path. Authority only. */
+	bool TryWieldPersistentDefaultItem();
+
+	AEnclaveItem* GetPersistentDefaultItem() const { return PersistentDefaultItem; }
 
 	bool WieldItem(AEnclaveItem* Item);
 
@@ -109,6 +124,15 @@ private:
 	void HandleItemSourceChanged();
 	void RebuildWieldableCache();
 
+	/** When a source removes the wielded item, preserve a valid default selection. */
+	void RestoreDefaultWieldIfNecessary();
+
+	/** Destroys only the actor owned by the default slot, never inventory items. */
+	void DestroyPersistentDefaultItem();
+
+	UFUNCTION()
+	void OnRep_PersistentDefaultItem();
+
 	/** The owner's avatar-presentation implementation, discovered by interface. */
 	IEnclaveAvatarPresentationInterface* GetAvatarPresentation() const;
 
@@ -166,11 +190,22 @@ private:
 	/** The wielded item whose presentation has most recently been reconciled on this machine. */
 	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;
 
+	/** Optional intrinsic item for this owner. Never belongs to ordinary Inventory.Items. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Persistent Default Item", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<AEnclaveItem> PersistentDefaultItemClass;
+
+	/** Pawn/actor-scoped runtime instance created by authority and replicated to peers. */
+	UPROPERTY(ReplicatedUsing = OnRep_PersistentDefaultItem)
+	TObjectPtr<AEnclaveItem> PersistentDefaultItem = nullptr;
+
+	/** Guards fallback logic during component/owner shutdown. */
+	bool bEquipmentTearingDown = false;
+
 	/** The owner's bound item source (e.g. an inventory component), accessed only through the interface. */
 	UPROPERTY(Transient)
 	TScriptInterface<IEnclaveItemSourceInterface> ItemSource;
 
-	/** Subset of the item source's items that declare Item.Capability.Wieldable. Rebuilt only on source-change notifications. */
+	/** Wieldable ordinary source items, followed by the optional default item. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AEnclaveItem>> WieldableCache;
 };

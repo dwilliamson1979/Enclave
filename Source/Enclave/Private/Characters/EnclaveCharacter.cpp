@@ -100,22 +100,36 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 	// Server-side: PlayerState is already valid by this point.
 	InitializeAbilityActorInfo();
 
-	if (!InventoryComp || !EquipmentComp || !InventoryComp->IsEmpty())
+	if (!EquipmentComp)
 	{
 		return;
 	}
 
-	for (const TSubclassOf<AEnclaveItem>& ItemClass : DefaultItemClasses)
+	// Equipment owns the optional lifetime-bound default item. Possession
+	// ensures an ASC is ready before its item ability grants are applied.
+	EquipmentComp->InitializePersistentDefaultItem();
+
+	// Preserve the original starting-loadout precedence: an ordinary
+	// starting item takes priority over the persistent default.
+	if (InventoryComp && InventoryComp->IsEmpty())
 	{
-		InventoryComp->SpawnItem(ItemClass);
+		for (const TSubclassOf<AEnclaveItem>& ItemClass : DefaultItemClasses)
+		{
+			InventoryComp->SpawnItem(ItemClass);
+		}
+
+		for (const TObjectPtr<AEnclaveItem>& Item : InventoryComp->GetItems())
+		{
+			if (EquipmentComp->WieldItem(Item))
+			{
+				break;
+			}
+		}
 	}
 
-	for (const TObjectPtr<AEnclaveItem>& Item : InventoryComp->GetItems())
+	if (!IsValid(EquipmentComp->GetCurrentWieldedItem()))
 	{
-		if (EquipmentComp->WieldItem(Item))
-		{
-			break;
-		}
+		EquipmentComp->TryWieldPersistentDefaultItem();
 	}
 }
 

@@ -18,6 +18,8 @@
 #include "GameplayEffect.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Pawn.h"
+#include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 
 UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
@@ -34,8 +36,37 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 	BindItemSource();
 }
 
+void UEnclaveEquipmentComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (AActor* OwnerActor = GetOwner(); IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		InitializePersistentDefaultItem();
+
+		// Actors without starting inventory can select the default immediately.
+		// Pawn-based ASC owners may not have been possessed yet: defer their
+		// first wield until the ASC is initialized by the owning actor.
+		const IAbilitySystemInterface* ASCProvider = Cast<IAbilitySystemInterface>(OwnerActor);
+		if (!ASCProvider || IsValid(ASCProvider->GetAbilitySystemComponent()))
+		{
+			if (!IsValid(CurrentWieldedItem))
+			{
+				TryWieldPersistentDefaultItem();
+			}
+		}
+	}
+}
+
+void UEnclaveEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	bEquipmentTearingDown = true;
+	Super::EndPlay(EndPlayReason);
+}
+
 void UEnclaveEquipmentComponent::UninitializeComponent()
 {
+	bEquipmentTearingDown = true;
 	ReleaseHeldItemInputs();
 	AActor* OwnerActor = GetOwner();
 
@@ -46,6 +77,7 @@ void UEnclaveEquipmentComponent::UninitializeComponent()
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
 	{
 		ClearCurrentWieldedItem();
+		DestroyPersistentDefaultItem();
 	}
 
 	UnbindItemSource();
@@ -58,13 +90,80 @@ void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentWieldedItem);
+	DOREPLIFETIME(UEnclaveEquipmentComponent, PersistentDefaultItem);
+}
+
+void UEnclaveEquipmentComponent::InitializePersistentDefaultItem()
+{
+	AActor* OwnerActor = GetOwner();
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	if (!IsValid(PersistentDefaultItem) && PersistentDefaultItemClass)
+	{
+		UWorld* World = GetWorld();
+		if (!IsValid(World))
+		{
+			return;
+		}
+
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Owner = OwnerActor;
+		SpawnParameters.Instigator = Cast<APawn>(OwnerActor);
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		AEnclaveItem* NewItem = World->SpawnActor<AEnclaveItem>(PersistentDefaultItemClass, OwnerActor->GetActorTransform(), SpawnParameters);
+		if (!IsValid(NewItem))
+		{
+			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: failed to spawn persistent default item class %s."),
+				*GetNameSafe(OwnerActor), *GetNameSafe(PersistentDefaultItemClass.Get()));
+			return;
+		}
+
+		if (!NewItem->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
+		{
+			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: persistent default item %s lacks Item.Capability.Wieldable; destroying it."),
+				*GetNameSafe(OwnerActor), *GetNameSafe(NewItem));
+			NewItem->Destroy();
+			return;
+		}
+
+		NewItem->SetActorHiddenInGame(true);
+		PersistentDefaultItem = NewItem;
+		RebuildWieldableCache();
+	}
+
+}
+
+bool UEnclaveEquipmentComponent::TryWieldPersistentDefaultItem()
+{
+	return WieldItem(PersistentDefaultItem);
+}
+
+void UEnclaveEquipmentComponent::DestroyPersistentDefaultItem()
+{
+	AEnclaveItem* ItemToDestroy = PersistentDefaultItem;
+	PersistentDefaultItem = nullptr;
+	WieldableCache.Remove(ItemToDestroy);
+
+	if (IsValid(ItemToDestroy))
+	{
+		ItemToDestroy->Destroy();
+	}
+}
+
+void UEnclaveEquipmentComponent::OnRep_PersistentDefaultItem()
+{
+	RebuildWieldableCache();
 }
 
 bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 {
 	AActor* OwnerActor = GetOwner();
 
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsAvailableWieldable(Item))
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsAvailableWieldable(Item))
 	{
 		return false;
 	}
@@ -409,7 +508,8 @@ bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
 
 bool UEnclaveEquipmentComponent::IsAvailableWieldable(const AEnclaveItem* Item) const
 {
-	return IsValid(Item) && WieldableCache.Contains(Item);
+	return IsValid(Item) && Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable) &&
+		(Item == PersistentDefaultItem || WieldableCache.Contains(Item));
 }
 
 void UEnclaveEquipmentComponent::BindItemSource()
@@ -463,29 +563,43 @@ void UEnclaveEquipmentComponent::RebuildWieldableCache()
 {
 	WieldableCache.Reset();
 
-	if (!ItemSource)
+	if (ItemSource)
+	{
+		for (const TObjectPtr<AEnclaveItem>& Item : ItemSource->GetSourceItems())
+		{
+			if (IsValid(Item) && Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
+			{
+				WieldableCache.AddUnique(Item);
+			}
+		}
+	}
+
+	// Default items do not belong to the ordinary source. Append them so
+	// ordinary item ordering is unchanged and the default is still cycleable.
+	if (IsValid(PersistentDefaultItem) && PersistentDefaultItem->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
+	{
+		WieldableCache.AddUnique(PersistentDefaultItem);
+	}
+
+	RestoreDefaultWieldIfNecessary();
+}
+
+void UEnclaveEquipmentComponent::RestoreDefaultWieldIfNecessary()
+{
+	AActor* OwnerActor = GetOwner();
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority() || OwnerActor->IsActorBeingDestroyed())
 	{
 		return;
 	}
 
-	for (const TObjectPtr<AEnclaveItem>& Item : ItemSource->GetSourceItems())
+	// Source notifications precede inventory item destruction. Transition
+	// while the old SourceObject remains valid, preserving GAS cancellation.
+	if (IsValid(CurrentWieldedItem) && !WieldableCache.Contains(CurrentWieldedItem))
 	{
-		if (IsValid(Item) && Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
+		if (!TryWieldPersistentDefaultItem())
 		{
-			WieldableCache.Add(Item);
+			ClearCurrentWieldedItem();
 		}
-	}
-
-	// If the currently wielded item was removed from the source, only authority
-	// may correct replicated wielded state. Clients rebuild their local cache
-	// from OnRep_Items and wait for CurrentWieldedItem replication rather than
-	// mutating an authoritative replicated property locally.
-	AActor* OwnerActor = GetOwner();
-
-	if (IsValid(OwnerActor) && OwnerActor->HasAuthority() &&
-		IsValid(CurrentWieldedItem) && !WieldableCache.Contains(CurrentWieldedItem))
-	{
-		ClearCurrentWieldedItem();
 	}
 }
 

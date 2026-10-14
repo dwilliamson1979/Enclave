@@ -28,6 +28,14 @@ public:
 	UFUNCTION(Exec)
 	void EnclaveDebugRespawn();
 
+	/**
+	 * Development-only inventory-removal test. Removes and destroys the currently
+	 * wielded ordinary inventory item on authority, exercising Equipment fallback.
+	 * The persistent default item is never removable through this command.
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugRemoveWieldedItem();
+
 protected:
 
 	virtual void OnPossess(APawn* InPawn) override;
@@ -51,6 +59,11 @@ private:
 	void ServerEnclaveDebugRespawn();
 
 	void PerformDebugRespawn();
+
+	UFUNCTION(Server, Reliable)
+	void ServerEnclaveDebugRemoveWieldedItem();
+
+	void PerformDebugRemoveWieldedItem();
 
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents);
 
