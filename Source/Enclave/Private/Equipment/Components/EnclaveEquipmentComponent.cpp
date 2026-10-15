@@ -12,6 +12,7 @@
 #include "GameplayTags/EnclavePresentationTags.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
 #include "GameplayTags/EnclaveEquipmentSlotTags.h"
+#include "Input/Interfaces/EnclaveAvatarInputPolicyInterface.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/EnclaveAbilitySystemComponent.h"
@@ -30,6 +31,9 @@ UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
 
 	DefaultSelectionSlotTag = EnclaveGameplayTags::Equipment_Slot_Default;
 	HolsterInputTag = EnclaveGameplayTags::Input_Equipment_Holster;
+	UnholsterActionInputTags.AddTag(EnclaveGameplayTags::Input_Item_Action_Primary);
+	UnholsterActionInputTags.AddTag(EnclaveGameplayTags::Input_Item_Action_Secondary);
+	UnholsterActionInputTags.AddTag(EnclaveGameplayTags::Input_Item_Action_Tertiary);
 	// Cycle inventory-assigned positions first, then the optional default.
 	const FGameplayTag NativeSlotTags[] = {
 		EnclaveGameplayTags::Equipment_Slot_Primary,
@@ -69,6 +73,7 @@ void UEnclaveEquipmentComponent::UninitializeComponent()
 {
 	bEquipmentTearingDown = true;
 	ReleaseHeldItemInputs();
+	UnholsterConsumedInputTags.Reset();
 	AActor* OwnerActor = GetOwner();
 
 	// The ASC is PlayerState-owned and can outlive this Pawn. Revoke every
@@ -554,6 +559,13 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 	const FGameplayTag& InputTag = InputEvent.InputTag;
 	const bool bRelease = InputEvent.TriggerEvent == ETriggerEvent::Completed || InputEvent.TriggerEvent == ETriggerEvent::Canceled;
 
+	// The press that requested a draw did not start an item ability. Consume
+	// its release even if the newly drawn item has already replicated to us.
+	if (bRelease && UnholsterConsumedInputTags.Remove(InputTag) > 0)
+	{
+		return true;
+	}
+
 	// Never re-resolve a release against a newly wielded item. A revoked spec
 	// is tolerated by the ASC (e.g. the weapon was switched mid-hold).
 	if (bRelease)
@@ -575,6 +587,9 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 		return false;
 	}
 
+	// Started also recovers a missed release from a previous draw request.
+	UnholsterConsumedInputTags.Remove(InputTag);
+
 	// A new Started while this input is tracked means a configured release
 	// event was missed. Release the old spec before handling the new press.
 	FGameplayAbilitySpecHandle StaleHandle;
@@ -584,6 +599,23 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 		{
 			StaleASC->ReleaseAbilityInput(StaleHandle);
 		}
+	}
+
+	// Selected but not wielded: this press only requests a draw. No ability
+	// is activated, no spec is tracked, and the press is never replayed after
+	// the equip window. The owner requests the authoritative transition.
+	if (IsSelectedItemHolstered() && UnholsterActionInputTags.HasTagExact(InputTag))
+	{
+		UnholsterConsumedInputTags.Add(InputTag);
+		if (AActor* OwnerActor = GetOwner(); IsValid(OwnerActor) && OwnerActor->HasAuthority())
+		{
+			UnholsterSelectedItem();
+		}
+		else
+		{
+			ServerRequestUnholsterFromAction(InputEvent);
+		}
+		return true;
 	}
 
 	const UEnclaveItemDefinition* Definition = IsValid(CurrentWieldedItem) ? CurrentWieldedItem->GetItemDefinition() : nullptr;
@@ -622,6 +654,29 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 	return InputEvent.bRoutesReleaseEvents
 		? ASC->PressAbilityInput(SpecHandle)
 		: ASC->ActivateAbilityFromInput(SpecHandle);
+}
+
+void UEnclaveEquipmentComponent::ServerRequestUnholsterFromAction_Implementation(FEnclaveInputEvent InputEvent)
+{
+	// This RPC is reachable only from the owning client's Equipment component.
+	// Recheck both the authored action allowlist and avatar input policy on the
+	// server; a client may have stale selected/wielded state or be input-blocked.
+	if (!InputEvent.IsValid() || InputEvent.TriggerEvent != ETriggerEvent::Started ||
+		!UnholsterActionInputTags.HasTagExact(InputEvent.InputTag) ||
+		!IsSelectedItemHolstered())
+	{
+		return;
+	}
+
+	if (const IEnclaveAvatarInputPolicyInterface* Policy = Cast<IEnclaveAvatarInputPolicyInterface>(GetOwner()))
+	{
+		if (!Policy->CanProcessAvatarInput(InputEvent))
+		{
+			return;
+		}
+	}
+
+	UnholsterSelectedItem();
 }
 
 void UEnclaveEquipmentComponent::ReleaseHeldItemInputs()

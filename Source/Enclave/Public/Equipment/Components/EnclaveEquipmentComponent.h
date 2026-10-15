@@ -155,6 +155,13 @@ private:
 
 	bool HandleItemInput(const FEnclaveInputEvent& InputEvent);
 
+	/** Server validates a configured action press that requested a draw while holstered. */
+	UFUNCTION(Server, Reliable)
+	void ServerRequestUnholsterFromAction(FEnclaveInputEvent InputEvent);
+
+	/** Presses consumed to draw must also consume their eventual release edge. */
+	TSet<FGameplayTag> UnholsterConsumedInputTags;
+
 	/** Clears local held-input bookkeeping; revoked specs are safe to release later. */
 	void ReleaseHeldItemInputs();
 
@@ -230,6 +237,10 @@ private:
 	/** Semantic input tag for a discrete holster/draw toggle (Started only). */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
 	FGameplayTag HolsterInputTag;
+
+	/** Item actions that draw a holstered selection instead of activating an ability. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Holster", meta = (Categories = "Input.Item.Action"))
+	FGameplayTagContainer UnholsterActionInputTags;
 
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;
