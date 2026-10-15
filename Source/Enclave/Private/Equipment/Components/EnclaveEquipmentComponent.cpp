@@ -29,6 +29,7 @@ UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 
 	DefaultSelectionSlotTag = EnclaveGameplayTags::Equipment_Slot_Default;
+	HolsterInputTag = EnclaveGameplayTags::Input_Equipment_Holster;
 	// Cycle inventory-assigned positions first, then the optional default.
 	const FGameplayTag NativeSlotTags[] = {
 		EnclaveGameplayTags::Equipment_Slot_Primary,
@@ -265,9 +266,14 @@ bool UEnclaveEquipmentComponent::AssignItemToSlot(FGameplayTag SlotTag, AEnclave
 		Item->OnDestroyed.AddUniqueDynamic(this, &UEnclaveEquipmentComponent::HandleAssignedItemDestroyed);
 	}
 
-	// Replacing the selected slot is a normal wield transition.
+	// Replacing a selected slot must not draw an item the player holstered.
 	if (SelectedSlotTag.MatchesTagExact(SlotTag))
 	{
+		if (CurrentWieldedItem == nullptr)
+		{
+			SelectedItem = Item;
+			return true;
+		}
 		return SelectSlot(SlotTag);
 	}
 	return true;
@@ -376,35 +382,83 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	return true;
 }
 
-void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
+void UEnclaveEquipmentComponent::StopWieldingCurrentItem()
 {
-	AActor* OwnerActor = GetOwner();
-
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
-	{
-		return;
-	}
-
 	AEnclaveItem* PreviousItem = CurrentWieldedItem;
 
-	// Order matters: cancel active item work while its specs/source object still
-	// exist, then revoke the specs and any authoritative equip-window effect.
+	// Order matters: cancel active work while specs/source objects exist, then
+	// revoke grants and the equip effect. None of this changes slot selection.
 	CancelActiveItemAbilities();
 	RemoveGrantedAbilities();
 	ClearCurrentWieldedItemEquipWindow();
 
 	CurrentWieldedItem = nullptr;
-	SelectedItem = nullptr;
-	SelectedSlotTag = FGameplayTag();
-
-	// The released item remains carried in the current slice, so gameplay hides
-	// the actor again. Presentation independently tears down its local mesh state.
 	UpdateWieldedItemActorVisibility(PreviousItem, nullptr);
 	UpdateWieldedItemPresentation(PreviousItem, nullptr);
 	LocallyWieldedItem.Reset();
-
-	// All GAS state owned by this Equipment instance has now been revoked.
 	ManagedAbilitySystem.Reset();
+}
+
+void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	StopWieldingCurrentItem();
+	SelectedItem = nullptr;
+	SelectedSlotTag = FGameplayTag();
+}
+
+bool UEnclaveEquipmentComponent::IsSelectedItemHolstered() const
+{
+	return IsValid(SelectedItem) && !IsValid(CurrentWieldedItem);
+}
+
+bool UEnclaveEquipmentComponent::HolsterSelectedItem()
+{
+	AActor* OwnerActor = GetOwner();
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority() ||
+		!IsValid(SelectedItem) || !IsValid(CurrentWieldedItem) ||
+		SelectedItem != CurrentWieldedItem)
+	{
+		return false;
+	}
+
+	StopWieldingCurrentItem();
+	return true;
+}
+
+bool UEnclaveEquipmentComponent::UnholsterSelectedItem()
+{
+	AActor* OwnerActor = GetOwner();
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority() ||
+		!IsSelectedItemHolstered() || !SelectedSlotTag.IsValid() ||
+		GetItemInSlot(SelectedSlotTag) != SelectedItem)
+	{
+		return false;
+	}
+
+	return SelectSlot(SelectedSlotTag);
+}
+
+bool UEnclaveEquipmentComponent::ToggleHolster()
+{
+	AActor* OwnerActor = GetOwner();
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return false;
+	}
+
+	if (UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+		IsValid(ASC) && ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead))
+	{
+		return false;
+	}
+
+	return IsValid(CurrentWieldedItem) ? HolsterSelectedItem() : UnholsterSelectedItem();
 }
 
 const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
@@ -416,7 +470,8 @@ EEnclaveInputNetworkPolicy UEnclaveEquipmentComponent::GetInputNetworkPolicy(con
 {
 	const bool bIsWieldInput =
 		(NextWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(NextWieldableInputTag)) ||
-		(PreviousWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousWieldableInputTag));
+		(PreviousWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousWieldableInputTag)) ||
+		(HolsterInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(HolsterInputTag));
 
 	// Wielding is a discrete command. Only relay the Started edge; forwarding
 	// Triggered/Ongoing/Completed would create redundant reliable RPCs and a held
@@ -442,6 +497,11 @@ bool UEnclaveEquipmentComponent::HandleInput(const FEnclaveInputEvent& InputEven
 	if (PreviousWieldableInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(PreviousWieldableInputTag))
 	{
 		return HandlePreviousWieldableInput(InputEvent);
+	}
+
+	if (HolsterInputTag.IsValid() && InputEvent.InputTag.MatchesTagExact(HolsterInputTag))
+	{
+		return HandleHolsterInput(InputEvent);
 	}
 
 	if (InputEvent.InputTag.MatchesTag(EnclaveGameplayTags::Input_Item_Action))
@@ -625,6 +685,11 @@ void UEnclaveEquipmentComponent::RebuildInputFilters()
 		InputFilters.AddTag(PreviousWieldableInputTag);
 	}
 
+	if (HolsterInputTag.IsValid())
+	{
+		InputFilters.AddTag(HolsterInputTag);
+	}
+
 	InputFilters.AddTag(EnclaveGameplayTags::Input_Item_Action);
 }
 
@@ -646,6 +711,16 @@ bool UEnclaveEquipmentComponent::HandlePreviousWieldableInput(const FEnclaveInpu
 	}
 
 	return TryWieldPrevious();
+}
+
+bool UEnclaveEquipmentComponent::HandleHolsterInput(const FEnclaveInputEvent& InputEvent)
+{
+	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
+	{
+		return false;
+	}
+
+	return ToggleHolster();
 }
 
 bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
@@ -758,7 +833,7 @@ void UEnclaveEquipmentComponent::ReconcileSelectionAfterSlotChange()
 	}
 	// A source notification is not a command to equip. Starting selection is
 	// explicit, after the owner has finished assigning its initial loadout.
-	if (!SelectedItem && !CurrentWieldedItem)
+	if (!SelectedItem && !CurrentWieldedItem && !SelectedSlotTag.IsValid())
 	{
 		return;
 	}
@@ -768,10 +843,33 @@ void UEnclaveEquipmentComponent::ReconcileSelectionAfterSlotChange()
 	}
 
 	// An invalid assignment must always revoke its gameplay contribution.
+	// A holstered selection stays holstered when its item is removed.
+	// SelectedItem may already be pending destruction. The retained slot tag
+	// identifies a real selection even if its actor reference became invalid.
+	const bool bWasHolstered = SelectedSlotTag.IsValid() && CurrentWieldedItem == nullptr;
 	// Never automatically draw fallback equipment on a dead avatar.
 	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
 	if (IsValid(ASC) && ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead))
 	{
+		ClearCurrentWieldedItem();
+		return;
+	}
+
+	// While drawn, an invalidated slot transitions normally to the default.
+	// While holstered, select the default WITHOUT granting item abilities,
+	// starting an equip window or playing the draw montage.
+	if (bWasHolstered)
+	{
+		const FEnclaveEquipmentSlotAssignment* DefaultAssignment = FindSlotAssignment(DefaultSelectionSlotTag);
+		AEnclaveItem* DefaultItem = GetItemInSlot(DefaultSelectionSlotTag);
+		const FEnclaveEquipmentSlotDefinition* DefaultSlot = FindSlotDefinition(DefaultSelectionSlotTag);
+		if (DefaultAssignment && DefaultSlot && DefaultSlot->bInWieldCycle &&
+			IsAvailableWieldable(DefaultItem))
+		{
+			SelectedItem = DefaultItem;
+			SelectedSlotTag = DefaultSelectionSlotTag;
+			return;
+		}
 		ClearCurrentWieldedItem();
 		return;
 	}

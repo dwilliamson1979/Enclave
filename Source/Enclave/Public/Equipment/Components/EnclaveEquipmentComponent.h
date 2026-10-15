@@ -95,15 +95,31 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment|Slots")
 	AEnclaveItem* GetSelectedItem() const { return SelectedItem; }
 
+	/** A selection can remain active without being wielded (holstered). */
+	UFUNCTION(BlueprintPure, Category = "Equipment|Wielding")
+	bool IsSelectedItemHolstered() const;
+
+	/** Put away the selected item while retaining its slot/selection. Authority only. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Wielding")
+	bool HolsterSelectedItem();
+
+	/** Draw the retained selected item using the normal equip/GAS/presentation path. Authority only. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Wielding")
+	bool UnholsterSelectedItem();
+
+	/** Toggle between holstered and wielded for the currently selected slot. Authority only. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Wielding")
+	bool ToggleHolster();
+
 	const TArray<FEnclaveEquipmentSlotAssignment>& GetSlotAssignments() const { return SlotAssignments; }
 
 	/** Select an already assigned, eligible wield-cycle item (not arbitrary world actors). */
 	bool WieldItem(AEnclaveItem* Item);
 
 	/**
-	 * Authority-only teardown of the current wield relationship. Cancels active
-	 * item actions, revokes item-granted abilities, removes the equip window,
-	 * clears replicated wield state, and reconciles avatar presentation.
+	 * Authority-only full teardown of selection AND wield state. Cancels item
+	 * actions, revokes grants, clears the equip window and presentation.
+	 * HolsterSelectedItem() is the non-destructive alternative that retains selection.
 	 *
 	 * Intentionally does not destroy inventory items; item lifetime belongs to
 	 * the item source (currently UEnclaveInventoryComponent).
@@ -132,6 +148,10 @@ private:
 
 	bool HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent);
 	bool HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleHolsterInput(const FEnclaveInputEvent& InputEvent);
+
+	/** Shared GAS and presentation cleanup, without modifying the selected slot. */
+	void StopWieldingCurrentItem();
 
 	bool HandleItemInput(const FEnclaveInputEvent& InputEvent);
 
@@ -207,6 +227,10 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
 	FGameplayTag PreviousWieldableInputTag;
 
+	/** Semantic input tag for a discrete holster/draw toggle (Started only). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
+	FGameplayTag HolsterInputTag;
+
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;
 
@@ -237,6 +261,7 @@ private:
 	UFUNCTION()
 	void OnRep_SlotAssignments();
 
+	/** Selected item persists across holster; only CurrentWieldedItem becomes null. */
 	UPROPERTY(Replicated)
 	TObjectPtr<AEnclaveItem> SelectedItem = nullptr;
 
