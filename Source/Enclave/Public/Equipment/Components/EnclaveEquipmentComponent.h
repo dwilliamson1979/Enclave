@@ -8,33 +8,53 @@
 #include "Inventory/Interfaces/EnclaveItemSourceInterface.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "ActiveGameplayEffectHandle.h"
+#include "GameplayTagContainer.h"
 #include "EnclaveEquipmentComponent.generated.h"
 
 class AEnclaveItem;
 class UAbilitySystemComponent;
 class IEnclaveAvatarPresentationInterface;
 
+/** Defines an Equipment assignment position; non-wieldable slots (armor, etc.) are valid. */
+USTRUCT(BlueprintType)
+struct ENCLAVE_API FEnclaveEquipmentSlotDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment")
+	FGameplayTag SlotTag;
+
+	/** Only these slots participate in Next/Previous and active wielding. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment")
+	bool bInWieldCycle = false;
+
+	/** Additional item capabilities required for an assignment to this slot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment")
+	FGameplayTagContainer RequiredCapabilities;
+};
+
+/** A server-authoritative, replicated reference. Item lifetime stays with its owner. */
+USTRUCT(BlueprintType)
+struct ENCLAVE_API FEnclaveEquipmentSlotAssignment
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	FGameplayTag SlotTag;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	TObjectPtr<AEnclaveItem> Item = nullptr;
+
+	/** True if membership must remain valid in the single assigned item source. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	bool bFromItemSource = false;
+};
+
 /**
- * Manages the character's currently wielded item and item-action input.
- *
- * This component owns wielding operations, including selecting the next or
- * previous wieldable item from an item source and notifying the owner's avatar presentation
- * to visually present the active item.
- *
- * It also bridges generic Input.Item.Action.* input to Gameplay Ability
- * System abilities granted by the currently wielded item. The input tag on
- * the event is matched against the dynamic source tag carried by each granted
- * FEnclaveAbilityGrant spec; the ability itself owns action-specific gameplay
- * validation and behavior.
- *
- * Equipment depends only on IEnclaveItemSourceInterface, not on any concrete
- * storage component. It binds to the owner's item source once, caches the
- * subset of exposed items that are wieldable, and refreshes that cache only
- * when the source reports a change - it never polls the source directly.
- *
- * An optional persistent default item is the one Equipment-owned exception to
- * external item sourcing. It is never inserted into the inventory source.
- * Inventory/storage responsibilities do not belong here.
+ * Owns slot assignments, selection, wielding, GAS grants/readiness, and
+ * presentation notifications. Does NOT create/destroy items or discover sources.
+ * The owner explicitly sets one source; external items require server-authorized
+ * assignment to a configured slot. Only assigned wield-cycle slots are cycled.
  */
 UCLASS(ClassGroup = (Enclave), meta = (BlueprintSpawnableComponent))
 class ENCLAVE_API UEnclaveEquipmentComponent : public UActorComponent, public IEnclaveInputHandlerInterface
@@ -51,17 +71,33 @@ public:
 	virtual void UninitializeComponent() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	/**
-	 * Spawns the configured default item once on authority. Does not select it:
-	 * starting inventory retains priority, and callers choose when to wield.
-	 */
-	void InitializePersistentDefaultItem();
+	/** Explicit, owner-provided source. Does not take ownership of the component. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Source")
+	bool SetItemSource(UActorComponent* SourceComponent);
 
-	/** Explicitly select the persistent default item via the normal wield path. Authority only. */
-	bool TryWieldPersistentDefaultItem();
+	/** Source items must still belong to this Equipment's assigned source. Authority only. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slots")
+	bool AssignSourceItemToSlot(FGameplayTag SlotTag, AEnclaveItem* Item);
 
-	AEnclaveItem* GetPersistentDefaultItem() const { return PersistentDefaultItem; }
+	/** External items are owned by the Equipment actor, but never by Equipment itself. Authority only. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slots")
+	bool AssignExternalItemToSlot(FGameplayTag SlotTag, AEnclaveItem* Item);
 
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slots")
+	bool ClearSlot(FGameplayTag SlotTag);
+
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slots")
+	bool SelectSlot(FGameplayTag SlotTag);
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Slots")
+	AEnclaveItem* GetItemInSlot(FGameplayTag SlotTag) const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Slots")
+	AEnclaveItem* GetSelectedItem() const { return SelectedItem; }
+
+	const TArray<FEnclaveEquipmentSlotAssignment>& GetSlotAssignments() const { return SlotAssignments; }
+
+	/** Select an already assigned, eligible wield-cycle item (not arbitrary world actors). */
 	bool WieldItem(AEnclaveItem* Item);
 
 	/**
@@ -117,21 +153,17 @@ private:
 
 	bool TryWieldInDirection(int32 Direction);
 	bool IsAvailableWieldable(const AEnclaveItem* Item) const;
-
-	// Item source binding
-	void BindItemSource();
+	bool IsAssignmentValid(const FEnclaveEquipmentSlotAssignment& Assignment) const;
+	bool AssignItemToSlot(FGameplayTag SlotTag, AEnclaveItem* Item, bool bFromItemSource);
+	const FEnclaveEquipmentSlotDefinition* FindSlotDefinition(FGameplayTag SlotTag) const;
+	const FEnclaveEquipmentSlotAssignment* FindSlotAssignment(FGameplayTag SlotTag) const;
+	void ReconcileSelectionAfterSlotChange();
 	void UnbindItemSource();
 	void HandleItemSourceChanged();
-	void RebuildWieldableCache();
 
-	/** When a source removes the wielded item, preserve a valid default selection. */
-	void RestoreDefaultWieldIfNecessary();
-
-	/** Destroys only the actor owned by the default slot, never inventory items. */
-	void DestroyPersistentDefaultItem();
-
+	/** An external owner may destroy its item independently of its slot. */
 	UFUNCTION()
-	void OnRep_PersistentDefaultItem();
+	void HandleAssignedItemDestroyed(AActor* DestroyedActor);
 
 	/** The owner's avatar-presentation implementation, discovered by interface. */
 	IEnclaveAvatarPresentationInterface* GetAvatarPresentation() const;
@@ -190,22 +222,31 @@ private:
 	/** The wielded item whose presentation has most recently been reconciled on this machine. */
 	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;
 
-	/** Optional intrinsic item for this owner. Never belongs to ordinary Inventory.Items. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Persistent Default Item", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<AEnclaveItem> PersistentDefaultItemClass;
+	/** Slot layout/order is authored on the Equipment component; can include armor slots. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slots", meta = (AllowPrivateAccess = "true"))
+	TArray<FEnclaveEquipmentSlotDefinition> SlotDefinitions;
 
-	/** Pawn/actor-scoped runtime instance created by authority and replicated to peers. */
-	UPROPERTY(ReplicatedUsing = OnRep_PersistentDefaultItem)
-	TObjectPtr<AEnclaveItem> PersistentDefaultItem = nullptr;
+	/** Which configured slot is selected when another selection becomes unavailable. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slots", meta = (AllowPrivateAccess = "true", Categories = "Equipment.Slot"))
+	FGameplayTag DefaultSelectionSlotTag;
+
+	/** Replicated assignment metadata; references do not confer lifetime ownership. */
+	UPROPERTY(ReplicatedUsing = OnRep_SlotAssignments)
+	TArray<FEnclaveEquipmentSlotAssignment> SlotAssignments;
+
+	UFUNCTION()
+	void OnRep_SlotAssignments();
+
+	UPROPERTY(Replicated)
+	TObjectPtr<AEnclaveItem> SelectedItem = nullptr;
+
+	UPROPERTY(Replicated)
+	FGameplayTag SelectedSlotTag;
 
 	/** Guards fallback logic during component/owner shutdown. */
 	bool bEquipmentTearingDown = false;
 
-	/** The owner's bound item source (e.g. an inventory component), accessed only through the interface. */
+	/** Explicitly assigned source; never discovered by scanning owner components. */
 	UPROPERTY(Transient)
 	TScriptInterface<IEnclaveItemSourceInterface> ItemSource;
-
-	/** Wieldable ordinary source items, followed by the optional default item. */
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<AEnclaveItem>> WieldableCache;
 };

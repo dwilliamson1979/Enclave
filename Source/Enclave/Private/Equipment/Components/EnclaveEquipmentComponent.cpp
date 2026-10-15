@@ -11,6 +11,7 @@
 #include "GameplayTags/EnclaveItemTags.h"
 #include "GameplayTags/EnclavePresentationTags.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
+#include "GameplayTags/EnclaveEquipmentSlotTags.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/EnclaveAbilitySystemComponent.h"
@@ -26,6 +27,22 @@ UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
 {
 	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = false;
+
+	DefaultSelectionSlotTag = EnclaveGameplayTags::Equipment_Slot_Default;
+	// Cycle inventory-assigned positions first, then the optional default.
+	const FGameplayTag NativeSlotTags[] = {
+		EnclaveGameplayTags::Equipment_Slot_Primary,
+		EnclaveGameplayTags::Equipment_Slot_Secondary,
+		EnclaveGameplayTags::Equipment_Slot_Tertiary,
+		EnclaveGameplayTags::Equipment_Slot_Default
+	};
+	for (const FGameplayTag& Tag : NativeSlotTags)
+	{
+		FEnclaveEquipmentSlotDefinition& Slot = SlotDefinitions.AddDefaulted_GetRef();
+		Slot.SlotTag = Tag;
+		Slot.bInWieldCycle = true;
+		Slot.RequiredCapabilities.AddTag(EnclaveGameplayTags::Item_Capability_Wieldable);
+	}
 }
 
 void UEnclaveEquipmentComponent::InitializeComponent()
@@ -33,29 +50,12 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 	Super::InitializeComponent();
 
 	RebuildInputFilters();
-	BindItemSource();
 }
 
 void UEnclaveEquipmentComponent::BeginPlay()
 {
 	Super::BeginPlay();
-
-	if (AActor* OwnerActor = GetOwner(); IsValid(OwnerActor) && OwnerActor->HasAuthority())
-	{
-		InitializePersistentDefaultItem();
-
-		// Actors without starting inventory can select the default immediately.
-		// Pawn-based ASC owners may not have been possessed yet: defer their
-		// first wield until the ASC is initialized by the owning actor.
-		const IAbilitySystemInterface* ASCProvider = Cast<IAbilitySystemInterface>(OwnerActor);
-		if (!ASCProvider || IsValid(ASCProvider->GetAbilitySystemComponent()))
-		{
-			if (!IsValid(CurrentWieldedItem))
-			{
-				TryWieldPersistentDefaultItem();
-			}
-		}
-	}
+	// ItemSource is assigned explicitly by the owner, never discovered here.
 }
 
 void UEnclaveEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -77,9 +77,16 @@ void UEnclaveEquipmentComponent::UninitializeComponent()
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
 	{
 		ClearCurrentWieldedItem();
-		DestroyPersistentDefaultItem();
+
 	}
 
+	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
+	{
+		if (!Assignment.bFromItemSource && IsValid(Assignment.Item))
+		{
+			Assignment.Item->OnDestroyed.RemoveDynamic(this, &UEnclaveEquipmentComponent::HandleAssignedItemDestroyed);
+		}
+	}
 	UnbindItemSource();
 
 	Super::UninitializeComponent();
@@ -90,73 +97,228 @@ void UEnclaveEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UEnclaveEquipmentComponent, CurrentWieldedItem);
-	DOREPLIFETIME(UEnclaveEquipmentComponent, PersistentDefaultItem);
+	DOREPLIFETIME(UEnclaveEquipmentComponent, SlotAssignments);
+	DOREPLIFETIME(UEnclaveEquipmentComponent, SelectedItem);
+	DOREPLIFETIME(UEnclaveEquipmentComponent, SelectedSlotTag);
 }
 
-void UEnclaveEquipmentComponent::InitializePersistentDefaultItem()
+bool UEnclaveEquipmentComponent::SetItemSource(UActorComponent* SourceComponent)
+{
+	if (SourceComponent && (SourceComponent->GetOwner() != GetOwner() ||
+		!SourceComponent->GetClass()->ImplementsInterface(UEnclaveItemSourceInterface::StaticClass())))
+	{
+		return false;
+	}
+
+	if (ItemSource.GetObject() == SourceComponent)
+	{
+		return true;
+	}
+
+	UnbindItemSource();
+
+	if (SourceComponent)
+	{
+		IEnclaveItemSourceInterface* SourceInterface = Cast<IEnclaveItemSourceInterface>(SourceComponent);
+		if (!SourceInterface)
+		{
+			return false;
+		}
+		ItemSource.SetObject(SourceComponent);
+		ItemSource.SetInterface(SourceInterface);
+		ItemSource->OnItemSourceChanged().AddUObject(this, &UEnclaveEquipmentComponent::HandleItemSourceChanged);
+	}
+
+	// The old source no longer authorizes any of its assigned items. External
+	// assignments are independent and survive source replacement.
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		for (int32 Index = SlotAssignments.Num() - 1; Index >= 0; --Index)
+		{
+			if (SlotAssignments[Index].bFromItemSource)
+			{
+				SlotAssignments.RemoveAt(Index);
+			}
+		}
+		ReconcileSelectionAfterSlotChange();
+	}
+	return true;
+}
+
+const FEnclaveEquipmentSlotDefinition* UEnclaveEquipmentComponent::FindSlotDefinition(FGameplayTag SlotTag) const
+{
+	return SlotDefinitions.FindByPredicate([SlotTag](const FEnclaveEquipmentSlotDefinition& Definition)
+	{
+		return Definition.SlotTag.MatchesTagExact(SlotTag);
+	});
+}
+
+const FEnclaveEquipmentSlotAssignment* UEnclaveEquipmentComponent::FindSlotAssignment(FGameplayTag SlotTag) const
+{
+	return SlotAssignments.FindByPredicate([SlotTag](const FEnclaveEquipmentSlotAssignment& Assignment)
+	{
+		return Assignment.SlotTag.MatchesTagExact(SlotTag);
+	});
+}
+
+AEnclaveItem* UEnclaveEquipmentComponent::GetItemInSlot(FGameplayTag SlotTag) const
+{
+	const FEnclaveEquipmentSlotAssignment* Assignment = FindSlotAssignment(SlotTag);
+	if (!Assignment || !IsValid(Assignment->Item))
+	{
+		return nullptr;
+	}
+	// Replicated source memberships can arrive after slot assignments. The
+	// server checks live membership; clients consume the server's assignment.
+	return GetOwner() && GetOwner()->HasAuthority() && !IsAssignmentValid(*Assignment)
+		? nullptr : Assignment->Item.Get();
+}
+
+bool UEnclaveEquipmentComponent::IsAssignmentValid(const FEnclaveEquipmentSlotAssignment& Assignment) const
+{
+	AEnclaveItem* Item = Assignment.Item.Get();
+	if (!IsValid(Item) || !FindSlotDefinition(Assignment.SlotTag))
+	{
+		return false;
+	}
+	return Assignment.bFromItemSource
+		? (ItemSource && ItemSource->ContainsSourceItem(Item))
+		: Item->GetOwner() == GetOwner();
+}
+
+bool UEnclaveEquipmentComponent::AssignSourceItemToSlot(FGameplayTag SlotTag, AEnclaveItem* Item)
+{
+	return AssignItemToSlot(SlotTag, Item, true);
+}
+
+bool UEnclaveEquipmentComponent::AssignExternalItemToSlot(FGameplayTag SlotTag, AEnclaveItem* Item)
+{
+	return AssignItemToSlot(SlotTag, Item, false);
+}
+
+bool UEnclaveEquipmentComponent::AssignItemToSlot(FGameplayTag SlotTag, AEnclaveItem* Item, bool bFromItemSource)
 {
 	AActor* OwnerActor = GetOwner();
-	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	const FEnclaveEquipmentSlotDefinition* Definition = FindSlotDefinition(SlotTag);
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority() ||
+		!IsValid(Item) || !Definition)
 	{
-		return;
+		return false;
 	}
 
-	if (!IsValid(PersistentDefaultItem) && PersistentDefaultItemClass)
+	// Only source membership or server-verified external ownership authorizes a
+	// slot assignment. Never accept arbitrary world actors from client input.
+	if (bFromItemSource ? !(ItemSource && ItemSource->ContainsSourceItem(Item))
+		: (Item->GetOwner() != OwnerActor || (ItemSource && ItemSource->ContainsSourceItem(Item))))
 	{
-		UWorld* World = GetWorld();
-		if (!IsValid(World))
-		{
-			return;
-		}
-
-		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.Owner = OwnerActor;
-		SpawnParameters.Instigator = Cast<APawn>(OwnerActor);
-		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-		AEnclaveItem* NewItem = World->SpawnActor<AEnclaveItem>(PersistentDefaultItemClass, OwnerActor->GetActorTransform(), SpawnParameters);
-		if (!IsValid(NewItem))
-		{
-			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: failed to spawn persistent default item class %s."),
-				*GetNameSafe(OwnerActor), *GetNameSafe(PersistentDefaultItemClass.Get()));
-			return;
-		}
-
-		if (!NewItem->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
-		{
-			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: persistent default item %s lacks Item.Capability.Wieldable; destroying it."),
-				*GetNameSafe(OwnerActor), *GetNameSafe(NewItem));
-			NewItem->Destroy();
-			return;
-		}
-
-		NewItem->SetActorHiddenInGame(true);
-		PersistentDefaultItem = NewItem;
-		RebuildWieldableCache();
+		return false;
 	}
 
-}
-
-bool UEnclaveEquipmentComponent::TryWieldPersistentDefaultItem()
-{
-	return WieldItem(PersistentDefaultItem);
-}
-
-void UEnclaveEquipmentComponent::DestroyPersistentDefaultItem()
-{
-	AEnclaveItem* ItemToDestroy = PersistentDefaultItem;
-	PersistentDefaultItem = nullptr;
-	WieldableCache.Remove(ItemToDestroy);
-
-	if (IsValid(ItemToDestroy))
+	if (Definition->bInWieldCycle && !Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
 	{
-		ItemToDestroy->Destroy();
+		return false;
 	}
+	for (const FGameplayTag& Required : Definition->RequiredCapabilities)
+	{
+		if (!Item->HasItemCapability(Required))
+		{
+			return false;
+		}
+	}
+
+	// An actor is assigned to one slot at a time.
+	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
+	{
+		if (Assignment.Item == Item && !Assignment.SlotTag.MatchesTagExact(SlotTag))
+		{
+			return false;
+		}
+	}
+
+	FEnclaveEquipmentSlotAssignment* Existing = SlotAssignments.FindByPredicate([SlotTag](const FEnclaveEquipmentSlotAssignment& Assignment)
+	{
+		return Assignment.SlotTag.MatchesTagExact(SlotTag);
+	});
+	if (Existing && Existing->Item == Item && Existing->bFromItemSource == bFromItemSource)
+	{
+		return true;
+	}
+	if (Existing)
+	{
+		if (!Existing->bFromItemSource && IsValid(Existing->Item))
+		{
+			Existing->Item->OnDestroyed.RemoveDynamic(this, &UEnclaveEquipmentComponent::HandleAssignedItemDestroyed);
+		}
+		Existing->Item = Item;
+		Existing->bFromItemSource = bFromItemSource;
+	}
+	else
+	{
+		FEnclaveEquipmentSlotAssignment& NewAssignment = SlotAssignments.AddDefaulted_GetRef();
+		NewAssignment.SlotTag = SlotTag;
+		NewAssignment.Item = Item;
+		NewAssignment.bFromItemSource = bFromItemSource;
+	}
+
+	if (!bFromItemSource)
+	{
+		Item->OnDestroyed.AddUniqueDynamic(this, &UEnclaveEquipmentComponent::HandleAssignedItemDestroyed);
+	}
+
+	// Replacing the selected slot is a normal wield transition.
+	if (SelectedSlotTag.MatchesTagExact(SlotTag))
+	{
+		return SelectSlot(SlotTag);
+	}
+	return true;
 }
 
-void UEnclaveEquipmentComponent::OnRep_PersistentDefaultItem()
+bool UEnclaveEquipmentComponent::ClearSlot(FGameplayTag SlotTag)
 {
-	RebuildWieldableCache();
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return false;
+	}
+	if (const FEnclaveEquipmentSlotAssignment* Existing = FindSlotAssignment(SlotTag))
+	{
+		if (!Existing->bFromItemSource && IsValid(Existing->Item))
+		{
+			Existing->Item->OnDestroyed.RemoveDynamic(this, &UEnclaveEquipmentComponent::HandleAssignedItemDestroyed);
+		}
+	}
+	const int32 Removed = SlotAssignments.RemoveAll([SlotTag](const FEnclaveEquipmentSlotAssignment& Assignment)
+	{
+		return Assignment.SlotTag.MatchesTagExact(SlotTag);
+	});
+	if (Removed > 0)
+	{
+		ReconcileSelectionAfterSlotChange();
+	}
+	return Removed > 0;
+}
+
+bool UEnclaveEquipmentComponent::SelectSlot(FGameplayTag SlotTag)
+{
+	const FEnclaveEquipmentSlotDefinition* Definition = FindSlotDefinition(SlotTag);
+	AEnclaveItem* Item = GetItemInSlot(SlotTag);
+	if (!Definition || !Definition->bInWieldCycle || !IsValid(Item))
+	{
+		return false;
+	}
+	if (!WieldItem(Item))
+	{
+		return false;
+	}
+	SelectedSlotTag = SlotTag;
+	SelectedItem = Item;
+	return true;
+}
+
+void UEnclaveEquipmentComponent::OnRep_SlotAssignments()
+{
+	// Assignment references are available to UI/presentation observers. Wielded
+	// presentation remains driven solely by OnRep_CurrentWieldedItem.
 }
 
 bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
@@ -164,6 +326,12 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	AActor* OwnerActor = GetOwner();
 
 	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsAvailableWieldable(Item))
+	{
+		return false;
+	}
+
+	if (UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+		IsValid(ASC) && ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead))
 	{
 		return false;
 	}
@@ -185,6 +353,15 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	// reject or roll it back.
 	RemoveGrantedAbilities();
 	CurrentWieldedItem = Item;
+	SelectedItem = Item;
+	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
+	{
+		if (Assignment.Item == Item)
+		{
+			SelectedSlotTag = Assignment.SlotTag;
+			break;
+		}
+	}
 
 	// Actor-level visibility is replicated gameplay state. Equipment owns this
 	// transition; AvatarPresentation only controls local mesh visibility.
@@ -217,6 +394,8 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
 	ClearCurrentWieldedItemEquipWindow();
 
 	CurrentWieldedItem = nullptr;
+	SelectedItem = nullptr;
+	SelectedSlotTag = FGameplayTag();
 
 	// The released item remains carried in the current slice, so gameplay hides
 	// the actor again. Presentation independently tears down its local mesh state.
@@ -299,7 +478,15 @@ bool UEnclaveEquipmentComponent::TryWieldPrevious()
 
 bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 {
-	return IsValid(CurrentWieldedItem) ? WieldableCache.Num() > 1 : WieldableCache.Num() > 0;
+	int32 Count = 0;
+	for (const FEnclaveEquipmentSlotDefinition& Definition : SlotDefinitions)
+	{
+		if (Definition.bInWieldCycle && IsValid(GetItemInSlot(Definition.SlotTag)))
+		{
+			++Count;
+		}
+	}
+	return IsValid(SelectedItem) ? Count > 1 : Count > 0;
 }
 
 bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& InputEvent)
@@ -463,83 +650,55 @@ bool UEnclaveEquipmentComponent::HandlePreviousWieldableInput(const FEnclaveInpu
 
 bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
 {
-	if (Direction != 1 && Direction != -1)
+	if ((Direction != 1 && Direction != -1) || !CanCycleWieldables())
 	{
 		return false;
 	}
 
-	if (!CanCycleWieldables())
+	TArray<FGameplayTag> CycleSlots;
+	for (const FEnclaveEquipmentSlotDefinition& Definition : SlotDefinitions)
 	{
-		return false;
-	}
-
-	const int32 ItemCount = WieldableCache.Num();
-
-	if (ItemCount == 0)
-	{
-		return false;
-	}
-
-	int32 CurrentIndex = WieldableCache.IndexOfByPredicate([this](const TObjectPtr<AEnclaveItem>& Item)
-	{
-		return Item == CurrentWieldedItem;
-	});
-
-	if (CurrentIndex == INDEX_NONE)
-	{
-		CurrentIndex = Direction > 0 ? -1 : 0;
-	}
-
-	for (int32 Offset = 0; Offset < ItemCount; ++Offset)
-	{
-		CurrentIndex = (CurrentIndex + Direction + ItemCount) % ItemCount;
-		AEnclaveItem* Candidate = WieldableCache[CurrentIndex];
-
-		if (!IsValid(Candidate) || Candidate == CurrentWieldedItem)
+		if (Definition.bInWieldCycle && IsValid(GetItemInSlot(Definition.SlotTag)))
 		{
-			continue;
+			CycleSlots.Add(Definition.SlotTag);
 		}
-
-		return WieldItem(Candidate);
+	}
+	if (CycleSlots.IsEmpty())
+	{
+		return false;
 	}
 
+	int32 Index = CycleSlots.IndexOfByKey(SelectedSlotTag);
+	if (Index == INDEX_NONE)
+	{
+		Index = Direction > 0 ? -1 : 0;
+	}
+	for (int32 Step = 0; Step < CycleSlots.Num(); ++Step)
+	{
+		Index = (Index + Direction + CycleSlots.Num()) % CycleSlots.Num();
+		if (SelectSlot(CycleSlots[Index]))
+		{
+			return true;
+		}
+	}
 	return false;
 }
 
 bool UEnclaveEquipmentComponent::IsAvailableWieldable(const AEnclaveItem* Item) const
 {
-	return IsValid(Item) && Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable) &&
-		(Item == PersistentDefaultItem || WieldableCache.Contains(Item));
-}
-
-void UEnclaveEquipmentComponent::BindItemSource()
-{
-	AActor* OwnerActor = GetOwner();
-
-	if (!IsValid(OwnerActor))
+	if (!IsValid(Item) || !Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
 	{
-		return;
+		return false;
 	}
-
-	UActorComponent* SourceComponent = OwnerActor->FindComponentByInterface(UEnclaveItemSourceInterface::StaticClass());
-
-	if (!IsValid(SourceComponent))
+	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
 	{
-		return;
+		const FEnclaveEquipmentSlotDefinition* Definition = FindSlotDefinition(Assignment.SlotTag);
+		if (Definition && Definition->bInWieldCycle && Assignment.Item == Item && IsAssignmentValid(Assignment))
+		{
+			return true;
+		}
 	}
-
-	IEnclaveItemSourceInterface* SourceInterface = Cast<IEnclaveItemSourceInterface>(SourceComponent);
-
-	if (!SourceInterface)
-	{
-		return;
-	}
-
-	ItemSource.SetObject(SourceComponent);
-	ItemSource.SetInterface(SourceInterface);
-
-	ItemSource->OnItemSourceChanged().AddUObject(this, &UEnclaveEquipmentComponent::HandleItemSourceChanged);
-	RebuildWieldableCache();
+	return false;
 }
 
 void UEnclaveEquipmentComponent::UnbindItemSource()
@@ -548,58 +707,78 @@ void UEnclaveEquipmentComponent::UnbindItemSource()
 	{
 		ItemSource->OnItemSourceChanged().RemoveAll(this);
 	}
-
 	ItemSource.SetInterface(nullptr);
 	ItemSource.SetObject(nullptr);
-	WieldableCache.Reset();
 }
 
 void UEnclaveEquipmentComponent::HandleItemSourceChanged()
 {
-	RebuildWieldableCache();
-}
-
-void UEnclaveEquipmentComponent::RebuildWieldableCache()
-{
-	WieldableCache.Reset();
-
-	if (ItemSource)
-	{
-		for (const TObjectPtr<AEnclaveItem>& Item : ItemSource->GetSourceItems())
-		{
-			if (IsValid(Item) && Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
-			{
-				WieldableCache.AddUnique(Item);
-			}
-		}
-	}
-
-	// Default items do not belong to the ordinary source. Append them so
-	// ordinary item ordering is unchanged and the default is still cycleable.
-	if (IsValid(PersistentDefaultItem) && PersistentDefaultItem->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
-	{
-		WieldableCache.AddUnique(PersistentDefaultItem);
-	}
-
-	RestoreDefaultWieldIfNecessary();
-}
-
-void UEnclaveEquipmentComponent::RestoreDefaultWieldIfNecessary()
-{
 	AActor* OwnerActor = GetOwner();
-	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority() || OwnerActor->IsActorBeingDestroyed())
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority())
 	{
 		return;
 	}
 
-	// Source notifications precede inventory item destruction. Transition
-	// while the old SourceObject remains valid, preserving GAS cancellation.
-	if (IsValid(CurrentWieldedItem) && !WieldableCache.Contains(CurrentWieldedItem))
+	for (int32 Index = SlotAssignments.Num() - 1; Index >= 0; --Index)
 	{
-		if (!TryWieldPersistentDefaultItem())
+		const FEnclaveEquipmentSlotAssignment& Assignment = SlotAssignments[Index];
+		if (Assignment.bFromItemSource && !IsAssignmentValid(Assignment))
 		{
-			ClearCurrentWieldedItem();
+			SlotAssignments.RemoveAt(Index);
 		}
+	}
+	ReconcileSelectionAfterSlotChange();
+}
+
+void UEnclaveEquipmentComponent::HandleAssignedItemDestroyed(AActor* DestroyedActor)
+{
+	AActor* OwnerActor = GetOwner();
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	const int32 Removed = SlotAssignments.RemoveAll([DestroyedActor](const FEnclaveEquipmentSlotAssignment& Assignment)
+	{
+		return !Assignment.bFromItemSource && Assignment.Item.Get() == DestroyedActor;
+	});
+	if (Removed > 0)
+	{
+		ReconcileSelectionAfterSlotChange();
+	}
+}
+
+void UEnclaveEquipmentComponent::ReconcileSelectionAfterSlotChange()
+{
+	AActor* OwnerActor = GetOwner();
+	if (bEquipmentTearingDown || !IsValid(OwnerActor) || !OwnerActor->HasAuthority() ||
+		OwnerActor->IsActorBeingDestroyed())
+	{
+		return;
+	}
+	// A source notification is not a command to equip. Starting selection is
+	// explicit, after the owner has finished assigning its initial loadout.
+	if (!SelectedItem && !CurrentWieldedItem)
+	{
+		return;
+	}
+	if (IsValid(SelectedItem) && IsAvailableWieldable(SelectedItem))
+	{
+		return;
+	}
+
+	// An invalid assignment must always revoke its gameplay contribution.
+	// Never automatically draw fallback equipment on a dead avatar.
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+	if (IsValid(ASC) && ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead))
+	{
+		ClearCurrentWieldedItem();
+		return;
+	}
+
+	if (!SelectSlot(DefaultSelectionSlotTag))
+	{
+		ClearCurrentWieldedItem();
 	}
 }
 

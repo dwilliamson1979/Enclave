@@ -27,6 +27,7 @@
 
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "GameplayTags/EnclaveEquipmentSlotTags.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Game/EnclaveGameModeBase.h"
 
@@ -99,38 +100,106 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 
 	// Server-side: PlayerState is already valid by this point.
 	InitializeAbilityActorInfo();
-
-	if (!EquipmentComp)
+	if (!IsValid(EquipmentComp))
 	{
 		return;
 	}
 
-	// Equipment owns the optional lifetime-bound default item. Possession
-	// ensures an ASC is ready before its item ability grants are applied.
-	EquipmentComp->InitializePersistentDefaultItem();
+	// Explicitly provide one source; Equipment does not discover components.
+	EquipmentComp->SetItemSource(InventoryComp);
+	InitializePersistentItem();
 
-	// Preserve the original starting-loadout precedence: an ordinary
-	// starting item takes priority over the persistent default.
-	if (InventoryComp && InventoryComp->IsEmpty())
+	// Create regular source-owned items and assign only explicitly named slots.
+	// Unassigned ordinary inventory items never participate in Next/Previous.
+	if (IsValid(InventoryComp) && InventoryComp->IsEmpty())
 	{
-		for (const TSubclassOf<AEnclaveItem>& ItemClass : DefaultItemClasses)
+		for (const FEnclaveStartingSlottedItem& Entry : StartingSlottedItems)
 		{
-			InventoryComp->SpawnItem(ItemClass);
+			if (!Entry.ItemClass || !Entry.SlotTag.IsValid())
+			{
+				continue;
+			}
+			if (AEnclaveItem* Item = InventoryComp->SpawnItem(Entry.ItemClass))
+			{
+				if (!EquipmentComp->AssignSourceItemToSlot(Entry.SlotTag, Item))
+				{
+					UE_LOG(LogEnclaveCharacter, Warning, TEXT("%s: could not assign %s to slot %s; item remains in Inventory."),
+						*GetName(), *GetNameSafe(Item), *Entry.SlotTag.ToString());
+				}
+			}
 		}
 
-		for (const TObjectPtr<AEnclaveItem>& Item : InventoryComp->GetItems())
+		// Existing asset loadouts retain inventory-only spawning until migrated.
+		// Never double-spawn legacy entries alongside an explicit new loadout.
+		if (!DefaultItemClasses.IsEmpty())
 		{
-			if (EquipmentComp->WieldItem(Item))
+			UE_LOG(LogEnclaveCharacter, Warning, TEXT("%s: DefaultItemClasses is legacy inventory-only; migrate to StartingSlottedItems and clear it."), *GetName());
+			if (StartingSlottedItems.IsEmpty())
 			{
-				break;
+				for (const TSubclassOf<AEnclaveItem>& ItemClass : DefaultItemClasses)
+				{
+					InventoryComp->SpawnItem(ItemClass);
+				}
 			}
 		}
 	}
 
+	// Starting ordinary slotted item takes precedence over fallback. The item
+	// selection is explicit and separate from its lifetime/membership.
 	if (!IsValid(EquipmentComp->GetCurrentWieldedItem()))
 	{
-		EquipmentComp->TryWieldPersistentDefaultItem();
+		bool bSelectedStartingItem = false;
+		for (const FEnclaveStartingSlottedItem& Entry : StartingSlottedItems)
+		{
+			if (IsValid(EquipmentComp->GetItemInSlot(Entry.SlotTag)) && EquipmentComp->SelectSlot(Entry.SlotTag))
+			{
+				bSelectedStartingItem = true;
+				break;
+			}
+		}
+		if (!bSelectedStartingItem)
+		{
+			EquipmentComp->SelectSlot(EnclaveGameplayTags::Equipment_Slot_Default);
+		}
 	}
+}
+
+void AEnclaveCharacter::InitializePersistentItem()
+{
+	if (!HasAuthority() || !IsValid(EquipmentComp) || !PersistentItemClass)
+	{
+		return;
+	}
+
+	if (IsValid(PersistentItem))
+	{
+		// Repeated possession must not create a duplicate actor.
+		EquipmentComp->AssignExternalItemToSlot(EnclaveGameplayTags::Equipment_Slot_Default, PersistentItem);
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.Instigator = this;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AEnclaveItem* Item = World->SpawnActor<AEnclaveItem>(PersistentItemClass, GetActorTransform(), Params);
+	if (!IsValid(Item))
+	{
+		return;
+	}
+	Item->SetActorHiddenInGame(true);
+	if (!EquipmentComp->AssignExternalItemToSlot(EnclaveGameplayTags::Equipment_Slot_Default, Item))
+	{
+		Item->Destroy();
+		UE_LOG(LogEnclaveCharacter, Warning, TEXT("%s: persistent item must satisfy the configured Equipment.Slot.Default requirements."), *GetName());
+		return;
+	}
+	PersistentItem = Item;
 }
 
 void AEnclaveCharacter::UnPossessed()
@@ -252,6 +321,11 @@ void AEnclaveCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (IsValid(EquipmentComp))
+	{
+		EquipmentComp->SetItemSource(InventoryComp);
+	}
+
 	if (HasAuthority())
 	{
 		AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
@@ -275,6 +349,20 @@ void AEnclaveCharacter::BeginPlay()
 
 void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority())
+	{
+		// Revoke GAS item grants before destroying the externally owned item.
+		if (IsValid(EquipmentComp))
+		{
+			EquipmentComp->ClearCurrentWieldedItem();
+		}
+		if (IsValid(PersistentItem))
+		{
+			PersistentItem->Destroy();
+			PersistentItem = nullptr;
+		}
+	}
+
 	// Covers client teardown and destruction paths where UnPossessed may not be
 	// observed locally. Consumer uninitialization is intentionally idempotent.
 	UninitializeAbilitySystemConsumers();

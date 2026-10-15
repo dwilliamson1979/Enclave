@@ -11,6 +11,7 @@
 #include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Collision/EnclaveCollisionChannels.h"
+#include "GameplayTagContainer.h"
 #include "EnclaveCharacter.generated.h"
 
 class UCameraComponent;
@@ -26,6 +27,19 @@ class UEnclaveAvatarPresentationComponent;
 class UAbilitySystemComponent;
 class UEnclaveGASHealthComponent;
 class UEnclaveAvatarLifecycleComponent;
+
+/** Author-defined starting inventory entry with an explicit equipment slot. */
+USTRUCT(BlueprintType)
+struct FEnclaveStartingSlottedItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
+	TSubclassOf<AEnclaveItem> ItemClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (Categories = "Equipment.Slot"))
+	FGameplayTag SlotTag;
+};
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
@@ -75,6 +89,8 @@ protected:
 private:
 	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
 	void InitializeAbilityActorInfo();
+	/** Server-owned lifetime for an optional external/intrinsic item; Equipment never spawns it. */
+	void InitializePersistentItem();
 
 	/** Initializes all avatar components that opt into the ASC-consumer contract. */
 	void InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent);
@@ -117,8 +133,21 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInventoryComponent> InventoryComp = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
+	/** Legacy starting items remain inventory-only. Migrate assignments to StartingSlottedItems. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Legacy", meta = (AllowPrivateAccess = "true"))
 	TArray<TSubclassOf<AEnclaveItem>> DefaultItemClasses;
+
+	/** Explicit initial item-to-slot assignments; only these enter Equipment's cycle. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Starting Loadout", meta = (AllowPrivateAccess = "true"))
+	TArray<FEnclaveStartingSlottedItem> StartingSlottedItems;
+
+	/** Optional actor-lifetime intrinsic/default item; assigned to Equipment's Default slot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Starting Loadout", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<AEnclaveItem> PersistentItemClass;
+
+	/** Server-side lifetime owner. Not an inventory entry or an Equipment-owned item. */
+	UPROPERTY(Transient)
+	TObjectPtr<AEnclaveItem> PersistentItem = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;
