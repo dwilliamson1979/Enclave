@@ -92,10 +92,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment|Slots")
 	AEnclaveItem* GetItemInSlot(FGameplayTag SlotTag) const;
 
-	/** A selected wieldable is always the actively wielded item during normal play. */
-	UFUNCTION(BlueprintPure, Category = "Equipment|Slots")
-	AEnclaveItem* GetSelectedItem() const { return CurrentWieldedItem; }
-
 	const TArray<FEnclaveEquipmentSlotAssignment>& GetSlotAssignments() const { return SlotAssignments; }
 
 	/** Select an already assigned, eligible wield-cycle item (not arbitrary world actors). */
