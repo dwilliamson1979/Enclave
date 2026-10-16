@@ -24,8 +24,14 @@ struct ENCLAVE_API FEnclaveEquipmentSlotDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment")
 	FGameplayTag SlotTag;
 
-	/** Only these slots participate in Next/Previous and active wielding. */
+	/** Whether this slot supports active wield selection (including Stowed).
+	 * Existing serialized Blueprint slots with bInWieldCycle=true remain
+	 * wieldable even when this newly introduced flag defaults to false. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment")
+	bool bCanWield = false;
+
+	/** Whether an eligible wieldable participates in Next/Previous. Also implies wield eligibility. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment", meta = (EditCondition = "bCanWield"))
 	bool bInWieldCycle = false;
 
 	/** Additional item capabilities required for an assignment to this slot. */
@@ -121,11 +127,22 @@ public:
 	bool TryWieldPrevious();
 	bool CanCycleWieldables() const;
 
+	/** Server-authoritative toggle; has no effect if Stowed is not configured and assigned. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Stowed")
+	bool ToggleStowed();
+
+	/** Called by an item's Unstow ability on the server. Falls back to Default if return slot is empty. */
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Stowed")
+	bool RestoreStowedSelection();
+
+	TSubclassOf<AEnclaveItem> GetStowedItemClass() const { return StowedItemClass; }
+
 private:
 	void RebuildInputFilters();
 
 	bool HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent);
 	bool HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleToggleStowedInput(const FEnclaveInputEvent& InputEvent);
 
 	bool HandleItemInput(const FEnclaveInputEvent& InputEvent);
 
@@ -180,6 +197,8 @@ private:
 	void CancelActiveItemAbilities();
 	void GrantAbilitiesForItem(AEnclaveItem* Item);
 	void RemoveGrantedAbilities();
+	void ApplyWieldedEffects(AEnclaveItem* Item);
+	void RemoveWieldedEffects();
 
 	/**
 	 * The ASC that owns GrantedAbilityHandles and CurrentWieldedItemEquipEffectHandle.
@@ -193,6 +212,9 @@ private:
 	/** Handles for abilities currently granted for CurrentWieldedItem. Server-only bookkeeping, not replicated. */
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 
+	/** Server-only effect handles, owned by this Equipment instance. */
+	TArray<FActiveGameplayEffectHandle> WieldedEffectHandles;
+
 	/** Semantic input tag used to request the next available wieldable item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
 	FGameplayTag NextWieldableInputTag;
@@ -200,6 +222,10 @@ private:
 	/** Semantic input tag used to request the previous available wieldable item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
 	FGameplayTag PreviousWieldableInputTag;
+
+	/** Discrete Equipment command; H key is mapped in the owning InputConfig asset. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
+	FGameplayTag ToggleStowedInputTag;
 
 	/** Cached routing filters derived from the configured input tags. */
 	FGameplayTagContainer InputFilters;
@@ -220,6 +246,11 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slots", meta = (AllowPrivateAccess = "true"))
 	TArray<FEnclaveEquipmentSlotDefinition> SlotDefinitions;
 
+	/** Optional, per-avatar Stowed item class. The owning avatar spawns and assigns it;
+	 * Equipment never owns item actors' lifetimes. Null disables automatic Stowed creation. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Stowed", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<AEnclaveItem> StowedItemClass;
+
 	/** Which configured slot is selected when another selection becomes unavailable. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slots", meta = (AllowPrivateAccess = "true", Categories = "Equipment.Slot"))
 	FGameplayTag DefaultSelectionSlotTag;
@@ -234,6 +265,9 @@ private:
 	/** Slot selected for the active wield relationship; cleared by full teardown. */
 	UPROPERTY(Replicated)
 	FGameplayTag SelectedSlotTag;
+
+	/** Authority-only, one-value restore target. Stale/cleared slots fall back to Default. */
+	FGameplayTag ReturnSlotTag;
 
 	/** Guards fallback logic during component/owner shutdown. */
 	bool bEquipmentTearingDown = false;

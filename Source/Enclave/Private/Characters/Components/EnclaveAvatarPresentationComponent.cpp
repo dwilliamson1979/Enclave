@@ -355,6 +355,14 @@ bool UEnclaveAvatarPresentationComponent::AttachItem(AEnclaveItem* Item)
 {
 	AActor* OwnerActor = GetOwner();
 
+	// Explicitly authored meshless items remain valid presentation states and
+	// can still link avatar animation layers, without requiring sockets.
+	const UEnclaveItemDefinition* Definition = IsValid(Item) ? Item->GetItemDefinition() : nullptr;
+	if (IsValid(Definition) && !Definition->HasPhysicalPresentation())
+	{
+		return true;
+	}
+
 	if (!IsValid(OwnerActor) || !IsValid(Item) || !IsValid(FirstPersonMesh) || !IsValid(ThirdPersonMesh) || !IsValid(ItemPresentationDefinition))
 	{
 		UE_LOG(LogEnclaveAvatarPresentation, Warning, TEXT("%s: unable to present %s because avatar presentation is not fully configured."),

@@ -46,6 +46,7 @@ namespace EnclaveGameplayTags
 
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Wieldable_Next);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Wieldable_Previous);
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Equipment_Stowed_Toggle);
 
 	//// ---------------------------------------------------------------------
 	//// Input - Gameplay Actions
@@ -71,4 +72,4 @@ namespace EnclaveGameplayTags
 	//ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Drone_Ascend);
 	//ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Drone_Descend);
 	//ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Drone_Detonate);
-}
+}

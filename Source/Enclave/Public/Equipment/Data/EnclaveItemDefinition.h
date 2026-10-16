@@ -10,6 +10,7 @@
 #include "EnclaveItemDefinition.generated.h"
 
 class USkeletalMesh;
+class UGameplayEffect;
 
 /**
  * Authored data shared by every physical item definition.
@@ -30,14 +31,18 @@ public:
 
 	USkeletalMesh* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMesh* GetThirdPersonMesh() const { return ThirdPersonMesh; }
+	bool HasPhysicalPresentation() const { return bHasPhysicalPresentation; }
 
 	float GetEquipDuration() const { return EquipDuration; }
 	const TArray<FEnclaveAbilityGrant>& GetAbilityGrants() const { return AbilityGrants; }
+	const TArray<TSubclassOf<UGameplayEffect>>& GetEffectsWhileWielded() const { return EffectsWhileWielded; }
 
 	/** Returns an explicit action-slot override, or nullptr for legacy grant-based resolution. */
 	const FEnclaveItemActionBinding* FindActionBinding(const FGameplayTag& InputTag) const;
 
 protected:
+	void SetItemType(const FGameplayTag& TypeTag) { ItemType = TypeTag; }
+
 	/** Adds a default capability from a concrete definition constructor. */
 	void AddItemCapability(const FGameplayTag& CapabilityTag)
 	{
@@ -46,6 +51,8 @@ protected:
 			ItemCapabilities.AddTag(CapabilityTag);
 		}
 	}
+
+	void SetHasPhysicalPresentation(bool bEnabled) { bHasPhysicalPresentation = bEnabled; }
 
 private:
 	/** Semantic item classification used by generic item/presentation systems. */
@@ -64,6 +71,10 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Presentation", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USkeletalMesh> ThirdPersonMesh;
 
+	/** Explicit permission for a gameplay-only item to have no meshes or attachment sockets. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Presentation", meta = (AllowPrivateAccess = "true"))
+	bool bHasPhysicalPresentation = true;
+
 	/**
 	 * Gameplay-authoritative delay from selecting this item until its item
 	 * actions become ready. Draw animation may be authored to visually fit this
@@ -80,6 +91,10 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Abilities", meta = (AllowPrivateAccess = "true", TitleProperty = "InputTag"))
 	TArray<FEnclaveAbilityGrant> AbilityGrants;
+
+	/** Infinite-duration effects applied to the wielder while selected; Equipment removes their handles on every exit. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Effects", meta = (AllowPrivateAccess = "true"))
+	TArray<TSubclassOf<UGameplayEffect>> EffectsWhileWielded;
 
 	/** Optional contextual slot overrides. Omitted slots retain existing item-grant behavior.
 	 * Use each InputTag at most once; duplicate entries are ambiguous and the first wins.

@@ -91,6 +91,7 @@ private:
 	void InitializeAbilityActorInfo();
 	/** Server-owned lifetime for an optional external/intrinsic item; Equipment never spawns it. */
 	void InitializePersistentItem();
+	void InitializeStowedItem();
 
 	/** Initializes all avatar components that opt into the ASC-consumer contract. */
 	void InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent);
@@ -148,6 +149,10 @@ private:
 	/** Server-side lifetime owner. Not an inventory entry or an Equipment-owned item. */
 	UPROPERTY(Transient)
 	TObjectPtr<AEnclaveItem> PersistentItem = nullptr;
+
+	/** Server-side lifetime owner for the optional, per-archetype Stowed item. */
+	UPROPERTY(Transient)
+	TObjectPtr<AEnclaveItem> StowedItem = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveEquipmentComponent> EquipmentComp = nullptr;

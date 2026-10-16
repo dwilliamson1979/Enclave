@@ -108,6 +108,7 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 	// Explicitly provide one source; Equipment does not discover components.
 	EquipmentComp->SetItemSource(InventoryComp);
 	InitializePersistentItem();
+	InitializeStowedItem();
 
 	// Create regular source-owned items and assign only explicitly named slots.
 	// Unassigned ordinary inventory items never participate in Next/Previous.
@@ -200,6 +201,48 @@ void AEnclaveCharacter::InitializePersistentItem()
 		return;
 	}
 	PersistentItem = Item;
+}
+
+void AEnclaveCharacter::InitializeStowedItem()
+{
+	if (!HasAuthority() || !IsValid(EquipmentComp))
+	{
+		return;
+	}
+	const TSubclassOf<AEnclaveItem> ItemClass = EquipmentComp->GetStowedItemClass();
+	if (!ItemClass)
+	{
+		return; // Optional: no Stowed assignment or dependency on normal Equipment.
+	}
+	if (IsValid(StowedItem))
+	{
+		EquipmentComp->AssignExternalItemToSlot(EnclaveGameplayTags::Equipment_Slot_Stowed, StowedItem);
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.Instigator = this;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AEnclaveItem* Item = World->SpawnActor<AEnclaveItem>(ItemClass, GetActorTransform(), Params);
+	if (!IsValid(Item))
+	{
+		return;
+	}
+	Item->SetActorHiddenInGame(true);
+	if (!EquipmentComp->AssignExternalItemToSlot(EnclaveGameplayTags::Equipment_Slot_Stowed, Item))
+	{
+		UE_LOG(LogEnclaveCharacter, Warning, TEXT("%s: Stowed item %s failed Equipment.Slot.Stowed assignment; check Item.Capability.Wieldable and owner."),
+			*GetName(), *GetNameSafe(Item));
+		Item->Destroy();
+		return;
+	}
+	StowedItem = Item;
 }
 
 void AEnclaveCharacter::UnPossessed()
@@ -360,6 +403,11 @@ void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		{
 			PersistentItem->Destroy();
 			PersistentItem = nullptr;
+		}
+		if (IsValid(StowedItem))
+		{
+			StowedItem->Destroy();
+			StowedItem = nullptr;
 		}
 	}
 
