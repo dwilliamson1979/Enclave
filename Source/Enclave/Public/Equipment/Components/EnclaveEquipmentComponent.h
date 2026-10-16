@@ -15,7 +15,7 @@ class AEnclaveItem;
 class UAbilitySystemComponent;
 class IEnclaveAvatarPresentationInterface;
 
-/** Defines an Equipment assignment position; non-wieldable slots (armor, etc.) are valid. */
+/** Describes an assignable position; bCanWield and bInWieldCycle are separate policies. */
 USTRUCT(BlueprintType)
 struct ENCLAVE_API FEnclaveEquipmentSlotDefinition
 {
@@ -100,9 +100,6 @@ public:
 
 	const TArray<FEnclaveEquipmentSlotAssignment>& GetSlotAssignments() const { return SlotAssignments; }
 
-	/** Select an already assigned, eligible wield-cycle item (not arbitrary world actors). */
-	bool WieldItem(AEnclaveItem* Item);
-
 	/**
 	 * Authority-only teardown of active wielding/selection. Cancels item actions,
 	 * revokes grants, clears equip readiness and presentation. Does not destroy items;
@@ -135,9 +132,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Stowed")
 	bool RestoreStowedSelection();
 
-	TSubclassOf<AEnclaveItem> GetStowedItemClass() const { return StowedItemClass; }
+	/** Migration-only fallback for older Character Blueprints which configured Stowed on Equipment. */
+	TSubclassOf<AEnclaveItem> GetLegacyStowedItemClass() const { return StowedItemClass; }
 
 private:
+	/** Selects any normally accessible slot. Stowed requires the dedicated toggle entry path. */
+	bool SelectSlotInternal(FGameplayTag SlotTag, bool bAllowStowed);
+	bool WieldItem(AEnclaveItem* Item);
+	void BuildCycleSlotTags(TArray<FGameplayTag>& OutSlotTags) const;
+	void ValidateSlotDefinitions() const;
 	void RebuildInputFilters();
 
 	bool HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent);
@@ -242,16 +245,24 @@ private:
 	/** The wielded item whose presentation has most recently been reconciled on this machine. */
 	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;
 
-	/** Slot layout/order is authored on the Equipment component; can include armor slots. */
+	/** Ordinary slots only (armor, weapons, gadgets), in wield-cycle order.
+	 * Legacy serialized reserved rows retain authored restrictions until migrated. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slots", meta = (AllowPrivateAccess = "true"))
 	TArray<FEnclaveEquipmentSlotDefinition> SlotDefinitions;
 
-	/** Optional, per-avatar Stowed item class. The owning avatar spawns and assigns it;
-	 * Equipment never owns item actors' lifetimes. Null disables automatic Stowed creation. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Stowed", meta = (AllowPrivateAccess = "true"))
+	/** Default is a reserved, always-wieldable slot; it may participate in cycling. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Reserved Slots", meta = (AllowPrivateAccess = "true"))
+	bool bDefaultInWieldCycle = true;
+
+	/** Legacy Blueprint setting. New archetypes configure StowedItemClass on Character. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Legacy", meta = (AllowPrivateAccess = "true", DisplayName = "Legacy Stowed Item Class"))
 	TSubclassOf<AEnclaveItem> StowedItemClass;
 
-	/** Which configured slot is selected when another selection becomes unavailable. */
+	/** Shared runtime definitions for the two reserved slot identities. */
+	FEnclaveEquipmentSlotDefinition DefaultReservedDefinition;
+	FEnclaveEquipmentSlotDefinition StowedReservedDefinition;
+
+	/** Fallback selection; defaults to the reserved Default slot. Kept for existing Blueprint compatibility. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slots", meta = (AllowPrivateAccess = "true", Categories = "Equipment.Slot"))
 	FGameplayTag DefaultSelectionSlotTag;
 

@@ -209,7 +209,17 @@ void AEnclaveCharacter::InitializeStowedItem()
 	{
 		return;
 	}
-	const TSubclassOf<AEnclaveItem> ItemClass = EquipmentComp->GetStowedItemClass();
+	// New archetypes configure both intrinsic classes on Character. A fallback
+	// reads the old Equipment property to preserve existing serialized Blueprints.
+	TSubclassOf<AEnclaveItem> ItemClass = StowedItemClass;
+	if (!ItemClass)
+	{
+		ItemClass = EquipmentComp->GetLegacyStowedItemClass();
+		if (ItemClass)
+		{
+			UE_LOG(LogEnclaveCharacter, Warning, TEXT("%s: migrate legacy Equipment Stowed Item Class to Character > Equipment > Intrinsic Items."), *GetName());
+		}
+	}
 	if (!ItemClass)
 	{
 		return; // Optional: no Stowed assignment or dependency on normal Equipment.

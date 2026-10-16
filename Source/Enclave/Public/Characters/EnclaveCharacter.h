@@ -142,9 +142,13 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Starting Loadout", meta = (AllowPrivateAccess = "true"))
 	TArray<FEnclaveStartingSlottedItem> StartingSlottedItems;
 
-	/** Optional actor-lifetime intrinsic/default item; assigned to Equipment's Default slot. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Starting Loadout", meta = (AllowPrivateAccess = "true"))
+	/** Actor-lifetime Default item; name preserved so existing Blueprint assets retain their class. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Intrinsic Items", meta = (AllowPrivateAccess = "true", DisplayName = "Default Item Class"))
 	TSubclassOf<AEnclaveItem> PersistentItemClass;
+
+	/** Optional actor-lifetime Stowed item. Null disables Stowed unless a legacy Equipment setting exists. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Intrinsic Items", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<AEnclaveItem> StowedItemClass;
 
 	/** Server-side lifetime owner. Not an inventory entry or an Equipment-owned item. */
 	UPROPERTY(Transient)
