@@ -134,9 +134,10 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInventoryComponent> InventoryComp = nullptr;
 
-	/** Legacy starting items remain inventory-only. Migrate assignments to StartingSlottedItems. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Legacy", meta = (AllowPrivateAccess = "true"))
-	TArray<TSubclassOf<AEnclaveItem>> DefaultItemClasses;
+	/** Initial carried items with no Equipment slot assignment (e.g. supplies).
+	 * Use StartingSlottedItems for equipment that starts assigned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Starting Loadout", meta = (AllowPrivateAccess = "true"))
+	TArray<TSubclassOf<AEnclaveItem>> StartingInventoryItems;
 
 	/** Explicit initial item-to-slot assignments; only these enter Equipment's cycle. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Starting Loadout", meta = (AllowPrivateAccess = "true"))
@@ -146,7 +147,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Intrinsic Items", meta = (AllowPrivateAccess = "true", DisplayName = "Default Item Class"))
 	TSubclassOf<AEnclaveItem> PersistentItemClass;
 
-	/** Optional actor-lifetime Stowed item. Null disables Stowed unless a legacy Equipment setting exists. */
+	/** Optional actor-lifetime Stowed item. Null disables the feature. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Intrinsic Items", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<AEnclaveItem> StowedItemClass;
 

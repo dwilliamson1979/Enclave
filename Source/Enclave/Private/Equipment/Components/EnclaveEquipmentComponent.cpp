@@ -30,7 +30,6 @@ UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
 	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = false;
 
-	DefaultSelectionSlotTag = EnclaveGameplayTags::Equipment_Slot_Default;
 	ToggleStowedInputTag = EnclaveGameplayTags::Input_Equipment_Stowed_Toggle;
 	// Only ordinary slots belong in the editable array. The reserved identities
 	// resolve through FindSlotDefinition and share the same assignment storage.
@@ -63,27 +62,8 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 {
 	Super::InitializeComponent();
 
-	// Preserve authored restrictions from pre-refactor serialized Blueprint rows.
-	// The rows are no longer ordinary slots; their reserved identities and Stowed
-	// selection policy cannot be overridden. Authors should migrate then remove them.
-	for (const FEnclaveEquipmentSlotDefinition& Legacy : SlotDefinitions)
-	{
-		if (Legacy.SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Default))
-		{
-			DefaultReservedDefinition.bInWieldCycle = bDefaultInWieldCycle && Legacy.bInWieldCycle;
-			DefaultReservedDefinition.RequiredCapabilities.AppendTags(Legacy.RequiredCapabilities);
-		}
-		else if (Legacy.SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed))
-		{
-			StowedReservedDefinition.RequiredCapabilities.AppendTags(Legacy.RequiredCapabilities);
-		}
-	}
-	if (!SlotDefinitions.ContainsByPredicate([](const FEnclaveEquipmentSlotDefinition& D)
-		{ return D.SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Default); }))
-	{
-		DefaultReservedDefinition.bInWieldCycle = bDefaultInWieldCycle;
-	}
-
+	// Reserved slot policy is independent of ordinary Blueprint slot rows.
+	DefaultReservedDefinition.bInWieldCycle = bDefaultInWieldCycle;
 	RebuildInputFilters();
 	ValidateSlotDefinitions();
 }
@@ -190,8 +170,8 @@ bool UEnclaveEquipmentComponent::SetItemSource(UActorComponent* SourceComponent)
 
 const FEnclaveEquipmentSlotDefinition* UEnclaveEquipmentComponent::FindSlotDefinition(FGameplayTag SlotTag) const
 {
-	// Reserved identities take precedence over stale serialized Blueprint rows.
-	// Stowed's existence in the registry does not imply an assigned item.
+	// Reserved identities are defined internally; they are never ordinary slots.
+	// Stowed's existence does not imply an assigned item.
 	if (SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Default))
 	{
 		return &DefaultReservedDefinition;
@@ -219,7 +199,7 @@ void UEnclaveEquipmentComponent::ValidateSlotDefinitions() const
 		if (Definition.SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Default) ||
 			Definition.SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed))
 		{
-			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: legacy reserved slot %s in SlotDefinitions: capability restrictions (and Default cycle flag) are honored for migration, but remove the Blueprint row after configuring reserved slots."),
+			UE_LOG(LogEnclaveEquipment, Error, TEXT("%s: reserved slot %s must not appear in SlotDefinitions. Remove that Blueprint row; configure intrinsic items on Character."),
 				*GetNameSafe(GetOwner()), *Definition.SlotTag.ToString());
 			continue;
 		}
@@ -231,7 +211,7 @@ void UEnclaveEquipmentComponent::ValidateSlotDefinitions() const
 		Seen.Add(Definition.SlotTag);
 		if (Definition.bInWieldCycle && !Definition.bCanWield)
 		{
-			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: %s is cycle-enabled without bCanWield. Retaining legacy wield eligibility; enable bCanWield when migrating."),
+			UE_LOG(LogEnclaveEquipment, Error, TEXT("%s: slot %s is cycle-enabled but bCanWield is false. Fix this Blueprint slot definition; it will not participate in cycling."),
 				*GetNameSafe(GetOwner()), *Definition.SlotTag.ToString());
 		}
 	}
@@ -245,7 +225,7 @@ void UEnclaveEquipmentComponent::BuildCycleSlotTags(TArray<FGameplayTag>& OutSlo
 		const FGameplayTag Tag = Definition.SlotTag;
 		if (!Tag.IsValid() || Tag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Default) ||
 			Tag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed) ||
-			!Definition.bInWieldCycle || OutSlotTags.Contains(Tag))
+			!Definition.bCanWield || !Definition.bInWieldCycle || OutSlotTags.Contains(Tag))
 		{
 			continue;
 		}
@@ -324,7 +304,7 @@ bool UEnclaveEquipmentComponent::AssignItemToSlot(FGameplayTag SlotTag, AEnclave
 		return false;
 	}
 
-	if ((Definition->bCanWield || Definition->bInWieldCycle) && !Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
+	if (Definition->bCanWield && !Item->HasItemCapability(EnclaveGameplayTags::Item_Capability_Wieldable))
 	{
 		return false;
 	}
@@ -430,7 +410,7 @@ bool UEnclaveEquipmentComponent::SelectSlotInternal(FGameplayTag SlotTag, bool b
 	}
 	const FEnclaveEquipmentSlotDefinition* Definition = FindSlotDefinition(SlotTag);
 	AEnclaveItem* Item = GetItemInSlot(SlotTag);
-	if (!Definition || !(Definition->bCanWield || Definition->bInWieldCycle) || !IsValid(Item))
+	if (!Definition || !Definition->bCanWield || !IsValid(Item))
 	{
 		return false;
 	}
@@ -840,8 +820,7 @@ bool UEnclaveEquipmentComponent::RestoreStowedSelection()
 		ReturnSlotTag = FGameplayTag();
 		return true;
 	}
-	if (!DefaultSelectionSlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed) &&
-		SelectSlot(DefaultSelectionSlotTag))
+	if (SelectSlot(EnclaveGameplayTags::Equipment_Slot_Default))
 	{
 		ReturnSlotTag = FGameplayTag();
 		return true;
@@ -892,7 +871,7 @@ bool UEnclaveEquipmentComponent::IsAvailableWieldable(const AEnclaveItem* Item) 
 	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
 	{
 		const FEnclaveEquipmentSlotDefinition* Definition = FindSlotDefinition(Assignment.SlotTag);
-		if (Definition && (Definition->bCanWield || Definition->bInWieldCycle) && Assignment.Item == Item && IsAssignmentValid(Assignment))
+		if (Definition && Definition->bCanWield && Assignment.Item == Item && IsAssignmentValid(Assignment))
 		{
 			return true;
 		}
@@ -978,7 +957,7 @@ void UEnclaveEquipmentComponent::ReconcileSelectionAfterSlotChange()
 		return;
 	}
 
-	if (!SelectSlot(DefaultSelectionSlotTag))
+	if (!SelectSlot(EnclaveGameplayTags::Equipment_Slot_Default))
 	{
 		ClearCurrentWieldedItem();
 	}

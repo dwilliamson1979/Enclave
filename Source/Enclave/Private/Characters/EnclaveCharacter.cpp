@@ -130,17 +130,13 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 			}
 		}
 
-		// Existing asset loadouts retain inventory-only spawning until migrated.
-		// Never double-spawn legacy entries alongside an explicit new loadout.
-		if (!DefaultItemClasses.IsEmpty())
+		// Inventory-only items are distinct from equipment assignments. They
+		// enter Inventory but are deliberately not selected or placed in a slot.
+		for (const TSubclassOf<AEnclaveItem>& ItemClass : StartingInventoryItems)
 		{
-			UE_LOG(LogEnclaveCharacter, Warning, TEXT("%s: DefaultItemClasses is legacy inventory-only; migrate to StartingSlottedItems and clear it."), *GetName());
-			if (StartingSlottedItems.IsEmpty())
+			if (ItemClass)
 			{
-				for (const TSubclassOf<AEnclaveItem>& ItemClass : DefaultItemClasses)
-				{
-					InventoryComp->SpawnItem(ItemClass);
-				}
+				InventoryComp->SpawnItem(ItemClass);
 			}
 		}
 	}
@@ -209,17 +205,8 @@ void AEnclaveCharacter::InitializeStowedItem()
 	{
 		return;
 	}
-	// New archetypes configure both intrinsic classes on Character. A fallback
-	// reads the old Equipment property to preserve existing serialized Blueprints.
-	TSubclassOf<AEnclaveItem> ItemClass = StowedItemClass;
-	if (!ItemClass)
-	{
-		ItemClass = EquipmentComp->GetLegacyStowedItemClass();
-		if (ItemClass)
-		{
-			UE_LOG(LogEnclaveCharacter, Warning, TEXT("%s: migrate legacy Equipment Stowed Item Class to Character > Equipment > Intrinsic Items."), *GetName());
-		}
-	}
+	// Stowed is optional and configured only on the avatar archetype.
+	const TSubclassOf<AEnclaveItem> ItemClass = StowedItemClass;
 	if (!ItemClass)
 	{
 		return; // Optional: no Stowed assignment or dependency on normal Equipment.
