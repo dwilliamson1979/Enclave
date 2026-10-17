@@ -14,6 +14,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
+#include "GameplayTags/EnclaveEquipmentSlotTags.h"
 #include "Equipment/Items/EnclaveItem.h"
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
@@ -161,6 +162,94 @@ void AEnclavePlayerController::PerformDebugRemoveWieldedItem()
 
 	// This is a destructive development-only test, not a world-drop mechanic.
 	ItemToRemove->Destroy();
+#endif
+}
+
+void AEnclavePlayerController::EnclaveDebugClearSlot(const FString& SlotTagName)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	const FString CleanTagName = SlotTagName.TrimStartAndEnd();
+	const FGameplayTag SlotTag = FGameplayTag::RequestGameplayTag(FName(*CleanTagName), /*ErrorIfNotFound=*/false);
+	if (!SlotTag.IsValid())
+	{
+		const FString Message = FString::Printf(TEXT("EnclaveDebugClearSlot: unknown Gameplay Tag '%s'."), *CleanTagName);
+		ENCLAVE_LOG_MSG(LogEnclaveEquipment, Warning, Message);
+		ENCLAVE_SCREEN(Message, FColor::Red, 5.0f);
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		PerformDebugClearSlot(SlotTag);
+		return;
+	}
+
+	ServerEnclaveDebugClearSlot(SlotTag);
+#endif
+}
+
+void AEnclavePlayerController::ServerEnclaveDebugClearSlot_Implementation(FGameplayTag SlotTag)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	PerformDebugClearSlot(SlotTag);
+#endif
+}
+
+void AEnclavePlayerController::PerformDebugClearSlot(FGameplayTag SlotTag)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	bool bSucceeded = false;
+	FString ResultMessage;
+	if (!SlotTag.IsValid())
+	{
+		ResultMessage = TEXT("EnclaveDebugClearSlot: invalid slot tag.");
+	}
+	else if (SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Default) ||
+		SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed))
+	{
+		ResultMessage = FString::Printf(TEXT("EnclaveDebugClearSlot: %s is reserved; assignment not changed."), *SlotTag.ToString());
+	}
+	else if (APawn* ControlledPawn = GetPawn(); !IsValid(ControlledPawn))
+	{
+		ResultMessage = TEXT("EnclaveDebugClearSlot: no valid possessed pawn.");
+	}
+	else if (UEnclaveEquipmentComponent* Equipment = ControlledPawn->FindComponentByClass<UEnclaveEquipmentComponent>(); !IsValid(Equipment))
+	{
+		ResultMessage = FString::Printf(TEXT("EnclaveDebugClearSlot: %s has no Equipment component."), *GetNameSafe(ControlledPawn));
+	}
+	else
+	{
+		const FString PreviousItemName = GetNameSafe(Equipment->GetItemInSlot(SlotTag));
+		bSucceeded = Equipment->ClearSlot(SlotTag);
+		ResultMessage = bSucceeded
+			? FString::Printf(TEXT("EnclaveDebugClearSlot: cleared %s (%s); item remains in its source."), *SlotTag.ToString(), *PreviousItemName)
+			: FString::Printf(TEXT("EnclaveDebugClearSlot: no assignment to clear in %s."), *SlotTag.ToString());
+	}
+
+	if (bSucceeded)
+	{
+		ENCLAVE_LOG_MSG(LogEnclaveEquipment, Log, ResultMessage);
+	}
+	else
+	{
+		ENCLAVE_LOG_MSG(LogEnclaveEquipment, Warning, ResultMessage);
+	}
+
+	// A remote client cannot see the server Output Log. Report the result to
+	// the owning controller so the same command is usable in either PIE window.
+	ClientEnclaveDebugClearSlotResult(bSucceeded, ResultMessage);
+#endif
+}
+
+void AEnclavePlayerController::ClientEnclaveDebugClearSlotResult_Implementation(bool bSucceeded, const FString& ResultMessage)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	ENCLAVE_SCREEN(ResultMessage, bSucceeded ? FColor::Green : FColor::Red, 5.0f);
 #endif
 }
 

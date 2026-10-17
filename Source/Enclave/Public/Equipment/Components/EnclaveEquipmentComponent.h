@@ -14,6 +14,7 @@
 class AEnclaveItem;
 class UAbilitySystemComponent;
 class IEnclaveAvatarPresentationInterface;
+class UGameplayEffect;
 
 /** Describes an assignable position; bCanWield and bInWieldCycle are separate policies. */
 USTRUCT(BlueprintType)
@@ -54,6 +55,13 @@ struct ENCLAVE_API FEnclaveEquipmentSlotAssignment
 	/** True if membership must remain valid in the single assigned item source. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
 	bool bFromItemSource = false;
+};
+
+/** Tracks one validated slot occupant and precisely the passive effects granted for it. */
+struct FEnclaveEquippedItemEffectState
+{
+	TWeakObjectPtr<AEnclaveItem> Item;
+	TArray<FActiveGameplayEffectHandle> EffectHandles;
 };
 
 /**
@@ -99,6 +107,10 @@ public:
 	AEnclaveItem* GetItemInSlot(FGameplayTag SlotTag) const;
 
 	const TArray<FEnclaveEquipmentSlotAssignment>& GetSlotAssignments() const { return SlotAssignments; }
+
+	/** Server-only reconciliation when the owner first binds (or rebinds) its ASC.
+	 * Called automatically on assignment changes; harmless if the ASC is absent. */
+	void RefreshEquippedEffects();
 
 	/**
 	 * Authority-only teardown of active wielding/selection. Cancels item actions,
@@ -202,9 +214,15 @@ private:
 	void RemoveGrantedAbilities();
 	void ApplyWieldedEffects(AEnclaveItem* Item);
 	void RemoveWieldedEffects();
+	void ApplyItemEffects(AEnclaveItem* Item, const TArray<TSubclassOf<UGameplayEffect>>& EffectClasses,
+		const TCHAR* EffectCategory, bool bRequireIndependentInstances,
+		TArray<FActiveGameplayEffectHandle>& OutHandles);
+	void RemoveEffectHandles(TArray<FActiveGameplayEffectHandle>& Handles);
+	void RemoveAllEquippedEffects();
 
 	/**
-	 * The ASC that owns GrantedAbilityHandles and CurrentWieldedItemEquipEffectHandle.
+	 * The ASC that owns granted abilities, equip readiness, wielded effects, and
+	 * effects attached to equipped slot assignments.
 	 *
 	 * Stored explicitly because pawn teardown can clear the pawn's PlayerState before
 	 * UninitializeComponent runs. Cleanup must revoke the exact GAS state this
@@ -217,6 +235,10 @@ private:
 
 	/** Server-only effect handles, owned by this Equipment instance. */
 	TArray<FActiveGameplayEffectHandle> WieldedEffectHandles;
+
+	/** Authority-only effects tracked per assignment, independent of CurrentWieldedItem.
+	 * Entries with no authored effects are kept to avoid repeat applications. */
+	TMap<FGameplayTag, FEnclaveEquippedItemEffectState> EquippedEffectStates;
 
 	/** Semantic input tag used to request the next available wieldable item. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))

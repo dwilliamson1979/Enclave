@@ -36,6 +36,7 @@ public:
 	float GetEquipDuration() const { return EquipDuration; }
 	const TArray<FEnclaveAbilityGrant>& GetAbilityGrants() const { return AbilityGrants; }
 	const TArray<TSubclassOf<UGameplayEffect>>& GetEffectsWhileWielded() const { return EffectsWhileWielded; }
+	const TArray<TSubclassOf<UGameplayEffect>>& GetEffectsWhileEquipped() const { return EffectsWhileEquipped; }
 
 	/** Returns an explicit action-slot override, or nullptr for legacy grant-based resolution. */
 	const FEnclaveItemActionBinding* FindActionBinding(const FGameplayTag& InputTag) const;
@@ -95,6 +96,12 @@ private:
 	/** Infinite-duration effects applied to the wielder while selected; Equipment removes their handles on every exit. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Effects", meta = (AllowPrivateAccess = "true"))
 	TArray<TSubclassOf<UGameplayEffect>> EffectsWhileWielded;
+
+	/** Infinite-duration, Avatar-scoped effects applied for the entire slot assignment,
+	 * including non-wieldable items. Never removed merely because the player
+	 * selects another wieldable. Equipment owns and removes the applied handles. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Effects", meta = (AllowPrivateAccess = "true"))
+	TArray<TSubclassOf<UGameplayEffect>> EffectsWhileEquipped;
 
 	/** Optional contextual slot overrides. Omitted slots retain existing item-grant behavior.
 	 * Use each InputTag at most once; duplicate entries are ambiguous and the first wins.

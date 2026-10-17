@@ -11,6 +11,7 @@
 
 class USceneComponent;
 class USkeletalMeshComponent;
+class UGameplayEffect;
 
 /**
  * Base actor for a physical runtime item.
@@ -80,6 +81,12 @@ public:
 	 * being wielded. Empty is valid for non-actionable items.
 	 */
 	virtual TArray<FEnclaveAbilityGrant> GetAbilityGrants() const;
+
+	/** Gameplay Effects provided while this item occupies any valid Equipment slot. */
+	virtual TArray<TSubclassOf<UGameplayEffect>> GetEffectsWhileEquipped() const;
+
+	/** Gameplay Effects provided only while this item is the active wielded selection. */
+	virtual TArray<TSubclassOf<UGameplayEffect>> GetEffectsWhileWielded() const;
 
 	USkeletalMeshComponent* GetFirstPersonMesh() const { return FirstPersonMesh; }
 	USkeletalMeshComponent* GetThirdPersonMesh() const { return ThirdPersonMesh; }

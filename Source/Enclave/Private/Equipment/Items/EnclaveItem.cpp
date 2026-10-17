@@ -79,6 +79,18 @@ TArray<FEnclaveAbilityGrant> AEnclaveItem::GetAbilityGrants() const
 	return IsValid(Definition) ? Definition->GetAbilityGrants() : TArray<FEnclaveAbilityGrant>();
 }
 
+TArray<TSubclassOf<UGameplayEffect>> AEnclaveItem::GetEffectsWhileEquipped() const
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) ? Definition->GetEffectsWhileEquipped() : TArray<TSubclassOf<UGameplayEffect>>();
+}
+
+TArray<TSubclassOf<UGameplayEffect>> AEnclaveItem::GetEffectsWhileWielded() const
+{
+	const UEnclaveItemDefinition* Definition = GetItemDefinition();
+	return IsValid(Definition) ? Definition->GetEffectsWhileWielded() : TArray<TSubclassOf<UGameplayEffect>>();
+}
+
 void AEnclaveItem::StartPresentationAction(const FGameplayTag& Action, float Duration)
 {
 }

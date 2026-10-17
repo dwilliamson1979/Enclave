@@ -307,6 +307,10 @@ void AEnclaveCharacter::InitializeAbilityActorInfo()
 	UninitializeAbilitySystemConsumers();
 	CachedAbilitySystemComponent = ASC;
 	InitializeAbilitySystemConsumers(ASC);
+	if (IsValid(EquipmentComp) && HasAuthority())
+	{
+		EquipmentComp->RefreshEquippedEffects();
+	}
 }
 
 void AEnclaveCharacter::InitializeAvatarEffectScopeIfNeeded(UAbilitySystemComponent* AbilitySystemComponent)

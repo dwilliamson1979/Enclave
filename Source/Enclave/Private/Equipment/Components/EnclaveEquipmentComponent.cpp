@@ -97,6 +97,12 @@ void UEnclaveEquipmentComponent::BeginPlay()
 void UEnclaveEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEquipmentTearingDown = true;
+	// EndPlay may precede UninitializeComponent. Release slot-owned GAS state
+	// before the pawn and its PlayerState-owned ASC become separated.
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		RemoveAllEquippedEffects();
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -113,7 +119,8 @@ void UEnclaveEquipmentComponent::UninitializeComponent()
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
 	{
 		ClearCurrentWieldedItem();
-
+		RemoveAllEquippedEffects();
+		ManagedAbilitySystem.Reset();
 	}
 
 	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
@@ -175,6 +182,7 @@ bool UEnclaveEquipmentComponent::SetItemSource(UActorComponent* SourceComponent)
 				SlotAssignments.RemoveAt(Index);
 			}
 		}
+		RefreshEquippedEffects();
 		ReconcileSelectionAfterSlotChange();
 	}
 	return true;
@@ -343,6 +351,7 @@ bool UEnclaveEquipmentComponent::AssignItemToSlot(FGameplayTag SlotTag, AEnclave
 	});
 	if (Existing && Existing->Item == Item && Existing->bFromItemSource == bFromItemSource)
 	{
+		RefreshEquippedEffects();
 		return true;
 	}
 	if (Existing)
@@ -366,6 +375,10 @@ bool UEnclaveEquipmentComponent::AssignItemToSlot(FGameplayTag SlotTag, AEnclave
 	{
 		Item->OnDestroyed.AddUniqueDynamic(this, &UEnclaveEquipmentComponent::HandleAssignedItemDestroyed);
 	}
+
+	// Equipping is assignment-owned, not wield-owned. Reconcile passive effects
+	// even for armor and even if this slot isn't currently selected.
+	RefreshEquippedEffects();
 
 	// Replacing the active slot transitions to its new item through the normal
 	// GAS/readiness/presentation wield path.
@@ -396,6 +409,7 @@ bool UEnclaveEquipmentComponent::ClearSlot(FGameplayTag SlotTag)
 	});
 	if (Removed > 0)
 	{
+		RefreshEquippedEffects();
 		ReconcileSelectionAfterSlotChange();
 	}
 	return Removed > 0;
@@ -520,7 +534,8 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
 	UpdateWieldedItemActorVisibility(PreviousItem, nullptr);
 	UpdateWieldedItemPresentation(PreviousItem, nullptr);
 	LocallyWieldedItem.Reset();
-	ManagedAbilitySystem.Reset();
+	// Do not reset ManagedAbilitySystem here: equipped armor may still have
+	// passive GE handles on this same (PlayerState-owned) ASC. They outlive wielding.
 }
 
 const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
@@ -911,6 +926,7 @@ void UEnclaveEquipmentComponent::HandleItemSourceChanged()
 			SlotAssignments.RemoveAt(Index);
 		}
 	}
+	RefreshEquippedEffects();
 	ReconcileSelectionAfterSlotChange();
 }
 
@@ -928,6 +944,7 @@ void UEnclaveEquipmentComponent::HandleAssignedItemDestroyed(AActor* DestroyedAc
 	});
 	if (Removed > 0)
 	{
+		RefreshEquippedEffects();
 		ReconcileSelectionAfterSlotChange();
 	}
 }
@@ -1193,17 +1210,19 @@ void UEnclaveEquipmentComponent::RemoveGrantedAbilities()
 	GrantedAbilityHandles.Reset();
 }
 
-void UEnclaveEquipmentComponent::ApplyWieldedEffects(AEnclaveItem* Item)
+void UEnclaveEquipmentComponent::ApplyItemEffects(AEnclaveItem* Item,
+	const TArray<TSubclassOf<UGameplayEffect>>& EffectClasses, const TCHAR* EffectCategory,
+	bool bRequireIndependentInstances, TArray<FActiveGameplayEffectHandle>& OutHandles)
 {
-	const UEnclaveItemDefinition* Definition = IsValid(Item) ? Item->GetItemDefinition() : nullptr;
 	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
-	if (!IsValid(Definition) || !IsValid(ASC))
+	if (!IsValid(Item) || !IsValid(ASC) || !GetOwner() || !GetOwner()->HasAuthority() ||
+		ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead))
 	{
 		return;
 	}
 
 	ManagedAbilitySystem = ASC;
-	for (const TSubclassOf<UGameplayEffect>& EffectClass : Definition->GetEffectsWhileWielded())
+	for (const TSubclassOf<UGameplayEffect>& EffectClass : EffectClasses)
 	{
 		const UGameplayEffect* Effect = EffectClass ? EffectClass->GetDefaultObject<UGameplayEffect>() : nullptr;
 		if (!IsValid(Effect))
@@ -1212,15 +1231,24 @@ void UEnclaveEquipmentComponent::ApplyWieldedEffects(AEnclaveItem* Item)
 		}
 		if (Effect->DurationPolicy != EGameplayEffectDurationType::Infinite)
 		{
-			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: EffectsWhileWielded entry %s must have Infinite duration; skipping."),
-				*GetNameSafe(Item), *GetNameSafe(Effect));
+			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: %s entry %s must have Infinite duration; skipping."),
+				*GetNameSafe(Item), EffectCategory, *GetNameSafe(Effect));
+			continue;
+		}
+		// Equipped items own their effects independently. GAS stack aggregation can
+		// merge multiple items into one active handle; removing one slot would then
+		// strip the other slot's benefit. Require unstacked definitions for these.
+		if (bRequireIndependentInstances && Effect->GetStackingType() != EGameplayEffectStackingType::None)
+		{
+			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: %s entry %s must use Stacking=None for per-slot effect ownership; skipping."),
+				*GetNameSafe(Item), EffectCategory, *GetNameSafe(Effect));
 			continue;
 		}
 		if (const UEnclaveGameplayEffect* EnclaveEffect = Cast<UEnclaveGameplayEffect>(Effect);
 			IsValid(EnclaveEffect) && !EnclaveEffect->GetEffectScope().MatchesTagExact(EnclaveGameplayTags::Effect_Scope_Avatar))
 		{
-			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: EffectsWhileWielded entry %s must be Avatar-scoped; skipping."),
-				*GetNameSafe(Item), *GetNameSafe(Effect));
+			UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: %s entry %s must be Avatar-scoped; skipping."),
+				*GetNameSafe(Item), EffectCategory, *GetNameSafe(Effect));
 			continue;
 		}
 
@@ -1231,27 +1259,96 @@ void UEnclaveEquipmentComponent::ApplyWieldedEffects(AEnclaveItem* Item)
 		{
 			continue;
 		}
-		// This contribution belongs to the current avatar, not the PlayerState
-		// that hosts the ASC. Also cleans up safely if avatar teardown is early.
+		// Effects are owned by this avatar even though the ASC is on PlayerState.
 		Spec.Data->AddDynamicAssetTag(EnclaveGameplayTags::Effect_Scope_Avatar);
 		const FActiveGameplayEffectHandle Handle = ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 		if (Handle.IsValid() && Handle.WasSuccessfullyApplied())
 		{
-			WieldedEffectHandles.Add(Handle);
+			OutHandles.Add(Handle);
 		}
+	}
+}
+
+void UEnclaveEquipmentComponent::RemoveEffectHandles(TArray<FActiveGameplayEffectHandle>& Handles)
+{
+	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
+	{
+		for (const FActiveGameplayEffectHandle& Handle : Handles)
+		{
+			ASC->RemoveActiveGameplayEffect(Handle);
+		}
+	}
+	Handles.Reset();
+}
+
+void UEnclaveEquipmentComponent::ApplyWieldedEffects(AEnclaveItem* Item)
+{
+	if (IsValid(Item))
+	{
+		ApplyItemEffects(Item, Item->GetEffectsWhileWielded(), TEXT("EffectsWhileWielded"), /*bRequireIndependentInstances=*/false, WieldedEffectHandles);
 	}
 }
 
 void UEnclaveEquipmentComponent::RemoveWieldedEffects()
 {
-	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
+	RemoveEffectHandles(WieldedEffectHandles);
+}
+
+void UEnclaveEquipmentComponent::RemoveAllEquippedEffects()
+{
+	for (TPair<FGameplayTag, FEnclaveEquippedItemEffectState>& Entry : EquippedEffectStates)
 	{
-		for (const FActiveGameplayEffectHandle& Handle : WieldedEffectHandles)
+		RemoveEffectHandles(Entry.Value.EffectHandles);
+	}
+	EquippedEffectStates.Reset();
+}
+
+void UEnclaveEquipmentComponent::RefreshEquippedEffects()
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
+	if (ManagedAbilitySystem.IsValid() && ManagedAbilitySystem.Get() != ASC)
+	{
+		// In the unusual case of ASC replacement, never let old slot handles
+		// survive on the previous ASC. The new one will receive fresh grants.
+		RemoveAllEquippedEffects();
+	}
+	if (!IsValid(ASC) || bEquipmentTearingDown ||
+		ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead))
+	{
+		RemoveAllEquippedEffects();
+		return;
+	}
+
+	// Remove effects before applying replacements. A slot assignment that has
+	// changed occupant, source membership, or validity must never retain the
+	// previous occupant's passive stats.
+	for (auto It = EquippedEffectStates.CreateIterator(); It; ++It)
+	{
+		const FEnclaveEquipmentSlotAssignment* Assignment = FindSlotAssignment(It.Key());
+		if (!Assignment || !IsAssignmentValid(*Assignment) || Assignment->Item.Get() != It.Value().Item.Get())
 		{
-			ASC->RemoveActiveGameplayEffect(Handle);
+			RemoveEffectHandles(It.Value().EffectHandles);
+			It.RemoveCurrent();
 		}
 	}
-	WieldedEffectHandles.Reset();
+
+	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
+	{
+		if (!IsAssignmentValid(Assignment) || EquippedEffectStates.Contains(Assignment.SlotTag))
+		{
+			continue;
+		}
+		AEnclaveItem* Item = Assignment.Item.Get();
+		FEnclaveEquippedItemEffectState& State = EquippedEffectStates.Add(Assignment.SlotTag);
+		State.Item = Item;
+		ApplyItemEffects(Item, Item->GetEffectsWhileEquipped(), TEXT("EffectsWhileEquipped"), /*bRequireIndependentInstances=*/true, State.EffectHandles);
+	}
 }
 
 void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()

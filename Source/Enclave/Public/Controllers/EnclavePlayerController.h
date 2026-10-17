@@ -36,6 +36,15 @@ public:
 	UFUNCTION(Exec)
 	void EnclaveDebugRemoveWieldedItem();
 
+	/**
+	 * Development-only slot clearing test. Resolves a registered Gameplay Tag,
+	 * then removes that ordinary slot's Equipment assignment on authority.
+	 * Does not remove the item from Inventory or destroy it. Reserved Default
+	 * and Stowed slots are intentionally excluded from this testing command.
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugClearSlot(const FString& SlotTagName);
+
 protected:
 
 	virtual void OnPossess(APawn* InPawn) override;
@@ -64,6 +73,14 @@ private:
 	void ServerEnclaveDebugRemoveWieldedItem();
 
 	void PerformDebugRemoveWieldedItem();
+
+	UFUNCTION(Server, Reliable)
+	void ServerEnclaveDebugClearSlot(FGameplayTag SlotTag);
+
+	void PerformDebugClearSlot(FGameplayTag SlotTag);
+
+	UFUNCTION(Client, Reliable)
+	void ClientEnclaveDebugClearSlotResult(bool bSucceeded, const FString& ResultMessage);
 
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents);
 
