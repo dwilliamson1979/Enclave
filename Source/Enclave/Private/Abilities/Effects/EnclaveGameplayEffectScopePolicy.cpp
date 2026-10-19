@@ -4,6 +4,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
+#include "Misc/ScopeExit.h"
 #include "GameFramework/Actor.h"
 
 #include "Abilities/Effects/EnclaveGameplayEffect.h"
@@ -103,6 +104,15 @@ int32 FEnclaveGameplayEffectScopePolicy::RemoveAvatarLifetimeEffects(UAbilitySys
 	{
 		return 0;
 	}
+
+	// Removal callbacks may indirectly request effect reconciliation. Guard the
+	// *entire* sweep (including the window before GE_Dead) with an ASC-owned
+	// transient tag rather than depending on any actor's lifecycle component.
+	AbilitySystemComponent->AddLooseGameplayTag(EnclaveGameplayTags::Effect_Cleanup_Avatar_InProgress);
+	ON_SCOPE_EXIT
+	{
+		AbilitySystemComponent->RemoveLooseGameplayTag(EnclaveGameplayTags::Effect_Cleanup_Avatar_InProgress);
+	};
 
 	// Instant effects execute immediately and never enter the active-effect
 	// container. Every effect here is therefore Duration or Infinite and needs

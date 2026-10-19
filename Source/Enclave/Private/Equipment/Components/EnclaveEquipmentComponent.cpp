@@ -100,8 +100,8 @@ void UEnclaveEquipmentComponent::UninitializeComponent()
 	{
 		ClearCurrentWieldedItem();
 		RemoveAllEquippedEffects();
-		ManagedAbilitySystem.Reset();
 	}
+	ManagedAbilitySystem.Reset();
 
 	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
 	{
@@ -993,7 +993,7 @@ void UEnclaveEquipmentComponent::BeginCurrentWieldedItemEquipWindow(AEnclaveItem
 		return;
 	}
 
-	ManagedAbilitySystem = ASC;
+	SetManagedAbilitySystem(ASC);
 
 	FGameplayEffectContextHandle EffectContext = ASC->MakeEffectContext();
 	EffectContext.AddSourceObject(Item);
@@ -1149,7 +1149,7 @@ void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
 		return;
 	}
 
-	ManagedAbilitySystem = ASC;
+	SetManagedAbilitySystem(ASC);
 
 	for (const FEnclaveAbilityGrant& Grant : Item->GetAbilityGrants())
 	{
@@ -1189,18 +1189,77 @@ void UEnclaveEquipmentComponent::RemoveGrantedAbilities()
 	GrantedAbilityHandles.Reset();
 }
 
+void UEnclaveEquipmentComponent::SetManagedAbilitySystem(UAbilitySystemComponent* NewAbilitySystem)
+{
+	UAbilitySystemComponent* OldAbilitySystem = ManagedAbilitySystem.Get();
+	if (OldAbilitySystem != NewAbilitySystem)
+	{
+		// Rebinding is uncommon, but never strand grants on the previous ASC.
+		// This also keeps an old Pawn from cleaning up a newer Pawn's handles.
+		if (IsValid(OldAbilitySystem))
+		{
+			if (UEnclaveAbilitySystemComponent* OldEnclaveASC = Cast<UEnclaveAbilitySystemComponent>(OldAbilitySystem))
+			{
+				for (const TPair<FGameplayTag, FGameplayAbilitySpecHandle>& HeldInput : HeldItemInputSpecs)
+				{
+					OldEnclaveASC->ReleaseAbilityInput(HeldInput.Value);
+				}
+			}
+			CancelActiveItemAbilities();
+			RemoveGrantedAbilities();
+			RemoveWieldedEffects();
+			ClearCurrentWieldedItemEquipWindow();
+			RemoveAllEquippedEffects();
+		}
+		HeldItemInputSpecs.Reset();
+		ManagedAbilitySystem = NewAbilitySystem;
+	}
+}
+
+void UEnclaveEquipmentComponent::ReconcileTrackedEffectHandles(UAbilitySystemComponent* ASC)
+{
+	if (!IsValid(ASC))
+	{
+		return;
+	}
+
+	// The ASC is authoritative: recognize externally removed effects at each
+	// eligible refresh. Do not immediately reapply effects during a GAS removal.
+	if (CurrentWieldedItemEquipEffectHandle.IsValid() &&
+		!ASC->GetActiveGameplayEffect(CurrentWieldedItemEquipEffectHandle))
+	{
+		CurrentWieldedItemEquipEffectHandle.Invalidate();
+	}
+	WieldedEffectHandles.RemoveAll([ASC](const FActiveGameplayEffectHandle& Handle)
+	{
+		return !ASC->GetActiveGameplayEffect(Handle);
+	});
+	for (TPair<FGameplayTag, FEnclaveEquippedItemEffectState>& Entry : EquippedEffectStates)
+	{
+		const int32 Removed = Entry.Value.EffectHandles.RemoveAll([ASC](const FActiveGameplayEffectHandle& Handle)
+		{
+			return !ASC->GetActiveGameplayEffect(Handle);
+		});
+		if (Removed > 0)
+		{
+			Entry.Value.bNeedsRefresh = true;
+		}
+	}
+}
+
 void UEnclaveEquipmentComponent::ApplyItemEffects(AEnclaveItem* Item,
 	const TArray<TSubclassOf<UGameplayEffect>>& EffectClasses, const TCHAR* EffectCategory,
 	bool bRequireIndependentInstances, TArray<FActiveGameplayEffectHandle>& OutHandles)
 {
 	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
 	if (!IsValid(Item) || !IsValid(ASC) || !GetOwner() || !GetOwner()->HasAuthority() ||
-		ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead))
+		ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead) ||
+		ASC->HasMatchingGameplayTag(EnclaveGameplayTags::Effect_Cleanup_Avatar_InProgress))
 	{
 		return;
 	}
 
-	ManagedAbilitySystem = ASC;
+	SetManagedAbilitySystem(ASC);
 	for (const TSubclassOf<UGameplayEffect>& EffectClass : EffectClasses)
 	{
 		const UGameplayEffect* Effect = EffectClass ? EffectClass->GetDefaultObject<UGameplayEffect>() : nullptr;
@@ -1250,14 +1309,17 @@ void UEnclaveEquipmentComponent::ApplyItemEffects(AEnclaveItem* Item,
 
 void UEnclaveEquipmentComponent::RemoveEffectHandles(TArray<FActiveGameplayEffectHandle>& Handles)
 {
+	// Detach our handles first so synchronous GAS notifications cannot see
+	// bookkeeping that still claims ownership of effects being removed.
+	TArray<FActiveGameplayEffectHandle> HandlesToRemove = MoveTemp(Handles);
+	Handles.Reset();
 	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
 	{
-		for (const FActiveGameplayEffectHandle& Handle : Handles)
+		for (const FActiveGameplayEffectHandle& Handle : HandlesToRemove)
 		{
 			ASC->RemoveActiveGameplayEffect(Handle);
 		}
 	}
-	Handles.Reset();
 }
 
 void UEnclaveEquipmentComponent::ApplyWieldedEffects(AEnclaveItem* Item)
@@ -1291,18 +1353,18 @@ void UEnclaveEquipmentComponent::RefreshEquippedEffects()
 	}
 
 	UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent();
-	if (ManagedAbilitySystem.IsValid() && ManagedAbilitySystem.Get() != ASC)
-	{
-		// In the unusual case of ASC replacement, never let old slot handles
-		// survive on the previous ASC. The new one will receive fresh grants.
-		RemoveAllEquippedEffects();
-	}
+	SetManagedAbilitySystem(ASC);
+	// The effect-scope sweep temporarily marks the ASC before GE_Dead is applied;
+	// this generic GAS policy does not require Equipment to know actor mortality.
 	if (!IsValid(ASC) || bEquipmentTearingDown ||
+		ASC->HasMatchingGameplayTag(EnclaveGameplayTags::Effect_Cleanup_Avatar_InProgress) ||
 		ASC->HasMatchingGameplayTag(EnclaveGameplayTags::State_Lifecycle_Dead))
 	{
 		RemoveAllEquippedEffects();
 		return;
 	}
+
+	ReconcileTrackedEffectHandles(ASC);
 
 	// Remove effects before applying replacements. A slot assignment that has
 	// changed occupant, source membership, or validity must never retain the
@@ -1310,7 +1372,7 @@ void UEnclaveEquipmentComponent::RefreshEquippedEffects()
 	for (auto It = EquippedEffectStates.CreateIterator(); It; ++It)
 	{
 		const FEnclaveEquipmentSlotAssignment* Assignment = FindSlotAssignment(It.Key());
-		if (!Assignment || !IsAssignmentValid(*Assignment) || Assignment->Item.Get() != It.Value().Item.Get())
+		if (!Assignment || !IsAssignmentValid(*Assignment) || Assignment->Item.Get() != It.Value().Item.Get() || It.Value().bNeedsRefresh)
 		{
 			RemoveEffectHandles(It.Value().EffectHandles);
 			It.RemoveCurrent();

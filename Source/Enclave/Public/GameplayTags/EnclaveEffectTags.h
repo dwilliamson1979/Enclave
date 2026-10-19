@@ -15,4 +15,7 @@ namespace EnclaveGameplayTags
 
 	/** Effect intentionally belongs to the persistent player/ASC rather than a particular avatar. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Scope_Player);
+
+	/** Transient ASC-side guard while a bulk avatar-effect sweep is executing. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Cleanup_Avatar_InProgress);
 }
