@@ -1216,11 +1216,12 @@ void UEnclaveEquipmentComponent::SetManagedAbilitySystem(UAbilitySystemComponent
 	}
 }
 
-void UEnclaveEquipmentComponent::ReconcileTrackedEffectHandles(UAbilitySystemComponent* ASC)
+TSet<FGameplayTag> UEnclaveEquipmentComponent::ReconcileTrackedEffectHandles(UAbilitySystemComponent* ASC)
 {
+	TSet<FGameplayTag> SlotsNeedingRefresh;
 	if (!IsValid(ASC))
 	{
-		return;
+		return SlotsNeedingRefresh;
 	}
 
 	// The ASC is authoritative: recognize externally removed effects at each
@@ -1242,9 +1243,10 @@ void UEnclaveEquipmentComponent::ReconcileTrackedEffectHandles(UAbilitySystemCom
 		});
 		if (Removed > 0)
 		{
-			Entry.Value.bNeedsRefresh = true;
+			SlotsNeedingRefresh.Add(Entry.Key);
 		}
 	}
+	return SlotsNeedingRefresh;
 }
 
 void UEnclaveEquipmentComponent::ApplyItemEffects(AEnclaveItem* Item,
@@ -1364,7 +1366,7 @@ void UEnclaveEquipmentComponent::RefreshEquippedEffects()
 		return;
 	}
 
-	ReconcileTrackedEffectHandles(ASC);
+	const TSet<FGameplayTag> SlotsNeedingRefresh = ReconcileTrackedEffectHandles(ASC);
 
 	// Remove effects before applying replacements. A slot assignment that has
 	// changed occupant, source membership, or validity must never retain the
@@ -1372,7 +1374,7 @@ void UEnclaveEquipmentComponent::RefreshEquippedEffects()
 	for (auto It = EquippedEffectStates.CreateIterator(); It; ++It)
 	{
 		const FEnclaveEquipmentSlotAssignment* Assignment = FindSlotAssignment(It.Key());
-		if (!Assignment || !IsAssignmentValid(*Assignment) || Assignment->Item.Get() != It.Value().Item.Get() || It.Value().bNeedsRefresh)
+		if (!Assignment || !IsAssignmentValid(*Assignment) || Assignment->Item.Get() != It.Value().Item.Get() || SlotsNeedingRefresh.Contains(It.Key()))
 		{
 			RemoveEffectHandles(It.Value().EffectHandles);
 			It.RemoveCurrent();

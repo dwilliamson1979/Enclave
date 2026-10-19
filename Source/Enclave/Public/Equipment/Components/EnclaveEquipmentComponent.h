@@ -61,8 +61,6 @@ struct FEnclaveEquippedItemEffectState
 {
 	TWeakObjectPtr<AEnclaveItem> Item;
 	TArray<FActiveGameplayEffectHandle> EffectHandles;
-	/** At least one managed GE was removed externally; rebuild on the next eligible refresh. */
-	bool bNeedsRefresh = false;
 };
 
 /**
@@ -190,7 +188,8 @@ private:
 	void HandleAssignedItemDestroyed(AActor* DestroyedActor);
 
 	void SetManagedAbilitySystem(UAbilitySystemComponent* AbilitySystemComponent);
-	void ReconcileTrackedEffectHandles(UAbilitySystemComponent* AbilitySystemComponent);
+	/** Returns assigned slots whose managed effects were externally removed since the last refresh. */
+	TSet<FGameplayTag> ReconcileTrackedEffectHandles(UAbilitySystemComponent* AbilitySystemComponent);
 
 	/** The owner's avatar-presentation implementation, discovered by interface. */
 	IEnclaveAvatarPresentationInterface* GetAvatarPresentation() const;
