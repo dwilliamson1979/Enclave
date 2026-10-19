@@ -47,15 +47,15 @@ UEnclaveEquipmentComponent::UEnclaveEquipmentComponent()
 		Slot.RequiredCapabilities.AddTag(EnclaveGameplayTags::Item_Capability_Wieldable);
 	}
 
-	DefaultReservedDefinition.SlotTag = EnclaveGameplayTags::Equipment_Slot_Default;
-	DefaultReservedDefinition.bCanWield = true;
-	DefaultReservedDefinition.bInWieldCycle = true;
-	DefaultReservedDefinition.RequiredCapabilities.AddTag(EnclaveGameplayTags::Item_Capability_Wieldable);
+	AssignmentState.DefaultReservedDefinition.SlotTag = EnclaveGameplayTags::Equipment_Slot_Default;
+	AssignmentState.DefaultReservedDefinition.bCanWield = true;
+	AssignmentState.DefaultReservedDefinition.bInWieldCycle = true;
+	AssignmentState.DefaultReservedDefinition.RequiredCapabilities.AddTag(EnclaveGameplayTags::Item_Capability_Wieldable);
 
-	StowedReservedDefinition.SlotTag = EnclaveGameplayTags::Equipment_Slot_Stowed;
-	StowedReservedDefinition.bCanWield = true;
-	StowedReservedDefinition.bInWieldCycle = false;
-	StowedReservedDefinition.RequiredCapabilities.AddTag(EnclaveGameplayTags::Item_Capability_Wieldable);
+	AssignmentState.StowedReservedDefinition.SlotTag = EnclaveGameplayTags::Equipment_Slot_Stowed;
+	AssignmentState.StowedReservedDefinition.bCanWield = true;
+	AssignmentState.StowedReservedDefinition.bInWieldCycle = false;
+	AssignmentState.StowedReservedDefinition.RequiredCapabilities.AddTag(EnclaveGameplayTags::Item_Capability_Wieldable);
 }
 
 void UEnclaveEquipmentComponent::InitializeComponent()
@@ -63,7 +63,7 @@ void UEnclaveEquipmentComponent::InitializeComponent()
 	Super::InitializeComponent();
 
 	// Reserved slot policy is independent of ordinary Blueprint slot rows.
-	DefaultReservedDefinition.bInWieldCycle = bDefaultInWieldCycle;
+	AssignmentState.DefaultReservedDefinition.bInWieldCycle = bDefaultInWieldCycle;
 	RebuildInputFilters();
 	ValidateSlotDefinitions();
 }
@@ -174,11 +174,11 @@ const FEnclaveEquipmentSlotDefinition* UEnclaveEquipmentComponent::FindSlotDefin
 	// Stowed's existence does not imply an assigned item.
 	if (SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Default))
 	{
-		return &DefaultReservedDefinition;
+		return &AssignmentState.DefaultReservedDefinition;
 	}
 	if (SlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed))
 	{
-		return &StowedReservedDefinition;
+		return &AssignmentState.StowedReservedDefinition;
 	}
 	return SlotDefinitions.FindByPredicate([SlotTag](const FEnclaveEquipmentSlotDefinition& Definition)
 	{
@@ -235,7 +235,7 @@ void UEnclaveEquipmentComponent::BuildCycleSlotTags(TArray<FGameplayTag>& OutSlo
 		}
 	}
 	// Preserve the original ordinary-slots-then-Default cycle order.
-	if (DefaultReservedDefinition.bInWieldCycle && IsValid(GetItemInSlot(EnclaveGameplayTags::Equipment_Slot_Default)))
+	if (AssignmentState.DefaultReservedDefinition.bInWieldCycle && IsValid(GetItemInSlot(EnclaveGameplayTags::Equipment_Slot_Default)))
 	{
 		OutSlotTags.Add(EnclaveGameplayTags::Equipment_Slot_Default);
 	}
@@ -474,7 +474,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 
 	if (bLeavingStowed)
 	{
-		ReturnSlotTag = FGameplayTag();
+		WieldState.ReturnSlotTag = FGameplayTag();
 	}
 
 	// Actor-level visibility is replicated gameplay state. Equipment owns this
@@ -486,7 +486,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	ApplyWieldedEffects(CurrentWieldedItem);
 
 	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
-	LocallyWieldedItem = CurrentWieldedItem;
+	WieldState.LocallyWieldedItem = CurrentWieldedItem;
 
 	return true;
 }
@@ -510,17 +510,17 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
 
 	CurrentWieldedItem = nullptr;
 	SelectedSlotTag = FGameplayTag();
-	ReturnSlotTag = FGameplayTag();
+	WieldState.ReturnSlotTag = FGameplayTag();
 	UpdateWieldedItemActorVisibility(PreviousItem, nullptr);
 	UpdateWieldedItemPresentation(PreviousItem, nullptr);
-	LocallyWieldedItem.Reset();
+	WieldState.LocallyWieldedItem.Reset();
 	// Do not reset ManagedAbilitySystem here: equipped armor may still have
 	// passive GE handles on this same (PlayerState-owned) ASC. They outlive wielding.
 }
 
 const FGameplayTagContainer& UEnclaveEquipmentComponent::GetInputFilters() const
 {
-	return InputFilters;
+	return WieldState.InputFilters;
 }
 
 EEnclaveInputNetworkPolicy UEnclaveEquipmentComponent::GetInputNetworkPolicy(const FEnclaveInputEvent& InputEvent) const
@@ -600,7 +600,7 @@ bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 	const FEnclaveEquipmentSlotDefinition* SelectedDefinition = FindSlotDefinition(SelectedSlotTag);
 	const bool bSelectedIsInCycle = SelectedDefinition &&
 		(SelectedSlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Default)
-			? DefaultReservedDefinition.bInWieldCycle : SelectedDefinition->bInWieldCycle);
+			? AssignmentState.DefaultReservedDefinition.bInWieldCycle : SelectedDefinition->bInWieldCycle);
 	// Stowed or any other non-cycle selection can enter the one available slot.
 	return bSelectedIsInCycle ? CycleSlots.Num() > 1 : !CycleSlots.IsEmpty();
 }
@@ -615,7 +615,7 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 	if (bRelease)
 	{
 		FGameplayAbilitySpecHandle HeldHandle;
-		if (!HeldItemInputSpecs.RemoveAndCopyValue(InputTag, HeldHandle))
+		if (!WieldState.HeldItemInputSpecs.RemoveAndCopyValue(InputTag, HeldHandle))
 		{
 			return false;
 		}
@@ -634,7 +634,7 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 	// A new Started while this input is tracked means a configured release
 	// event was missed. Release the old spec before handling the new press.
 	FGameplayAbilitySpecHandle StaleHandle;
-	if (HeldItemInputSpecs.RemoveAndCopyValue(InputTag, StaleHandle))
+	if (WieldState.HeldItemInputSpecs.RemoveAndCopyValue(InputTag, StaleHandle))
 	{
 		if (UEnclaveAbilitySystemComponent* StaleASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent()))
 		{
@@ -673,7 +673,7 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 	// Started-only abilities end through their own gameplay lifecycle.
 	if (InputEvent.bRoutesReleaseEvents)
 	{
-		HeldItemInputSpecs.Add(InputTag, SpecHandle);
+		WieldState.HeldItemInputSpecs.Add(InputTag, SpecHandle);
 	}
 	return InputEvent.bRoutesReleaseEvents
 		? ASC->PressAbilityInput(SpecHandle)
@@ -685,12 +685,12 @@ void UEnclaveEquipmentComponent::ReleaseHeldItemInputs()
 	UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent());
 	if (IsValid(ASC))
 	{
-		for (const TPair<FGameplayTag, FGameplayAbilitySpecHandle>& Entry : HeldItemInputSpecs)
+		for (const TPair<FGameplayTag, FGameplayAbilitySpecHandle>& Entry : WieldState.HeldItemInputSpecs)
 		{
 			ASC->ReleaseAbilityInput(Entry.Value);
 		}
 	}
-	HeldItemInputSpecs.Reset();
+	WieldState.HeldItemInputSpecs.Reset();
 }
 
 FGameplayAbilitySpecHandle UEnclaveEquipmentComponent::FindWieldedItemAbilityForInput(const FGameplayTag& InputTag) const
@@ -709,7 +709,7 @@ FGameplayAbilitySpecHandle UEnclaveEquipmentComponent::FindWieldedItemAbilityFor
 
 	// Replaces the Phase 2 "GrantedClasses[0] is the primary action"
 	// shortcut. Reads the ASC's activatable specs rather than
-	// GrantedAbilityHandles: that array is server-only bookkeeping (filled
+	// WieldState.GrantedAbilityHandles: that array is server-only bookkeeping (filled
 	// only where WieldItem's authority check passes), while the specs
 	// themselves - SourceObject and dynamic source tags included -
 	// replicate to the owning client, so this resolves identically on both
@@ -729,24 +729,24 @@ FGameplayAbilitySpecHandle UEnclaveEquipmentComponent::FindWieldedItemAbilityFor
 
 void UEnclaveEquipmentComponent::RebuildInputFilters()
 {
-	InputFilters.Reset();
+	WieldState.InputFilters.Reset();
 
 	if (NextWieldableInputTag.IsValid())
 	{
-		InputFilters.AddTag(NextWieldableInputTag);
+		WieldState.InputFilters.AddTag(NextWieldableInputTag);
 	}
 
 	if (PreviousWieldableInputTag.IsValid())
 	{
-		InputFilters.AddTag(PreviousWieldableInputTag);
+		WieldState.InputFilters.AddTag(PreviousWieldableInputTag);
 	}
 
 	if (ToggleStowedInputTag.IsValid())
 	{
-		InputFilters.AddTag(ToggleStowedInputTag);
+		WieldState.InputFilters.AddTag(ToggleStowedInputTag);
 	}
 
-	InputFilters.AddTag(EnclaveGameplayTags::Input_Item_Action);
+	WieldState.InputFilters.AddTag(EnclaveGameplayTags::Input_Item_Action);
 }
 
 bool UEnclaveEquipmentComponent::HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent)
@@ -798,7 +798,7 @@ bool UEnclaveEquipmentComponent::ToggleStowed()
 	{
 		return false;
 	}
-	ReturnSlotTag = PreviousSlot;
+	WieldState.ReturnSlotTag = PreviousSlot;
 	return true;
 }
 
@@ -813,16 +813,16 @@ bool UEnclaveEquipmentComponent::RestoreStowedSelection()
 
 	// A reassigned slot restores its current occupant. An emptied or destroyed
 	// assignment returns to Default instead. Never select Stowed recursively.
-	if (ReturnSlotTag.IsValid() &&
-		!ReturnSlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed) &&
-		IsValid(GetItemInSlot(ReturnSlotTag)) && SelectSlot(ReturnSlotTag))
+	if (WieldState.ReturnSlotTag.IsValid() &&
+		!WieldState.ReturnSlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed) &&
+		IsValid(GetItemInSlot(WieldState.ReturnSlotTag)) && SelectSlot(WieldState.ReturnSlotTag))
 	{
-		ReturnSlotTag = FGameplayTag();
+		WieldState.ReturnSlotTag = FGameplayTag();
 		return true;
 	}
 	if (SelectSlot(EnclaveGameplayTags::Equipment_Slot_Default))
 	{
-		ReturnSlotTag = FGameplayTag();
+		WieldState.ReturnSlotTag = FGameplayTag();
 		return true;
 	}
 	return false; // Nothing valid to restore; keep Stowed selected.
@@ -845,7 +845,7 @@ bool UEnclaveEquipmentComponent::TryWieldInDirection(int32 Direction)
 	// While Stowed, scroll relative to the saved slot rather than resetting
 	// cycle position. Missing return slots retain the normal directional start.
 	const FGameplayTag CycleAnchor = SelectedSlotTag.MatchesTagExact(EnclaveGameplayTags::Equipment_Slot_Stowed)
-		? ReturnSlotTag : SelectedSlotTag;
+		? WieldState.ReturnSlotTag : SelectedSlotTag;
 	int32 Index = CycleSlots.IndexOfByKey(CycleAnchor);
 	if (Index == INDEX_NONE)
 	{
@@ -1021,7 +1021,7 @@ void UEnclaveEquipmentComponent::BeginCurrentWieldedItemEquipWindow(AEnclaveItem
 		return;
 	}
 
-	CurrentWieldedItemEquipEffectHandle = AppliedHandle;
+	WieldState.CurrentWieldedItemEquipEffectHandle = AppliedHandle;
 }
 
 bool UEnclaveEquipmentComponent::IsCurrentWieldedItemReadyForActions() const
@@ -1038,13 +1038,13 @@ bool UEnclaveEquipmentComponent::IsCurrentWieldedItemReadyForActions() const
 
 void UEnclaveEquipmentComponent::ClearCurrentWieldedItemEquipWindow()
 {
-	if (!CurrentWieldedItemEquipEffectHandle.IsValid())
+	if (!WieldState.CurrentWieldedItemEquipEffectHandle.IsValid())
 	{
 		return;
 	}
 
-	const FActiveGameplayEffectHandle HandleToRemove = CurrentWieldedItemEquipEffectHandle;
-	CurrentWieldedItemEquipEffectHandle.Invalidate();
+	const FActiveGameplayEffectHandle HandleToRemove = WieldState.CurrentWieldedItemEquipEffectHandle;
+	WieldState.CurrentWieldedItemEquipEffectHandle.Invalidate();
 
 	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
 	{
@@ -1134,7 +1134,7 @@ void UEnclaveEquipmentComponent::CancelActiveItemAbilities()
 	// ability specs granted by this Equipment instance so a late teardown from
 	// an old pawn cannot cancel item abilities granted to a newer pawn on the
 	// same persistent ASC.
-	for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
+	for (const FGameplayAbilitySpecHandle& Handle : WieldState.GrantedAbilityHandles)
 	{
 		ASC->CancelAbilityHandle(Handle);
 	}
@@ -1172,7 +1172,7 @@ void UEnclaveEquipmentComponent::GrantAbilitiesForItem(AEnclaveItem* Item)
 		}
 		const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(AbilitySpec);
 
-		GrantedAbilityHandles.Add(Handle);
+		WieldState.GrantedAbilityHandles.Add(Handle);
 	}
 }
 
@@ -1180,13 +1180,13 @@ void UEnclaveEquipmentComponent::RemoveGrantedAbilities()
 {
 	if (UAbilitySystemComponent* ASC = ManagedAbilitySystem.Get())
 	{
-		for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
+		for (const FGameplayAbilitySpecHandle& Handle : WieldState.GrantedAbilityHandles)
 		{
 			ASC->ClearAbility(Handle);
 		}
 	}
 
-	GrantedAbilityHandles.Reset();
+	WieldState.GrantedAbilityHandles.Reset();
 }
 
 void UEnclaveEquipmentComponent::SetManagedAbilitySystem(UAbilitySystemComponent* NewAbilitySystem)
@@ -1200,7 +1200,7 @@ void UEnclaveEquipmentComponent::SetManagedAbilitySystem(UAbilitySystemComponent
 		{
 			if (UEnclaveAbilitySystemComponent* OldEnclaveASC = Cast<UEnclaveAbilitySystemComponent>(OldAbilitySystem))
 			{
-				for (const TPair<FGameplayTag, FGameplayAbilitySpecHandle>& HeldInput : HeldItemInputSpecs)
+				for (const TPair<FGameplayTag, FGameplayAbilitySpecHandle>& HeldInput : WieldState.HeldItemInputSpecs)
 				{
 					OldEnclaveASC->ReleaseAbilityInput(HeldInput.Value);
 				}
@@ -1211,7 +1211,7 @@ void UEnclaveEquipmentComponent::SetManagedAbilitySystem(UAbilitySystemComponent
 			ClearCurrentWieldedItemEquipWindow();
 			RemoveAllEquippedEffects();
 		}
-		HeldItemInputSpecs.Reset();
+		WieldState.HeldItemInputSpecs.Reset();
 		ManagedAbilitySystem = NewAbilitySystem;
 	}
 }
@@ -1226,16 +1226,16 @@ TSet<FGameplayTag> UEnclaveEquipmentComponent::ReconcileTrackedEffectHandles(UAb
 
 	// The ASC is authoritative: recognize externally removed effects at each
 	// eligible refresh. Do not immediately reapply effects during a GAS removal.
-	if (CurrentWieldedItemEquipEffectHandle.IsValid() &&
-		!ASC->GetActiveGameplayEffect(CurrentWieldedItemEquipEffectHandle))
+	if (WieldState.CurrentWieldedItemEquipEffectHandle.IsValid() &&
+		!ASC->GetActiveGameplayEffect(WieldState.CurrentWieldedItemEquipEffectHandle))
 	{
-		CurrentWieldedItemEquipEffectHandle.Invalidate();
+		WieldState.CurrentWieldedItemEquipEffectHandle.Invalidate();
 	}
-	WieldedEffectHandles.RemoveAll([ASC](const FActiveGameplayEffectHandle& Handle)
+	WieldState.WieldedEffectHandles.RemoveAll([ASC](const FActiveGameplayEffectHandle& Handle)
 	{
 		return !ASC->GetActiveGameplayEffect(Handle);
 	});
-	for (TPair<FGameplayTag, FEnclaveEquippedItemEffectState>& Entry : EquippedEffectStates)
+	for (TPair<FGameplayTag, FEnclaveEquippedItemEffectState>& Entry : AssignmentState.EquippedEffectStates)
 	{
 		const int32 Removed = Entry.Value.EffectHandles.RemoveAll([ASC](const FActiveGameplayEffectHandle& Handle)
 		{
@@ -1328,22 +1328,22 @@ void UEnclaveEquipmentComponent::ApplyWieldedEffects(AEnclaveItem* Item)
 {
 	if (IsValid(Item))
 	{
-		ApplyItemEffects(Item, Item->GetEffectsWhileWielded(), TEXT("EffectsWhileWielded"), /*bRequireIndependentInstances=*/false, WieldedEffectHandles);
+		ApplyItemEffects(Item, Item->GetEffectsWhileWielded(), TEXT("EffectsWhileWielded"), /*bRequireIndependentInstances=*/false, WieldState.WieldedEffectHandles);
 	}
 }
 
 void UEnclaveEquipmentComponent::RemoveWieldedEffects()
 {
-	RemoveEffectHandles(WieldedEffectHandles);
+	RemoveEffectHandles(WieldState.WieldedEffectHandles);
 }
 
 void UEnclaveEquipmentComponent::RemoveAllEquippedEffects()
 {
-	for (TPair<FGameplayTag, FEnclaveEquippedItemEffectState>& Entry : EquippedEffectStates)
+	for (TPair<FGameplayTag, FEnclaveEquippedItemEffectState>& Entry : AssignmentState.EquippedEffectStates)
 	{
 		RemoveEffectHandles(Entry.Value.EffectHandles);
 	}
-	EquippedEffectStates.Reset();
+	AssignmentState.EquippedEffectStates.Reset();
 }
 
 void UEnclaveEquipmentComponent::RefreshEquippedEffects()
@@ -1371,7 +1371,7 @@ void UEnclaveEquipmentComponent::RefreshEquippedEffects()
 	// Remove effects before applying replacements. A slot assignment that has
 	// changed occupant, source membership, or validity must never retain the
 	// previous occupant's passive stats.
-	for (auto It = EquippedEffectStates.CreateIterator(); It; ++It)
+	for (auto It = AssignmentState.EquippedEffectStates.CreateIterator(); It; ++It)
 	{
 		const FEnclaveEquipmentSlotAssignment* Assignment = FindSlotAssignment(It.Key());
 		if (!Assignment || !IsAssignmentValid(*Assignment) || Assignment->Item.Get() != It.Value().Item.Get() || SlotsNeedingRefresh.Contains(It.Key()))
@@ -1383,12 +1383,12 @@ void UEnclaveEquipmentComponent::RefreshEquippedEffects()
 
 	for (const FEnclaveEquipmentSlotAssignment& Assignment : SlotAssignments)
 	{
-		if (!IsAssignmentValid(Assignment) || EquippedEffectStates.Contains(Assignment.SlotTag))
+		if (!IsAssignmentValid(Assignment) || AssignmentState.EquippedEffectStates.Contains(Assignment.SlotTag))
 		{
 			continue;
 		}
 		AEnclaveItem* Item = Assignment.Item.Get();
-		FEnclaveEquippedItemEffectState& State = EquippedEffectStates.Add(Assignment.SlotTag);
+		FEnclaveEquippedItemEffectState& State = AssignmentState.EquippedEffectStates.Add(Assignment.SlotTag);
 		State.Item = Item;
 		ApplyItemEffects(Item, Item->GetEffectsWhileEquipped(), TEXT("EffectsWhileEquipped"), /*bRequireIndependentInstances=*/true, State.EffectHandles);
 	}
@@ -1396,8 +1396,8 @@ void UEnclaveEquipmentComponent::RefreshEquippedEffects()
 
 void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()
 {
-	AEnclaveItem* PreviousItem = LocallyWieldedItem.Get();
+	AEnclaveItem* PreviousItem = WieldState.LocallyWieldedItem.Get();
 
 	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
-	LocallyWieldedItem = CurrentWieldedItem;
+	WieldState.LocallyWieldedItem = CurrentWieldedItem;
 }

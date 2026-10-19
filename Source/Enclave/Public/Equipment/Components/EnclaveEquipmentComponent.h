@@ -56,11 +56,39 @@ struct ENCLAVE_API FEnclaveEquipmentSlotAssignment
 	bool bFromItemSource = false;
 };
 
+// Non-reflected, non-replicated runtime state. UObject references here are weak;
+// all GC-visible and replicated references remain UPROPERTYs on the component.
+// These types group ownership only; they do not introduce a second lifecycle.
+
 /** Tracks one validated slot occupant and precisely the passive effects granted for it. */
 struct FEnclaveEquippedItemEffectState
 {
 	TWeakObjectPtr<AEnclaveItem> Item;
 	TArray<FActiveGameplayEffectHandle> EffectHandles;
+};
+
+/** Assignment domain: reserved slot policies and passive effects owned by slot occupants. */
+struct FEnclaveEquipmentAssignmentRuntimeState
+{
+	FEnclaveEquipmentSlotDefinition DefaultReservedDefinition;
+	FEnclaveEquipmentSlotDefinition StowedReservedDefinition;
+
+	// Authority-only effects per assignment, independent of the active wield selection.
+	// Empty-effect entries are retained to avoid reapplying on every reconciliation.
+	TMap<FGameplayTag, FEnclaveEquippedItemEffectState> EquippedEffectStates;
+};
+
+/** Wield domain: transient active-item gameplay; never replicated separately. */
+struct FEnclaveEquipmentWieldRuntimeState
+{
+	// A press retains its resolved ability spec until release, even across a switch.
+	TMap<FGameplayTag, FGameplayAbilitySpecHandle> HeldItemInputSpecs;
+	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
+	TArray<FActiveGameplayEffectHandle> WieldedEffectHandles;
+	FActiveGameplayEffectHandle CurrentWieldedItemEquipEffectHandle;
+	FGameplayTag ReturnSlotTag;
+	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;
+	FGameplayTagContainer InputFilters;
 };
 
 /**
@@ -77,13 +105,14 @@ class ENCLAVE_API UEnclaveEquipmentComponent : public UActorComponent, public IE
 public:
 	UEnclaveEquipmentComponent();
 
-	// UActorComponent
+	// --- UActorComponent: shared lifetime and replication boundary ---
 	virtual void InitializeComponent() override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void UninitializeComponent() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	// --- Assignment domain: source, slot occupancy and passive equipped effects ---
 	/** Explicit, owner-provided source. Does not take ownership of the component. */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Source")
 	bool SetItemSource(UActorComponent* SourceComponent);
@@ -99,9 +128,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Slots")
 	bool ClearSlot(FGameplayTag SlotTag);
 
-	UFUNCTION(BlueprintCallable, Category = "Equipment|Slots")
-	bool SelectSlot(FGameplayTag SlotTag);
-
 	UFUNCTION(BlueprintPure, Category = "Equipment|Slots")
 	AEnclaveItem* GetItemInSlot(FGameplayTag SlotTag) const;
 
@@ -111,19 +137,15 @@ public:
 	 * Called automatically on assignment changes; harmless if the ASC is absent. */
 	void RefreshEquippedEffects();
 
-	/**
-	 * Authority-only teardown of active wielding/selection. Cancels item actions,
-	 * revokes grants, clears equip readiness and presentation. Does not destroy items;
-	 * their lifetime belongs to the item source or an external owner.
-	 */
-	void ClearCurrentWieldedItem();
+	// --- Wield domain: active selection, input, readiness, abilities and presentation ---
+	UFUNCTION(BlueprintCallable, Category = "Equipment|Slots")
+	bool SelectSlot(FGameplayTag SlotTag);
 
+	/** Authority-only teardown of the active wield relationship; does not remove assignments. */
+	void ClearCurrentWieldedItem();
 	AEnclaveItem* GetCurrentWieldedItem() const { return CurrentWieldedItem; }
 
-	/**
-	 * Derived readiness query. GAS is the single source of truth: an item is
-	 * actionable only when one is wielded and State.Item.Equipping is absent.
-	 */
+	/** GAS is the readiness source of truth: State.Item.Equipping blocks item actions. */
 	bool IsCurrentWieldedItemReadyForActions() const;
 
 	// IEnclaveInputHandlerInterface
@@ -135,51 +157,21 @@ public:
 	bool TryWieldPrevious();
 	bool CanCycleWieldables() const;
 
-	/** Server-authoritative toggle; has no effect if Stowed is not configured and assigned. */
+	/** Server-authoritative toggle; has no effect without an assigned Stowed item. */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Stowed")
 	bool ToggleStowed();
 
-	/** Called by an item's Unstow ability on the server. Falls back to Default if return slot is empty. */
+	/** Called by Unstow GAS ability on server; falls back to Default if necessary. */
 	UFUNCTION(BlueprintCallable, Category = "Equipment|Stowed")
 	bool RestoreStowedSelection();
 
 private:
-	/** Selects any normally accessible slot. Stowed requires the dedicated toggle entry path. */
-	bool SelectSlotInternal(FGameplayTag SlotTag, bool bAllowStowed);
-	bool WieldItem(AEnclaveItem* Item);
-	void BuildCycleSlotTags(TArray<FGameplayTag>& OutSlotTags) const;
+	// --- Assignment domain ---
 	void ValidateSlotDefinitions() const;
-	void RebuildInputFilters();
-
-	bool HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent);
-	bool HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleToggleStowedInput(const FEnclaveInputEvent& InputEvent);
-
-	bool HandleItemInput(const FEnclaveInputEvent& InputEvent);
-
-	/** Clears local held-input bookkeeping; revoked specs are safe to release later. */
-	void ReleaseHeldItemInputs();
-
-	/** A press owns its resolved spec until release, even if CurrentWieldedItem changes. */
-	TMap<FGameplayTag, FGameplayAbilitySpecHandle> HeldItemInputSpecs;
-
-	/**
-	 * The granted ability spec (on the owner's ASC) whose SourceObject is
-	 * CurrentWieldedItem and whose dynamic spec source tags contain
-	 * InputTag - i.e. "the ability this item bound to this input". Invalid
-	 * handle if the item granted nothing for InputTag. Works on the owning
-	 * client too: activatable ability specs, including SourceObject and
-	 * dynamic tags, replicate to the owner.
-	 */
-	FGameplayAbilitySpecHandle FindWieldedItemAbilityForInput(const FGameplayTag& InputTag) const;
-
-	bool TryWieldInDirection(int32 Direction);
-	bool IsAvailableWieldable(const AEnclaveItem* Item) const;
 	bool IsAssignmentValid(const FEnclaveEquipmentSlotAssignment& Assignment) const;
 	bool AssignItemToSlot(FGameplayTag SlotTag, AEnclaveItem* Item, bool bFromItemSource);
 	const FEnclaveEquipmentSlotDefinition* FindSlotDefinition(FGameplayTag SlotTag) const;
 	const FEnclaveEquipmentSlotAssignment* FindSlotAssignment(FGameplayTag SlotTag) const;
-	void ReconcileSelectionAfterSlotChange();
 	void UnbindItemSource();
 	void HandleItemSourceChanged();
 
@@ -187,73 +179,78 @@ private:
 	UFUNCTION()
 	void HandleAssignedItemDestroyed(AActor* DestroyedActor);
 
-	void SetManagedAbilitySystem(UAbilitySystemComponent* AbilitySystemComponent);
-	/** Returns assigned slots whose managed effects were externally removed since the last refresh. */
+	/** Return assigned slots whose owned Gameplay Effects disappeared from the ASC. */
 	TSet<FGameplayTag> ReconcileTrackedEffectHandles(UAbilitySystemComponent* AbilitySystemComponent);
+	void RemoveAllEquippedEffects();
+
+	// --- Wield domain ---
+	/** Stowed can only be entered via the dedicated toggle entry path. */
+	bool SelectSlotInternal(FGameplayTag SlotTag, bool bAllowStowed);
+	bool WieldItem(AEnclaveItem* Item);
+	void BuildCycleSlotTags(TArray<FGameplayTag>& OutSlotTags) const;
+	void RebuildInputFilters();
+	bool HandleNextWieldableInput(const FEnclaveInputEvent& InputEvent);
+	bool HandlePreviousWieldableInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleToggleStowedInput(const FEnclaveInputEvent& InputEvent);
+	bool HandleItemInput(const FEnclaveInputEvent& InputEvent);
+	void ReleaseHeldItemInputs();
+
+	/** Find the wielded item's ability spec with the requested dynamic input tag. */
+	FGameplayAbilitySpecHandle FindWieldedItemAbilityForInput(const FGameplayTag& InputTag) const;
+	bool TryWieldInDirection(int32 Direction);
+	bool IsAvailableWieldable(const AEnclaveItem* Item) const;
 
 	/** The owner's avatar-presentation implementation, discovered by interface. */
 	IEnclaveAvatarPresentationInterface* GetAvatarPresentation() const;
-
-	/** Applies authoritative actor visibility for the wield transition. */
 	void UpdateWieldedItemActorVisibility(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
-
-	/** Reports an already-established wielded-item state change to avatar presentation. */
 	void UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
-
-	// Gameplay-authoritative equip window for CurrentWieldedItem. GAS owns both
-	// the clock and the State.Item.Equipping tag that blocks item actions.
 	void BeginCurrentWieldedItemEquipWindow(AEnclaveItem* Item);
 	void ClearCurrentWieldedItemEquipWindow();
-
-	// Ability granting - server-authoritative only, mirrors the existing
-	// authority gating on WieldItem. Clients learn about granted abilities
-	// through the ASC's own replication, not through this path.
-	UAbilitySystemComponent* GetOwnerAbilitySystemComponent() const;
 	void CancelActiveItemAbilities();
 	void GrantAbilitiesForItem(AEnclaveItem* Item);
 	void RemoveGrantedAbilities();
 	void ApplyWieldedEffects(AEnclaveItem* Item);
 	void RemoveWieldedEffects();
+
+	// --- Cross-domain coordination: assignments notify wielding, not vice versa ---
+	/** Called after an assignment disappears; maintains the active-selection invariant. */
+	void ReconcileSelectionAfterSlotChange();
+
+	// --- Shared GAS and owner lifecycle infrastructure ---
+	UAbilitySystemComponent* GetOwnerAbilitySystemComponent() const;
+	void SetManagedAbilitySystem(UAbilitySystemComponent* AbilitySystemComponent);
 	void ApplyItemEffects(AEnclaveItem* Item, const TArray<TSubclassOf<UGameplayEffect>>& EffectClasses,
 		const TCHAR* EffectCategory, bool bRequireIndependentInstances,
 		TArray<FActiveGameplayEffectHandle>& OutHandles);
 	void RemoveEffectHandles(TArray<FActiveGameplayEffectHandle>& Handles);
-	void RemoveAllEquippedEffects();
 
-	/**
-	 * The ASC that owns granted abilities, equip readiness, wielded effects, and
-	 * effects attached to equipped slot assignments.
-	 *
-	 * Stored explicitly because pawn teardown can clear the pawn's PlayerState before
-	 * UninitializeComponent runs. Cleanup must revoke the exact GAS state this
-	 * Equipment instance created without rediscovering the ASC through its owner.
-	 */
+	/** Retained because the PlayerState ASC may outlive the Pawn and its pointers. */
 	TWeakObjectPtr<UAbilitySystemComponent> ManagedAbilitySystem;
+	bool bEquipmentTearingDown = false;
 
-	/** Handles for abilities currently granted for CurrentWieldedItem. Server-only bookkeeping, not replicated. */
-	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
+	// Non-replicated domain state. Replicated fields remain on this component.
+	FEnclaveEquipmentAssignmentRuntimeState AssignmentState;
+	FEnclaveEquipmentWieldRuntimeState WieldState;
 
-	/** Server-only effect handles, owned by this Equipment instance. */
-	TArray<FActiveGameplayEffectHandle> WieldedEffectHandles;
+	// --- Reflected configuration and replicated state ---
+	/** Ordinary slots only (armor, weapons, gadgets), in wield-cycle order.
+	 * Default and Stowed are reserved and must not be authored here. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slots", meta = (AllowPrivateAccess = "true"))
+	TArray<FEnclaveEquipmentSlotDefinition> SlotDefinitions;
 
-	/** Authority-only effects tracked per assignment, independent of CurrentWieldedItem.
-	 * Entries with no authored effects are kept to avoid repeat applications. */
-	TMap<FGameplayTag, FEnclaveEquippedItemEffectState> EquippedEffectStates;
+	/** Default is always wieldable; its participation in cycling is configurable. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Reserved Slots", meta = (AllowPrivateAccess = "true"))
+	bool bDefaultInWieldCycle = true;
 
-	/** Semantic input tag used to request the next available wieldable item. */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
-	FGameplayTag NextWieldableInputTag;
+	/** Replicated slot assignments; item lifetimes remain with their owners. */
+	UPROPERTY(ReplicatedUsing = OnRep_SlotAssignments)
+	TArray<FEnclaveEquipmentSlotAssignment> SlotAssignments;
 
-	/** Semantic input tag used to request the previous available wieldable item. */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
-	FGameplayTag PreviousWieldableInputTag;
+	UFUNCTION()
+	void OnRep_SlotAssignments();
 
-	/** Discrete Equipment command; H key is mapped in the owning InputConfig asset. */
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
-	FGameplayTag ToggleStowedInputTag;
-
-	/** Cached routing filters derived from the configured input tags. */
-	FGameplayTagContainer InputFilters;
+	UPROPERTY(Replicated)
+	FGameplayTag SelectedSlotTag;
 
 	UFUNCTION()
 	void OnRep_CurrentWieldedItem();
@@ -261,43 +258,17 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentWieldedItem)
 	TObjectPtr<AEnclaveItem> CurrentWieldedItem = nullptr;
 
-	/** Authority-only handle for the duration Gameplay Effect that owns the current equip window. */
-	FActiveGameplayEffectHandle CurrentWieldedItemEquipEffectHandle;
-
-	/** The wielded item whose presentation has most recently been reconciled on this machine. */
-	TWeakObjectPtr<AEnclaveItem> LocallyWieldedItem;
-
-	/** Ordinary slots only (armor, weapons, gadgets), in wield-cycle order.
-	 * Default and Stowed are reserved and must not be authored here. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Slots", meta = (AllowPrivateAccess = "true"))
-	TArray<FEnclaveEquipmentSlotDefinition> SlotDefinitions;
-
-	/** Default is a reserved, always-wieldable slot; it may participate in cycling. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Reserved Slots", meta = (AllowPrivateAccess = "true"))
-	bool bDefaultInWieldCycle = true;
-
-	/** Shared runtime definitions for the two reserved slot identities. */
-	FEnclaveEquipmentSlotDefinition DefaultReservedDefinition;
-	FEnclaveEquipmentSlotDefinition StowedReservedDefinition;
-
-	/** Replicated assignment metadata; references do not confer lifetime ownership. */
-	UPROPERTY(ReplicatedUsing = OnRep_SlotAssignments)
-	TArray<FEnclaveEquipmentSlotAssignment> SlotAssignments;
-
-	UFUNCTION()
-	void OnRep_SlotAssignments();
-
-	/** Slot selected for the active wield relationship; cleared by full teardown. */
-	UPROPERTY(Replicated)
-	FGameplayTag SelectedSlotTag;
-
-	/** Authority-only, one-value restore target. Stale/cleared slots fall back to Default. */
-	FGameplayTag ReturnSlotTag;
-
-	/** Guards fallback logic during component/owner shutdown. */
-	bool bEquipmentTearingDown = false;
-
 	/** Explicitly assigned source; never discovered by scanning owner components. */
 	UPROPERTY(Transient)
 	TScriptInterface<IEnclaveItemSourceInterface> ItemSource;
+
+	/** Semantic input tags are designer-configured; cached filters live in WieldState. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
+	FGameplayTag NextWieldableInputTag;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment.Wieldable"))
+	FGameplayTag PreviousWieldableInputTag;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input.Equipment"))
+	FGameplayTag ToggleStowedInputTag;
 };
