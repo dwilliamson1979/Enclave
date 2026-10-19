@@ -83,6 +83,9 @@ struct FEnclaveEquipmentWieldRuntimeState
 {
 	// A press retains its resolved ability spec until release, even across a switch.
 	TMap<FGameplayTag, FGameplayAbilitySpecHandle> HeldItemInputSpecs;
+	// Physical item-action tag -> character semantic tag, pinned until release.
+	// This mapping survives weapon switches so release cannot target the new item.
+	TMap<FGameplayTag, FGameplayTag> HeldCharacterInputTags;
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 	TArray<FActiveGameplayEffectHandle> WieldedEffectHandles;
 	FActiveGameplayEffectHandle CurrentWieldedItemEquipEffectHandle;
@@ -194,6 +197,8 @@ private:
 	bool HandleToggleStowedInput(const FEnclaveInputEvent& InputEvent);
 	bool HandleItemInput(const FEnclaveInputEvent& InputEvent);
 	void ReleaseHeldItemInputs();
+	void ReleaseHeldCharacterInputs();
+	void ForwardCharacterActionInput(const FEnclaveInputEvent& InputEvent, const FGameplayTag& CharacterInputTag) const;
 
 	/** Find the wielded item's ability spec with the requested dynamic input tag. */
 	FGameplayAbilitySpecHandle FindWieldedItemAbilityForInput(const FGameplayTag& InputTag) const;

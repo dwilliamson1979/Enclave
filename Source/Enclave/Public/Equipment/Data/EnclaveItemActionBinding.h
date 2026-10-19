@@ -21,7 +21,7 @@ enum class EEnclaveItemActionBindingMode : uint8
  *
  * ItemAbility: resolve the matching item-granted ability spec as before.
  * CharacterFallback: reserve the slot for a character-owned ability; the
- *                    dispatch and held-input lifecycle arrive in later phases.
+ *                    character-side GAS grants are introduced in Phase 4B.
  * Suppressed: consume this slot intentionally without activating an ability.
  */
 USTRUCT(BlueprintType)
@@ -36,7 +36,7 @@ struct ENCLAVE_API FEnclaveItemActionBinding
 	EEnclaveItemActionBindingMode Mode = EEnclaveItemActionBindingMode::ItemAbility;
 
 	/** Target semantic character command (e.g. Input.Avatar.Aim) for CharacterFallback.
-	 * Used by the future character ability dispatcher; not activated in Phase 1.
+	 * Equipment forwards this tag to the owner-side character-action receiver.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (Categories = "Input", EditCondition = "Mode == EEnclaveItemActionBindingMode::CharacterFallback", EditConditionHides))
 	FGameplayTag CharacterInputTag;

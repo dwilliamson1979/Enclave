@@ -8,6 +8,7 @@
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
 #include "Input/Interfaces/EnclaveAvatarInputPolicyInterface.h"
+#include "Input/Interfaces/EnclaveCharacterActionReceiverInterface.h"
 #include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Collision/EnclaveCollisionChannels.h"
@@ -42,7 +43,7 @@ struct FEnclaveStartingSlottedItem
 };
 
 UCLASS()
-class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
+class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveCharacterActionReceiverInterface, public IEnclaveAnimDataProviderInterface
 {
 	GENERATED_BODY()
 
@@ -77,6 +78,15 @@ public:
 
 	// IEnclaveAvatarInputPolicyInterface
 	virtual bool CanProcessAvatarInput(const FEnclaveInputEvent& InputEvent) const override;
+
+	// IEnclaveCharacterActionReceiverInterface: Equipment forwards only explicit CharacterFallback bindings.
+	virtual void HandleCharacterActionInput(const FEnclaveInputEvent& InputEvent) override;
+
+	/** Phase 4A routing seam. Phase 4B will resolve character-owned GAS abilities here.
+	 * A Blueprint can temporarily use this event to verify Started/Completed/Canceled
+	 * delivery; do not implement authoritative gameplay directly in this hook. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Input|Character", meta = (DisplayName = "On Character Action Input"))
+	void ReceiveCharacterActionInput(const FEnclaveInputEvent& InputEvent);
 
 	// IEnclaveAnimDataProviderInterface
 	virtual FEnclaveAnimData GetAnimData() const override;

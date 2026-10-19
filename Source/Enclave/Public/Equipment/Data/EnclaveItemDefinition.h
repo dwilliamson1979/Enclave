@@ -105,7 +105,7 @@ private:
 
 	/** Optional contextual slot overrides. Omitted slots retain existing item-grant behavior.
 	 * Use each InputTag at most once; duplicate entries are ambiguous and the first wins.
-	 * CharacterFallback is a declaration only until character-action routing is added.
+	 * CharacterFallback forwards semantic input to the owner-side receiver.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Abilities", meta = (AllowPrivateAccess = "true", TitleProperty = "InputTag"))
 	TArray<FEnclaveItemActionBinding> ActionBindings;

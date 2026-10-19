@@ -509,6 +509,13 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 	}
 }
 
+void AEnclaveCharacter::HandleCharacterActionInput(const FEnclaveInputEvent& InputEvent)
+{
+	// Phase 4A proves owner-side routing. Phase 4B will add character-owned
+	// GAS grant/spec lookup and press/release dispatch at this boundary.
+	ReceiveCharacterActionInput(InputEvent);
+}
+
 bool AEnclaveCharacter::CanProcessAvatarInput(const FEnclaveInputEvent& InputEvent) const
 {
 	if (!InputEvent.IsValid())
