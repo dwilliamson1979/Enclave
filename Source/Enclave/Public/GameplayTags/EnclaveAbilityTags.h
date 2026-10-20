@@ -15,6 +15,8 @@ namespace EnclaveGameplayTags
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Item_Fire);
 	/** Wielded-item reload action. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Item_Reload);
+	/** Wielded-item Focus (ADS/binoculars) action. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Item_Focus);
 
 	/** Set-by-caller magnitude tag used by the generic Enclave damage GameplayEffect. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
@@ -38,6 +40,8 @@ namespace EnclaveGameplayTags
 	 * ability-tag relationship owns the rule that Fire cannot begin during Reload.
 	 */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Reloading);
+	/** Granted for the lifetime of the current item's Focus ability. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Aiming);
 
 	/** Granted by the authoritative equip-window Gameplay Effect while the current wield relationship is not ready for item actions. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Equipping);
