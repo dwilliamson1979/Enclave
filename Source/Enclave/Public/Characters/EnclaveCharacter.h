@@ -13,6 +13,8 @@
 #include "Components/SkinnedMeshComponent.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "GameplayTagContainer.h"
+#include "GameplayAbilitySpecHandle.h"
+#include "Abilities/EnclaveCharacterAbilityGrant.h"
 #include "EnclaveCharacter.generated.h"
 
 class UCameraComponent;
@@ -82,9 +84,8 @@ public:
 	// IEnclaveCharacterActionReceiverInterface: Equipment forwards only explicit CharacterFallback bindings.
 	virtual void HandleCharacterActionInput(const FEnclaveInputEvent& InputEvent) override;
 
-	/** Phase 4A routing seam. Phase 4B will resolve character-owned GAS abilities here.
-	 * A Blueprint can temporarily use this event to verify Started/Completed/Canceled
-	 * delivery; do not implement authoritative gameplay directly in this hook. */
+	/** Owner-client diagnostic hook only. Phase 4B now also routes the same input
+	 * to avatar-owned GAS abilities; never implement authoritative gameplay here. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Input|Character", meta = (DisplayName = "On Character Action Input"))
 	void ReceiveCharacterActionInput(const FEnclaveInputEvent& InputEvent);
 
@@ -105,6 +106,12 @@ private:
 
 	/** Initializes all avatar components that opt into the ASC-consumer contract. */
 	void InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent);
+
+    // Character-owned grants (not Equipment grants). SourceObject is this avatar.
+    void GrantCharacterAbilities(UAbilitySystemComponent* AbilitySystemComponent);
+    void RevokeCharacterAbilities();
+    FGameplayAbilitySpecHandle FindCharacterAbilityForInput(const FGameplayTag& InputTag) const;
+    void ReleaseHeldCharacterAbilityInputs();
 
 	/** Removes ASC bindings from all avatar components currently consuming it. */
 	void UninitializeAbilitySystemConsumers();
@@ -140,6 +147,16 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInputConfig> InputConfig = nullptr;
+
+    /** Avatar-lifetime character actions. Server grants on ASC binding; ability specs
+     * replicate to the owning client. Independent of weapon transitions. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Character", meta = (AllowPrivateAccess = "true"))
+    TArray<FEnclaveCharacterAbilityGrant> CharacterAbilityGrants;
+
+    // Server-only grant ownership. Client resolves replicated spec handles via SourceObject.
+    TArray<FGameplayAbilitySpecHandle> GrantedCharacterAbilityHandles;
+    // Semantic character input -> original spec, retained until Completed/Canceled.
+    TMap<FGameplayTag, FGameplayAbilitySpecHandle> HeldCharacterAbilityInputSpecs;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInventoryComponent> InventoryComp = nullptr;

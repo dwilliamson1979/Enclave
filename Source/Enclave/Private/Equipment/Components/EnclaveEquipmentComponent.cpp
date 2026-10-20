@@ -460,6 +460,17 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	// ability identity; Equipment knows no concrete Fire/Reload/etc. classes.
 	CancelActiveItemAbilities();
 
+    // Character Aim is granted for the avatar lifetime, not by Equipment.
+    // Interrupt ONLY its running instance on an actual wield change, including
+    // zero-duration transitions (where no equip-window GE is ever applied).
+    // Input ownership remains pinned by Phase 4A until physical release.
+    if (UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent())
+    {
+        FGameplayTagContainer CancelAimTags;
+        CancelAimTags.AddTag(EnclaveGameplayTags::Ability_Type_Action_Character_Aim);
+        ASC->CancelAbilities(&CancelAimTags);
+    }
+
 	// Authority owns the gameplay transition. Presentation is notified only
 	// after the authoritative equipment state has been committed and cannot
 	// reject or roll it back.

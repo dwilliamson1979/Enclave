@@ -32,6 +32,10 @@ UEnclaveGE_ItemEquipping::UEnclaveGE_ItemEquipping()
 	UBlockAbilityTagsGameplayEffectComponent* BlockItemActionsComponent = CreateDefaultSubobject<UBlockAbilityTagsGameplayEffectComponent>(TEXT("BlockItemActions"));
 	FInheritedTagContainer BlockedAbilityTags;
 	BlockedAbilityTags.AddTag(EnclaveGameplayTags::Ability_Type_Action_Item);
+	// During the nonzero equip window, Character Aim cannot reactivate.
+	// Cancellation of an already active Aim is done on the wield transition,
+	// including zero-duration transitions with no equip-window GE.
+	BlockedAbilityTags.AddTag(EnclaveGameplayTags::Ability_Type_Action_Character_Aim);
 	BlockItemActionsComponent->SetAndApplyBlockedAbilityTagChanges(BlockedAbilityTags);
 	GEComponents.Add(BlockItemActionsComponent);
 }
