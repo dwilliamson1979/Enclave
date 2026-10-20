@@ -8,7 +8,6 @@ namespace EnclaveGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Type_Action_Item, "Ability.Type.Action.Item");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Type_Action_Item_Fire, "Ability.Type.Action.Item.Fire");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Type_Action_Item_Reload, "Ability.Type.Action.Item.Reload");
-	UE_DEFINE_GAMEPLAY_TAG(Ability_Type_Action_Character, "Ability.Type.Action.Character");
 	UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 	UE_DEFINE_GAMEPLAY_TAG(Data_Item_EquipDuration, "Data.Item.EquipDuration");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Item, "Cooldown.Item", "Root for cooldown channels owned by item-supplied gameplay.");

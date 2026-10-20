@@ -15,8 +15,6 @@ namespace EnclaveGameplayTags
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Item_Fire);
 	/** Wielded-item reload action. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Item_Reload);
-	/** Actions granted by the avatar independently of Equipment. */
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Character);
 
 	/** Set-by-caller magnitude tag used by the generic Enclave damage GameplayEffect. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);

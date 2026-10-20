@@ -10,8 +10,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 
 #include "AbilitySystemComponent.h"
-#include "Abilities/EnclaveAbilitySystemComponent.h"
-#include "GameplayTags/EnclaveAbilityTags.h"
 #include "Abilities/Effects/EnclaveGameplayEffectScopePolicy.h"
 #include "Abilities/Interfaces/EnclaveAbilitySystemConsumerInterface.h"
 #include "Player/EnclavePlayerState.h"
@@ -296,11 +294,6 @@ void AEnclaveCharacter::InitializeAbilityActorInfo()
 	UninitializeAbilitySystemConsumers();
 	CachedAbilitySystemComponent = ASC;
 	InitializeAbilitySystemConsumers(ASC);
-    // GiveAbility is server-only; owner-client specs arrive via ASC replication.
-    if (HasAuthority())
-    {
-        GrantCharacterAbilities(ASC);
-    }
 	if (IsValid(EquipmentComp) && HasAuthority())
 	{
 		EquipmentComp->RefreshEquippedEffects();
@@ -344,7 +337,6 @@ void AEnclaveCharacter::InitializeAbilitySystemConsumers(UAbilitySystemComponent
 
 void AEnclaveCharacter::UninitializeAbilitySystemConsumers()
 {
-    RevokeCharacterAbilities();
 	const TArray<UActorComponent*> Consumers = GetComponentsByInterface(UEnclaveAbilitySystemConsumerInterface::StaticClass());
 
 	for (UActorComponent* Component : Consumers)
@@ -516,44 +508,6 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 		InputRouterComp->RouteInput(InputEvent);
 	}
 }
-
-void AEnclaveCharacter::GrantCharacterAbilities(UAbilitySystemComponent* AbilitySystemComponent)
-{
-    if (!HasAuthority() || !IsValid(AbilitySystemComponent) || !GrantedCharacterAbilityHandles.IsEmpty())
-    {
-        return;
-    }
-
-    for (const FEnclaveCharacterAbilityGrant& Grant : CharacterAbilityGrants)
-    {
-        if (!Grant.AbilityClass)
-        {
-            continue;
-        }
-        FGameplayAbilitySpec Spec(Grant.AbilityClass, 1, INDEX_NONE, this);
-        if (Grant.InputTag.IsValid())
-        {
-            Spec.GetDynamicSpecSourceTags().AddTag(Grant.InputTag);
-        }
-        GrantedCharacterAbilityHandles.Add(AbilitySystemComponent->GiveAbility(Spec));
-    }
-}
-
-void AEnclaveCharacter::RevokeCharacterAbilities()
-{
-    // Use the retained binding; the PlayerState ASC can outlive this pawn.
-    UAbilitySystemComponent* ASC = CachedAbilitySystemComponent.Get();
-    if (HasAuthority() && IsValid(ASC))
-    {
-        for (const FGameplayAbilitySpecHandle& Handle : GrantedCharacterAbilityHandles)
-        {
-            ASC->CancelAbilityHandle(Handle);
-            ASC->ClearAbility(Handle);
-        }
-    }
-    GrantedCharacterAbilityHandles.Reset();
-}
-
 
 bool AEnclaveCharacter::CanProcessAvatarInput(const FEnclaveInputEvent& InputEvent) const
 {

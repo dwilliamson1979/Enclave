@@ -12,8 +12,6 @@
 #include "Components/SkinnedMeshComponent.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "GameplayTagContainer.h"
-#include "GameplayAbilitySpecHandle.h"
-#include "Abilities/EnclaveCharacterAbilityGrant.h"
 #include "EnclaveCharacter.generated.h"
 
 class UCameraComponent;
@@ -98,10 +96,6 @@ private:
 	/** Initializes all avatar components that opt into the ASC-consumer contract. */
 	void InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent);
 
-    // Character-owned grants (not Equipment grants). SourceObject is this avatar.
-    void GrantCharacterAbilities(UAbilitySystemComponent* AbilitySystemComponent);
-    void RevokeCharacterAbilities();
-
 	/** Removes ASC bindings from all avatar components currently consuming it. */
 	void UninitializeAbilitySystemConsumers();
 
@@ -136,14 +130,6 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInputConfig> InputConfig = nullptr;
-
-    /** Avatar-lifetime character actions. Server grants on ASC binding; ability specs
-     * replicate to the owning client. Independent of weapon transitions. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Character", meta = (AllowPrivateAccess = "true"))
-    TArray<FEnclaveCharacterAbilityGrant> CharacterAbilityGrants;
-
-    // Server-only handles for avatar-owned abilities, independent of Equipment.
-    TArray<FGameplayAbilitySpecHandle> GrantedCharacterAbilityHandles;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInventoryComponent> InventoryComp = nullptr;
