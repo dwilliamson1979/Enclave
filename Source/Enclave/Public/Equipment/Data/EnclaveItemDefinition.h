@@ -6,7 +6,6 @@
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/EnclaveAbilityGrant.h"
-#include "Equipment/Data/EnclaveItemActionBinding.h"
 #include "EnclaveItemDefinition.generated.h"
 
 class USkeletalMesh;
@@ -37,9 +36,6 @@ public:
 	const TArray<FEnclaveAbilityGrant>& GetAbilityGrants() const { return AbilityGrants; }
 	const TArray<TSubclassOf<UGameplayEffect>>& GetEffectsWhileWielded() const { return EffectsWhileWielded; }
 	const TArray<TSubclassOf<UGameplayEffect>>& GetEffectsWhileEquipped() const { return EffectsWhileEquipped; }
-
-	/** Returns an explicit action-slot override, or nullptr for legacy grant-based resolution. */
-	const FEnclaveItemActionBinding* FindActionBinding(const FGameplayTag& InputTag) const;
 
 protected:
 	void SetItemType(const FGameplayTag& TypeTag) { ItemType = TypeTag; }
@@ -102,11 +98,4 @@ private:
 	 * selects another wieldable. Equipment owns and removes the applied handles. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Effects", meta = (AllowPrivateAccess = "true"))
 	TArray<TSubclassOf<UGameplayEffect>> EffectsWhileEquipped;
-
-	/** Optional contextual slot overrides. Omitted slots retain existing item-grant behavior.
-	 * Use each InputTag at most once; duplicate entries are ambiguous and the first wins.
-	 * CharacterFallback forwards semantic input to the owner-side receiver.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Abilities", meta = (AllowPrivateAccess = "true", TitleProperty = "InputTag"))
-	TArray<FEnclaveItemActionBinding> ActionBindings;
 };

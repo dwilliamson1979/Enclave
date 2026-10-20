@@ -8,7 +8,6 @@
 #include "Input/Interfaces/EnclaveInputReceiverInterface.h"
 #include "Input/Interfaces/EnclaveInputConfigProviderInterface.h"
 #include "Input/Interfaces/EnclaveAvatarInputPolicyInterface.h"
-#include "Input/Interfaces/EnclaveCharacterActionReceiverInterface.h"
 #include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Collision/EnclaveCollisionChannels.h"
@@ -45,7 +44,7 @@ struct FEnclaveStartingSlottedItem
 };
 
 UCLASS()
-class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveCharacterActionReceiverInterface, public IEnclaveAnimDataProviderInterface
+class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
 {
 	GENERATED_BODY()
 
@@ -81,14 +80,6 @@ public:
 	// IEnclaveAvatarInputPolicyInterface
 	virtual bool CanProcessAvatarInput(const FEnclaveInputEvent& InputEvent) const override;
 
-	// IEnclaveCharacterActionReceiverInterface: Equipment forwards only explicit CharacterFallback bindings.
-	virtual void HandleCharacterActionInput(const FEnclaveInputEvent& InputEvent) override;
-
-	/** Owner-client diagnostic hook only. Phase 4B now also routes the same input
-	 * to avatar-owned GAS abilities; never implement authoritative gameplay here. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Input|Character", meta = (DisplayName = "On Character Action Input"))
-	void ReceiveCharacterActionInput(const FEnclaveInputEvent& InputEvent);
-
 	// IEnclaveAnimDataProviderInterface
 	virtual FEnclaveAnimData GetAnimData() const override;
 
@@ -110,8 +101,6 @@ private:
     // Character-owned grants (not Equipment grants). SourceObject is this avatar.
     void GrantCharacterAbilities(UAbilitySystemComponent* AbilitySystemComponent);
     void RevokeCharacterAbilities();
-    FGameplayAbilitySpecHandle FindCharacterAbilityForInput(const FGameplayTag& InputTag) const;
-    void ReleaseHeldCharacterAbilityInputs();
 
 	/** Removes ASC bindings from all avatar components currently consuming it. */
 	void UninitializeAbilitySystemConsumers();
@@ -153,10 +142,8 @@ private:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Character", meta = (AllowPrivateAccess = "true"))
     TArray<FEnclaveCharacterAbilityGrant> CharacterAbilityGrants;
 
-    // Server-only grant ownership. Client resolves replicated spec handles via SourceObject.
+    // Server-only handles for avatar-owned abilities, independent of Equipment.
     TArray<FGameplayAbilitySpecHandle> GrantedCharacterAbilityHandles;
-    // Semantic character input -> original spec, retained until Completed/Canceled.
-    TMap<FGameplayTag, FGameplayAbilitySpecHandle> HeldCharacterAbilityInputSpecs;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveInventoryComponent> InventoryComp = nullptr;

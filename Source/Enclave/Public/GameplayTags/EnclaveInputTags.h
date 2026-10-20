@@ -23,7 +23,6 @@ namespace EnclaveGameplayTags
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Avatar_Jump);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Avatar_Crouch);
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Avatar_Sprint);
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Avatar_Aim);
 
 	// ---------------------------------------------------------------------
 	// Input - Item Actions

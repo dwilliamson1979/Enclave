@@ -344,7 +344,6 @@ void AEnclaveCharacter::InitializeAbilitySystemConsumers(UAbilitySystemComponent
 
 void AEnclaveCharacter::UninitializeAbilitySystemConsumers()
 {
-    ReleaseHeldCharacterAbilityInputs();
     RevokeCharacterAbilities();
 	const TArray<UActorComponent*> Consumers = GetComponentsByInterface(UEnclaveAbilitySystemConsumerInterface::StaticClass());
 
@@ -518,56 +517,6 @@ void AEnclaveCharacter::ProcessInput(const FEnclaveInputEvent& InputEvent)
 	}
 }
 
-void AEnclaveCharacter::HandleCharacterActionInput(const FEnclaveInputEvent& InputEvent)
-{
-    // The Blueprint event is diagnostic only; GAS owns prediction and gameplay.
-    ReceiveCharacterActionInput(InputEvent);
-    if (!InputEvent.IsValid())
-    {
-        return;
-    }
-
-    UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetAbilitySystemComponent());
-    const FGameplayTag InputTag = InputEvent.InputTag;
-    const bool bRelease = InputEvent.TriggerEvent == ETriggerEvent::Completed ||
-        InputEvent.TriggerEvent == ETriggerEvent::Canceled;
-    if (bRelease)
-    {
-        FGameplayAbilitySpecHandle HeldHandle;
-        if (HeldCharacterAbilityInputSpecs.RemoveAndCopyValue(InputTag, HeldHandle) && IsValid(ASC))
-        {
-            ASC->ReleaseAbilityInput(HeldHandle);
-        }
-        return;
-    }
-    if (InputEvent.TriggerEvent != ETriggerEvent::Started)
-    {
-        return;
-    }
-
-    // Recover a missed release without rerouting the old ability to a new spec.
-    FGameplayAbilitySpecHandle PreviousHandle;
-    if (HeldCharacterAbilityInputSpecs.RemoveAndCopyValue(InputTag, PreviousHandle) && IsValid(ASC))
-    {
-        ASC->ReleaseAbilityInput(PreviousHandle);
-    }
-
-    const FGameplayAbilitySpecHandle Handle = FindCharacterAbilityForInput(InputTag);
-    if (!Handle.IsValid() || !IsValid(ASC))
-    {
-        return; // Explicit fallback ownership does not depend on GAS success.
-    }
-    if (InputEvent.bRoutesReleaseEvents)
-    {
-        HeldCharacterAbilityInputSpecs.Add(InputTag, Handle);
-        ASC->PressAbilityInput(Handle);
-    }
-    else
-    {
-        ASC->ActivateAbilityFromInput(Handle);
-    }
-}
-
 void AEnclaveCharacter::GrantCharacterAbilities(UAbilitySystemComponent* AbilitySystemComponent)
 {
     if (!HasAuthority() || !IsValid(AbilitySystemComponent) || !GrantedCharacterAbilityHandles.IsEmpty())
@@ -605,34 +554,6 @@ void AEnclaveCharacter::RevokeCharacterAbilities()
     GrantedCharacterAbilityHandles.Reset();
 }
 
-FGameplayAbilitySpecHandle AEnclaveCharacter::FindCharacterAbilityForInput(const FGameplayTag& InputTag) const
-{
-    const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
-    if (!InputTag.IsValid() || !IsValid(ASC))
-    {
-        return FGameplayAbilitySpecHandle();
-    }
-    for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-    {
-        if (Spec.SourceObject.Get() == this && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
-        {
-            return Spec.Handle;
-        }
-    }
-    return FGameplayAbilitySpecHandle();
-}
-
-void AEnclaveCharacter::ReleaseHeldCharacterAbilityInputs()
-{
-    if (UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
-    {
-        for (const TPair<FGameplayTag, FGameplayAbilitySpecHandle>& Entry : HeldCharacterAbilityInputSpecs)
-        {
-            ASC->ReleaseAbilityInput(Entry.Value);
-        }
-    }
-    HeldCharacterAbilityInputSpecs.Reset();
-}
 
 bool AEnclaveCharacter::CanProcessAvatarInput(const FEnclaveInputEvent& InputEvent) const
 {

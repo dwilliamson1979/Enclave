@@ -14,7 +14,6 @@ namespace EnclaveGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Jump, "Input.Avatar.Jump", "Jump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Crouch, "Input.Avatar.Crouch", "Crouch input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Sprint, "Input.Avatar.Sprint", "Sprint input.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Avatar_Aim, "Input.Avatar.Aim", "Aim input.");
 
 	// Input ItemActions
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Input_Item, "Input.Item", "Root tag for currently equipped item input.");

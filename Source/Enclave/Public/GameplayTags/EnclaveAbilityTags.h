@@ -17,8 +17,6 @@ namespace EnclaveGameplayTags
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Item_Reload);
 	/** Actions granted by the avatar independently of Equipment. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Character);
-	/** Character-owned hold-to-aim; canceled by any actual wield change. */
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Action_Character_Aim);
 
 	/** Set-by-caller magnitude tag used by the generic Enclave damage GameplayEffect. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
@@ -45,8 +43,6 @@ namespace EnclaveGameplayTags
 
 	/** Granted by the authoritative equip-window Gameplay Effect while the current wield relationship is not ready for item actions. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Equipping);
-	/** Observable GAS state while the character Aim ability is active. */
-	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Aiming);
 
 	/** Granted while the current avatar is in the Dead lifecycle state. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Lifecycle_Dead);

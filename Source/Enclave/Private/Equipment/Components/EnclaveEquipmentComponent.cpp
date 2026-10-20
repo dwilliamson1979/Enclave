@@ -8,7 +8,6 @@
 #include "Equipment/Items/EnclaveItem.h"
 #include "Equipment/Data/EnclaveItemDefinition.h"
 #include "GameplayTags/EnclaveInputTags.h"
-#include "Input/Interfaces/EnclaveCharacterActionReceiverInterface.h"
 #include "GameplayTags/EnclaveItemTags.h"
 #include "GameplayTags/EnclavePresentationTags.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
@@ -78,7 +77,6 @@ void UEnclaveEquipmentComponent::BeginPlay()
 void UEnclaveEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEquipmentTearingDown = true;
-	ReleaseHeldCharacterInputs();
 	// EndPlay may precede UninitializeComponent. Release slot-owned GAS state
 	// before the pawn and its PlayerState-owned ASC become separated.
 	if (GetOwner() && GetOwner()->HasAuthority())
@@ -91,7 +89,6 @@ void UEnclaveEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 void UEnclaveEquipmentComponent::UninitializeComponent()
 {
 	bEquipmentTearingDown = true;
-	ReleaseHeldCharacterInputs();
 	ReleaseHeldItemInputs();
 	AActor* OwnerActor = GetOwner();
 
@@ -460,17 +457,6 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	// ability identity; Equipment knows no concrete Fire/Reload/etc. classes.
 	CancelActiveItemAbilities();
 
-    // Character Aim is granted for the avatar lifetime, not by Equipment.
-    // Interrupt ONLY its running instance on an actual wield change, including
-    // zero-duration transitions (where no equip-window GE is ever applied).
-    // Input ownership remains pinned by Phase 4A until physical release.
-    if (UAbilitySystemComponent* ASC = GetOwnerAbilitySystemComponent())
-    {
-        FGameplayTagContainer CancelAimTags;
-        CancelAimTags.AddTag(EnclaveGameplayTags::Ability_Type_Action_Character_Aim);
-        ASC->CancelAbilities(&CancelAimTags);
-    }
-
 	// Authority owns the gameplay transition. Presentation is notified only
 	// after the authoritative equipment state has been committed and cannot
 	// reject or roll it back.
@@ -622,92 +608,46 @@ bool UEnclaveEquipmentComponent::CanCycleWieldables() const
 bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& InputEvent)
 {
 	const FGameplayTag& InputTag = InputEvent.InputTag;
-	const bool bRelease = InputEvent.TriggerEvent == ETriggerEvent::Completed || InputEvent.TriggerEvent == ETriggerEvent::Canceled;
+	const bool bRelease = InputEvent.TriggerEvent == ETriggerEvent::Completed ||
+		InputEvent.TriggerEvent == ETriggerEvent::Canceled;
 
-	// A release belongs to the ORIGINAL consumer, even when the weapon was
-	// switched or its contextual binding changed during the hold.
+	// An item-action input belongs to Equipment even when the current item
+	// grants no ability. An unbound action is a deliberate no-op, never an
+	// invitation to route the same physical input to an avatar action.
 	if (bRelease)
 	{
-		FGameplayTag HeldCharacterTag;
-		if (WieldState.HeldCharacterInputTags.RemoveAndCopyValue(InputTag, HeldCharacterTag))
-		{
-			ForwardCharacterActionInput(InputEvent, HeldCharacterTag);
-			return true;
-		}
-
 		FGameplayAbilitySpecHandle HeldHandle;
-		if (!WieldState.HeldItemInputSpecs.RemoveAndCopyValue(InputTag, HeldHandle))
+		if (WieldState.HeldItemInputSpecs.RemoveAndCopyValue(InputTag, HeldHandle))
 		{
-			return false;
-		}
-		if (UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent()))
-		{
-			ASC->ReleaseAbilityInput(HeldHandle);
+			if (UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent()))
+			{
+				ASC->ReleaseAbilityInput(HeldHandle);
+			}
 		}
 		return true;
 	}
 
 	if (InputEvent.TriggerEvent != ETriggerEvent::Started)
 	{
-		return false;
+		return true;
 	}
 
-	// Recover a missing release BEFORE resolving the new Started. This also
-	// handles a change from character-owned to item-owned routing (or vice versa).
-	FGameplayTag StaleCharacterTag;
-	if (WieldState.HeldCharacterInputTags.RemoveAndCopyValue(InputTag, StaleCharacterTag))
-	{
-		FEnclaveInputEvent CancelEvent = InputEvent;
-		CancelEvent.TriggerEvent = ETriggerEvent::Canceled;
-		ForwardCharacterActionInput(CancelEvent, StaleCharacterTag);
-	}
-	FGameplayAbilitySpecHandle StaleItemHandle;
-	if (WieldState.HeldItemInputSpecs.RemoveAndCopyValue(InputTag, StaleItemHandle))
+	// Recover a missing release before resolving the new Started event.
+	FGameplayAbilitySpecHandle StaleHandle;
+	if (WieldState.HeldItemInputSpecs.RemoveAndCopyValue(InputTag, StaleHandle))
 	{
 		if (UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent()))
 		{
-			ASC->ReleaseAbilityInput(StaleItemHandle);
+			ASC->ReleaseAbilityInput(StaleHandle);
 		}
 	}
 
-	// Binding policy determines ownership, NOT whether GAS activation succeeds.
-	// An explicitly item-owned input never falls through to a character action
-	// merely because Fire is blocked by cooldown, readiness or another tag.
-	const UEnclaveItemDefinition* Definition = IsValid(CurrentWieldedItem) ? CurrentWieldedItem->GetItemDefinition() : nullptr;
-	const FEnclaveItemActionBinding* Binding = IsValid(Definition) ? Definition->FindActionBinding(InputTag) : nullptr;
-	if (Binding)
-	{
-		switch (Binding->Mode)
-		{
-		case EEnclaveItemActionBindingMode::Suppressed:
-			return true;
-		case EEnclaveItemActionBindingMode::CharacterFallback:
-			if (!Binding->CharacterInputTag.IsValid())
-			{
-				UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: CharacterFallback for %s has no CharacterInputTag on item %s."),
-					*GetNameSafe(GetOwner()), *InputTag.ToString(), *GetNameSafe(CurrentWieldedItem));
-				return true; // Misconfiguration must never fire another item action.
-			}
-			if (InputEvent.bRoutesReleaseEvents)
-			{
-				WieldState.HeldCharacterInputTags.Add(InputTag, Binding->CharacterInputTag);
-			}
-			ForwardCharacterActionInput(InputEvent, Binding->CharacterInputTag);
-			return true;
-		case EEnclaveItemActionBindingMode::ItemAbility:
-			break;
-		default:
-			return true;
-		}
-	}
-
+	// Ability-grant input tags are the single source of item-action bindings.
 	const FGameplayAbilitySpecHandle SpecHandle = FindWieldedItemAbilityForInput(InputTag);
 	UEnclaveAbilitySystemComponent* ASC = Cast<UEnclaveAbilitySystemComponent>(GetOwnerAbilitySystemComponent());
 	if (!SpecHandle.IsValid() || !IsValid(ASC))
 	{
-		// Explicit ItemAbility remains consumed even if the spec is missing.
-		// An unlisted binding retains the legacy 'unhandled' behavior.
-		return Binding != nullptr;
+		return true; // No grant: no action. Never fall through on a failed activation.
 	}
 
 	if (InputEvent.bRoutesReleaseEvents)
@@ -719,46 +659,7 @@ bool UEnclaveEquipmentComponent::HandleItemInput(const FEnclaveInputEvent& Input
 	{
 		ASC->ActivateAbilityFromInput(SpecHandle);
 	}
-	return true; // Even a denied activation was owned by the item.
-}
-
-void UEnclaveEquipmentComponent::ForwardCharacterActionInput(const FEnclaveInputEvent& InputEvent, const FGameplayTag& CharacterInputTag) const
-{
-	if (!CharacterInputTag.IsValid())
-	{
-		return;
-	}
-	if (IEnclaveCharacterActionReceiverInterface* Receiver = Cast<IEnclaveCharacterActionReceiverInterface>(GetOwner()))
-	{
-		FEnclaveInputEvent CharacterEvent = InputEvent;
-		CharacterEvent.InputTag = CharacterInputTag;
-		Receiver->HandleCharacterActionInput(CharacterEvent);
-	}
-	else if (InputEvent.TriggerEvent == ETriggerEvent::Started)
-	{
-		UE_LOG(LogEnclaveEquipment, Warning, TEXT("%s: CharacterFallback %s has no owner implementing IEnclaveCharacterActionReceiverInterface."),
-			*GetNameSafe(GetOwner()), *CharacterInputTag.ToString());
-	}
-}
-
-void UEnclaveEquipmentComponent::ReleaseHeldCharacterInputs()
-{
-	// No physical Completed is guaranteed on pawn teardown. Release the saved
-	// semantic target, not whatever action a newly selected item now declares.
-	TArray<FGameplayTag> PendingCancelTags;
-	WieldState.HeldCharacterInputTags.GenerateValueArray(PendingCancelTags);
-	WieldState.HeldCharacterInputTags.Reset();
-	for (const FGameplayTag& CharacterTag : PendingCancelTags)
-	{
-		FEnclaveInputEvent CancelEvent;
-		CancelEvent.InputTag = CharacterTag;
-		CancelEvent.TriggerEvent = ETriggerEvent::Canceled;
-		CancelEvent.bRoutesReleaseEvents = true;
-		if (IEnclaveCharacterActionReceiverInterface* Receiver = Cast<IEnclaveCharacterActionReceiverInterface>(GetOwner()))
-		{
-			Receiver->HandleCharacterActionInput(CancelEvent);
-		}
-	}
+	return true; // Item ownership does not depend on GAS activation success.
 }
 
 void UEnclaveEquipmentComponent::ReleaseHeldItemInputs()
