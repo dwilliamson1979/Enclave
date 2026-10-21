@@ -32,6 +32,9 @@ namespace EnclaveGameplayTags
 	 */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Item_Action_Reload);
 
+	/** Duration cue for item-owned Focus; removed automatically on release or cancellation. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Item_Action_Focus);
+
 	/** Executed by UEnclaveGA_Fire when activated with an empty magazine - dry-fire click, nothing else. No cooldown is committed and nothing traces. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Item_Action_DryFire);
 }

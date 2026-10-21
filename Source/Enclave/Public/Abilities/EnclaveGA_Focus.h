@@ -9,10 +9,11 @@
 /**
  * Hold-to-Focus gameplay lifecycle for any currently wielded item that grants it.
  *
- * Phase 1 deliberately has no camera/ADS side effects. The item's grant supplies
- * the input binding; GAS supplies readiness, input release, cancellation,
- * prediction, and the observable State.Item.Aiming tag. Item-specific camera
- * settings, toggle mode, and zoom belong to later Focus/presentation work.
+ * The item grants the input and resolves a Focus profile through a capability
+ * interface. GAS owns readiness, release, cancellation, prediction and the
+ * State.Item.Aiming tag. A duration cue coordinates presentation; the ability
+ * never changes camera settings directly. Toggle mode and variable zoom are
+ * separate future work.
  *
  * Input configuration MUST route Started plus Completed/Canceled for this
  * ability, otherwise a held Focus activation will never see its release.
@@ -31,6 +32,9 @@ protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
 private:
+	/** Add a prediction-aware duration cue, removed by GAS on EndAbility. */
+	void AddFocusCue(const FGameplayAbilityActorInfo* ActorInfo);
+
 	UFUNCTION()
 	void OnInputReleased(float TimeHeld);
 };

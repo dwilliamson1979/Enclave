@@ -7,6 +7,7 @@
 #include "Abilities/Interfaces/EnclaveFireableInterface.h"
 #include "Abilities/Interfaces/EnclaveAmmoConsumerInterface.h"
 #include "Abilities/Interfaces/EnclaveReloadableInterface.h"
+#include "Abilities/Interfaces/EnclaveFocusProviderInterface.h"
 #include "GameplayPrediction.h"
 #include "EnclaveFirearmWeapon.generated.h"
 
@@ -92,7 +93,7 @@ class USoundBase;
  */
 UCLASS(Abstract, Blueprintable)
 class ENCLAVE_API AEnclaveFirearmWeapon : public AEnclaveWeapon, public IEnclaveFireableInterface,
-	public IEnclaveAmmoConsumerInterface, public IEnclaveReloadableInterface
+	public IEnclaveAmmoConsumerInterface, public IEnclaveReloadableInterface, public IEnclaveFocusProviderInterface
 {
 	GENERATED_BODY()
 
@@ -110,6 +111,9 @@ public:
 	// AEnclaveItem - item-local presentation coordinated by AvatarPresentation.
 	virtual void StartPresentationAction(const FGameplayTag& Action, float Duration) override;
 	virtual void EndPresentationAction(const FGameplayTag& Action) override;
+
+	// IEnclaveFocusProviderInterface - runtime effective profile (optic override seam).
+	virtual const UEnclaveFocusProfile* ResolveFocusProfile() const override;
 
 	// IEnclaveFireableInterface - this weapon's contract with UEnclaveGA_Fire.
 	// PerformFireHitDetection is handed only InstigatorToIgnore - it resolves

@@ -5,17 +5,17 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
+#include "Equipment/Focus/EnclaveFocusProfile.h"
 #include "EnclaveViewComponent.generated.h"
 
 class ACharacter;
+class AEnclaveItem;
+class UCameraComponent;
 
 /**
- * Handles player view input for an Enclave character.
- *
- * For now this component owns only basic look input. Future view behavior such
- * as ADS, FOV transitions, sensitivity profiles, recoil, and scope presentation
- * can build on this boundary without moving look handling back into the
- * character or player controller.
+ * Local view/look presentation. Input is only Look; item actions reach GAS
+ * through Equipment. Focus presentation arrives from AvatarPresentation,
+ * with a resolved profile. This component never activates abilities.
  */
 UCLASS(ClassGroup = (Enclave), meta = (BlueprintSpawnableComponent))
 class ENCLAVE_API UEnclaveViewComponent : public UActorComponent, public IEnclaveInputHandlerInterface
@@ -25,35 +25,49 @@ class ENCLAVE_API UEnclaveViewComponent : public UActorComponent, public IEnclav
 public:
 	UEnclaveViewComponent();
 
-	// UActorComponent
 	virtual void InitializeComponent() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
 	virtual bool HandleInput(const FEnclaveInputEvent& InputEvent) override;
 
-protected:
+	/** Explicit camera binding; an avatar may have more than one camera. */
+	void SetViewCamera(UCameraComponent* InCamera);
 
-	void StartAiming();
-	void StopAiming();
+	/** Called by presentation only, with already-resolved item settings. */
+	void BeginFocus(AEnclaveItem* SourceItem, const FEnclaveFocusViewSettings& Settings);
+	void EndFocus(AEnclaveItem* SourceItem);
+
+	/** Teardown/re-possession safety net; no stale Focus can retain camera changes. */
+	void ResetFocus(bool bImmediate = false);
 
 private:
+	void RebuildInputFilters();
+	bool HandleLookInput(const FEnclaveInputEvent& InputEvent);
+	void BeginViewBlend(float InFOV, float InSensitivity, float Duration);
 
 	UPROPERTY(Transient)
 	TObjectPtr<ACharacter> CharacterOwner;
 
-	void RebuildInputFilters();
+	UPROPERTY(Transient)
+	TObjectPtr<UCameraComponent> ViewCamera;
 
-	bool HandleLookInput(const FEnclaveInputEvent& InputEvent);
-	bool HandleAimInput(const FEnclaveInputEvent& InputEvent);
-
-	/** Semantic input tag that this component interprets as view/look input. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input"))
 	FGameplayTag LookInputTag;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input"))
-	FGameplayTag AimInputTag;
-
-	/** Cached routing filters derived from the configured role tags. */
 	FGameplayTagContainer InputFilters;
+	TWeakObjectPtr<AEnclaveItem> FocusSourceItem;
+
+	bool bFocusActive = false;
+	bool bHasBaseFOV = false;
+	float BaseFOV = 90.0f;
+	float FocusTransitionDuration = 0.2f;
+	float CurrentSensitivityMultiplier = 1.0f;
+	float BlendStartSensitivity = 1.0f;
+	float BlendTargetSensitivity = 1.0f;
+	float BlendStartFOV = 90.0f;
+	float BlendTargetFOV = 90.0f;
+	float BlendDuration = 0.0f;
+	float BlendElapsed = 0.0f;
 };

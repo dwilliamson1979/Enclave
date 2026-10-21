@@ -11,6 +11,7 @@ class UGameplayEffect;
 class UAnimMontage;
 class UNiagaraSystem;
 class USoundBase;
+class UEnclaveFocusProfile;
 
 /**
  * Firearm-specific weapon data: item-local fire/reload presentation and
@@ -62,6 +63,9 @@ public:
 	int32 GetMagazineCapacity() const { return MagazineCapacity; }
 	int32 GetAmmoPerShot() const { return AmmoPerShot; }
 	float GetReloadDuration() const { return ReloadDuration; }
+
+	/** Focus view profile for this firearm, overridden by an installed optic in a future attachment system. */
+	const UEnclaveFocusProfile* GetFocusProfile() const { return FocusProfile; }
 
 	UAnimMontage* GetReloadMontage() const { return ReloadMontage; }
 	USoundBase* GetDryFireSound() const { return DryFireSound; }
@@ -134,6 +138,10 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Reload Cue", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAnimMontage> ReloadMontage;
+
+	/** Optional profile used when this firearm grants GA_Focus. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Focus", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveFocusProfile> FocusProfile;
 
 	/** Played from the muzzle for Presentation.Item.Action.DryFire. Optional. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Presentation|Dry Fire Cue", meta = (AllowPrivateAccess = "true"))

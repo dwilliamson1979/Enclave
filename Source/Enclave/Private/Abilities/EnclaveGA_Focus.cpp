@@ -4,6 +4,9 @@
 
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "Abilities/Interfaces/EnclaveFocusProviderInterface.h"
+#include "Equipment/Focus/EnclaveFocusProfile.h"
+#include "GameplayTags/EnclaveGameplayCueTags.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
 
 UEnclaveGA_Focus::UEnclaveGA_Focus()
@@ -24,12 +27,21 @@ bool UEnclaveGA_Focus::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 	// GAS may run this check on the CDO, so resolve the source from the
 	// explicitly supplied ability spec, not GetCurrentSourceObject().
 	// Reject accidental grants without an actual item source.
-	return IsValid(GetTriggeringSourceFromSpecAs<AEnclaveItem>(Handle, ActorInfo));
+	const AEnclaveItem* SourceItem = GetTriggeringSourceFromSpecAs<AEnclaveItem>(Handle, ActorInfo);
+	if (!IsValid(SourceItem))
+	{
+		return false;
+	}
+
+	const IEnclaveFocusProviderInterface* Provider = Cast<IEnclaveFocusProviderInterface>(SourceItem);
+	return Provider && IsValid(Provider->ResolveFocusProfile());
 }
 
 void UEnclaveGA_Focus::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
-	if (!IsValid(GetTriggeringSourceAs<AEnclaveItem>()) || !CommitAbility(Handle, ActorInfo, ActivationInfo))
+	const AEnclaveItem* SourceItem = GetTriggeringSourceAs<AEnclaveItem>();
+	const IEnclaveFocusProviderInterface* Provider = IsValid(SourceItem) ? Cast<IEnclaveFocusProviderInterface>(SourceItem) : nullptr;
+	if (!Provider || !IsValid(Provider->ResolveFocusProfile()) || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/true, /*bWasCancelled=*/true);
 		return;
@@ -47,7 +59,26 @@ void UEnclaveGA_Focus::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 	}
 
 	ReleaseTask->OnRelease.AddDynamic(this, &UEnclaveGA_Focus::OnInputReleased);
+	AddFocusCue(ActorInfo);
 	ReleaseTask->ReadyForActivation();
+}
+
+void UEnclaveGA_Focus::AddFocusCue(const FGameplayAbilityActorInfo* ActorInfo)
+{
+	AActor* SourceItem = GetTriggeringSourceAs<AActor>();
+	if (!IsValid(SourceItem))
+	{
+		return;
+	}
+
+	FGameplayCueParameters Parameters;
+	Parameters.Instigator = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+	Parameters.EffectCauser = SourceItem;
+	Parameters.SourceObject = SourceItem;
+
+	// Identical lifecycle semantics to Reload: predicted on the owning client,
+	// replicated to observers, removed automatically on EndAbility/cancellation.
+	K2_AddGameplayCueWithParams(EnclaveGameplayTags::GameplayCue_Item_Action_Focus, Parameters, /*bRemoveOnAbilityEnd=*/ true);
 }
 
 void UEnclaveGA_Focus::OnInputReleased(float TimeHeld)

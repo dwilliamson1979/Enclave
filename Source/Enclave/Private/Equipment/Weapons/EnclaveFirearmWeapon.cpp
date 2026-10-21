@@ -92,6 +92,12 @@ const UEnclaveFirearmWeaponDefinition* AEnclaveFirearmWeapon::GetFirearmWeaponDe
 	return GetItemDefinitionAs<UEnclaveFirearmWeaponDefinition>();
 }
 
+const UEnclaveFocusProfile* AEnclaveFirearmWeapon::ResolveFocusProfile() const
+{
+	const UEnclaveFirearmWeaponDefinition* Definition = GetFirearmWeaponDefinition();
+	return Definition ? Definition->GetFocusProfile() : nullptr;
+}
+
 void AEnclaveFirearmWeapon::ApplyItemDefinition()
 {
 	Super::ApplyItemDefinition();

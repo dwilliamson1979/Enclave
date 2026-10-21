@@ -9,6 +9,9 @@
 #include "Debug/EnclaveDebug.h"
 #include "Equipment/Data/EnclaveItemPresentationDefinition.h"
 #include "Equipment/Items/EnclaveItem.h"
+#include "Abilities/Interfaces/EnclaveFocusProviderInterface.h"
+#include "Equipment/Focus/EnclaveFocusProfile.h"
+#include "Characters/Components/EnclaveViewComponent.h"
 #include "GameplayTags/EnclavePresentationTags.h"
 #include "Engine/World.h"
 
@@ -101,6 +104,16 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 	// attach or reveal an item after presentation has moved on to another item.
 	ClearPendingWieldedAttachmentFallback();
 
+	// End the local view before the old item can disappear or a new item is
+	// presented. A later Focus cue Removed for the old item is harmless.
+	if (AActor* Avatar = GetOwner())
+	{
+		if (UEnclaveViewComponent* View = Avatar->FindComponentByClass<UEnclaveViewComponent>())
+		{
+			View->EndFocus(PresentedWieldedItemState.Item.Get());
+		}
+	}
+
 	// Active item actions belong to the presentation being removed. End them
 	// first so lasting Immediate actions are cleaned up too, and late notifies
 	// from old choreographed montages cannot affect the next item.
@@ -126,6 +139,33 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 	if (!ShouldRunTransientPresentation())
 	{
 		return;
+	}
+
+	// Focus is an item action, but its local view is controlled by ViewComponent,
+	// never by a weapon ability or raw input. Source identity prevents stale
+	// Removed cues for the old weapon from resetting a newer Focus.
+	if (Event.Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_Focus))
+	{
+		if (AActor* Avatar = GetOwner())
+		{
+			if (UEnclaveViewComponent* View = Avatar->FindComponentByClass<UEnclaveViewComponent>())
+			{
+				if (Event.Phase == EEnclaveItemPresentationActionPhase::Started &&
+					IsValid(Event.Item) && PresentedWieldedItemState.Item.Get() == Event.Item.Get())
+				{
+					const IEnclaveFocusProviderInterface* Provider = Cast<IEnclaveFocusProviderInterface>(Event.Item.Get());
+					const UEnclaveFocusProfile* Profile = Provider ? Provider->ResolveFocusProfile() : nullptr;
+					if (IsValid(Profile))
+					{
+						View->BeginFocus(Event.Item.Get(), Profile->GetViewSettings());
+					}
+				}
+				else if (Event.Phase == EEnclaveItemPresentationActionPhase::Ended)
+				{
+					View->EndFocus(Event.Item.Get());
+				}
+			}
+		}
 	}
 
 	const FEnclaveItemPresentationMontages* Presentation =

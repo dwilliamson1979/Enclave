@@ -28,6 +28,9 @@ namespace EnclaveGameplayTags
 	/** Trigger pulled on an empty magazine. Instant (Started only). */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Presentation_Item_Action_DryFire);
 
+	/** Focus in progress - Started/Ended, including ability cancellation. */
+	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Presentation_Item_Action_Focus);
+
 	/** Reload in progress - Started with its duration, Ended when it completes or is cancelled. */
 	ENCLAVE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Presentation_Item_Action_Reload);
 }
