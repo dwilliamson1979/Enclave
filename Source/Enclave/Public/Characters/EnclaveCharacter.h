@@ -55,6 +55,16 @@ public:
 	virtual void UnPossessed() override;
 
 	/**
+	 * Canonical first-person gameplay origin. APawn::GetActorEyesViewPoint
+	 * obtains its location here, so server hit registration uses the same
+	 * camera component that the owning player aims through.
+	 */
+	virtual FVector GetPawnViewLocation() const override;
+
+	/** Development-only breakdown of the live first-person view chain for shot diagnostics. */
+	void DebugLogViewGeometryForShot(int32 PredictionKey, const FVector& RenderedViewLocation) const;
+
+	/**
 	 * Client-side counterpart to PossessedBy: fires when the replicated
 	 * PlayerState reference lands on a client, which happens on a different
 	 * timeline than server-side possession. Both paths must independently

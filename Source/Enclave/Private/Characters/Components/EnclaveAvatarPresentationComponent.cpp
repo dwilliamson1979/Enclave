@@ -108,7 +108,7 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 	// presented. A later Focus cue Removed for the old item is harmless.
 	if (IEnclaveFocusViewInterface* View = IEnclaveFocusViewInterface::FindFocusView(GetOwner()))
 	{
-		View->EndFocus(PresentedWieldedItemState.Item.Get());
+		View->EndFocus(PresentedWieldedItemState.Item.Get(), /*bSourcePresentationRemoved=*/true);
 	}
 
 	// Active item actions belong to the presentation being removed. End them

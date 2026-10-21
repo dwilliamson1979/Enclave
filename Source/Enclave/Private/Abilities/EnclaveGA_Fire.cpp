@@ -6,6 +6,9 @@
 #include "GameplayEffect.h"
 
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "Controllers/EnclavePlayerController.h"
+#include "Debug/EnclaveDebug.h"
 
 #include "GameplayTags/EnclaveAbilityTags.h"
 #include "GameplayTags/EnclaveGameplayCueTags.h"
@@ -54,6 +57,16 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		return;
 	}
 
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// Capture the rendered view on the owning client at the exact predicted
+	// Fire activation, not at Focus start and not on the server.
+	if (AEnclavePlayerController* DebugController = ActorInfo ? Cast<AEnclavePlayerController>(ActorInfo->PlayerController.Get()) : nullptr;
+		IsValid(DebugController) && DebugController->IsLocalController() && AEnclavePlayerController::IsShotAlignmentDebugEnabled())
+	{
+		DebugController->DebugCaptureLocalShot(ActivationInfo.GetActivationPredictionKey().Current);
+	}
+#endif
+
 	// Unconditional and before the authority check: this runs on the
 	// predicting owning client too, so the shot feels instant locally, while
 	// GAS's cue replication recognizes the matching prediction key on the
@@ -62,7 +75,7 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 
 	if (HasAuthority(&ActivationInfo))
 	{
-		PerformHitDetection(ActorInfo, AvatarActor);
+		PerformHitDetection(ActorInfo, AvatarActor, ActivationInfo);
 	}
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/ true, /*bWasCancelled=*/ false);
@@ -155,7 +168,7 @@ void UEnclaveGA_Fire::NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorI
 	}
 }
 
-void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor)
+void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor, const FGameplayAbilityActivationInfo& ActivationInfo)
 {
 	if (!IsValid(AvatarActor))
 	{
@@ -177,7 +190,31 @@ void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* Actor
 	// hit's own damage (FEnclaveHitResult) is entirely the triggering source's
 	// concern now. This ability supplies only who is doing the shooting and
 	// consumes whatever hit results come back.
+	// The hit-registration subsystem observes the precise authoritative
+	// query. Bracket this synchronous call with the GAS activation key so
+	// its owning-client result can match the predicted camera sample.
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	AEnclavePlayerController* DebugController = ActorInfo ? Cast<AEnclavePlayerController>(ActorInfo->PlayerController.Get()) : nullptr;
+	if (!IsValid(DebugController))
+	{
+		if (const APawn* Pawn = Cast<APawn>(AvatarActor))
+		{
+			DebugController = Cast<AEnclavePlayerController>(Pawn->GetController());
+		}
+	}
+	const bool bCaptureDebugShot = IsValid(DebugController) && AEnclavePlayerController::IsShotAlignmentDebugEnabled();
+	if (bCaptureDebugShot)
+	{
+		DebugController->DebugBeginAuthoritativeShot(ActivationInfo.GetActivationPredictionKey().Current);
+	}
+#endif
 	const TArray<FEnclaveHitResult> HitResults = Fireable->PerformFireHitDetection(AvatarActor);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (bCaptureDebugShot)
+	{
+		DebugController->DebugEndAuthoritativeShot();
+	}
+#endif
 
 	if (HitResults.IsEmpty())
 	{

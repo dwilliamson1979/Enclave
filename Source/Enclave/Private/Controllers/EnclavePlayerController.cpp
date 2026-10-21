@@ -1,4 +1,5 @@
 #include "Controllers/EnclavePlayerController.h"
+#include "Characters/EnclaveCharacter.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -8,6 +9,10 @@
 #include "Combat/Components/EnclaveCombatFeedbackComponent.h"
 
 #include "Debug/EnclaveDebug.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/Engine.h"
+#include "Math/RotationMatrix.h"
+#include "HAL/IConsoleManager.h"
 #include "Engine/World.h"
 
 #include "GameFramework/GameModeBase.h"
@@ -17,6 +22,180 @@
 #include "GameplayTags/EnclaveEquipmentSlotTags.h"
 #include "Equipment/Items/EnclaveItem.h"
 #include "Inventory/Components/EnclaveInventoryComponent.h"
+
+// Deliberately independent of Enclave.Debug.FireTrace: one toggles the
+// remote comparison, the other the existing authoritative-world line drawing.
+static TAutoConsoleVariable<bool> CVarDebugShotAlignment(
+	TEXT("Enclave.Debug.ShotAlignment"),
+	false,
+	TEXT("Compare the predicted owning-client camera ray to the exact authoritative hitscan ray for each GAS Fire activation. Enable on BOTH server and owning client in multi-process PIE."),
+	ECVF_Cheat);
+
+bool AEnclavePlayerController::IsShotAlignmentDebugEnabled()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	return CVarDebugShotAlignment.GetValueOnGameThread();
+#else
+	return false;
+#endif
+}
+
+void AEnclavePlayerController::DebugCaptureLocalShot(int32 PredictionKey)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!IsShotAlignmentDebugEnabled() || !IsLocalController() || !IsValid(GetPawn()) || !GetWorld())
+	{
+		return;
+	}
+
+	// GetPlayerViewPoint reflects the player camera manager's rendered view,
+	// including any camera/spring-arm offset. Never use the cosmetic ADS sight
+	// socket as the gameplay source of this diagnostic.
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	GetPlayerViewPoint(ViewLocation, ViewRotation);
+
+	FVector LocalEyeLocation;
+	FRotator LocalEyeRotation;
+	GetPawn()->GetActorEyesViewPoint(LocalEyeLocation, LocalEyeRotation);
+	if (const AEnclaveCharacter* EnclaveCharacter = Cast<AEnclaveCharacter>(GetPawn()))
+	{
+		EnclaveCharacter->DebugLogViewGeometryForShot(PredictionKey, ViewLocation);
+	}
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"ShotAlign LOCAL key=%d cameraToPawnEyes=%s localEyeAngle=%.3fdeg",
+		PredictionKey, *(LocalEyeLocation - ViewLocation).ToCompactString(),
+		FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(ViewRotation.Vector(), LocalEyeRotation.Vector()), -1.0f, 1.0f))));
+
+	FDebugShotRay Ray;
+	Ray.Start = ViewLocation;
+	Ray.End = ViewLocation + ViewRotation.Vector() * 10000.0f; // Diagnostic length only: 100 m.
+	Ray.RecordedTime = GetWorld()->GetTimeSeconds();
+	DebugPruneShotHistory();
+	PendingLocalShots.Add(PredictionKey, Ray);
+
+	DrawDebugLine(GetWorld(), Ray.Start, Ray.End, FColor::Cyan, false, 4.0f, 0, 1.3f);
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"ShotAlign CLIENT key=%d origin=%s dir=%s", PredictionKey,
+		*Ray.Start.ToCompactString(), *(Ray.End - Ray.Start).GetSafeNormal().ToCompactString());
+	DebugCompareShotIfReady(PredictionKey);
+#endif
+}
+
+void AEnclavePlayerController::DebugBeginAuthoritativeShot(int32 PredictionKey)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (HasAuthority() && IsShotAlignmentDebugEnabled())
+	{
+		ActiveServerShotKey = PredictionKey;
+	}
+#endif
+}
+
+void AEnclavePlayerController::DebugEndAuthoritativeShot()
+{
+	ActiveServerShotKey = INDEX_NONE;
+}
+
+void AEnclavePlayerController::DebugRecordAuthoritativeTrace(const FVector& Start, const FVector& End, bool bHit, const FVector& ImpactPoint)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!HasAuthority() || !IsShotAlignmentDebugEnabled() || ActiveServerShotKey == INDEX_NONE)
+	{
+		return;
+	}
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"ShotAlign SERVER key=%d origin=%s dir=%s hit=%d point=%s", ActiveServerShotKey,
+		*Start.ToCompactString(), *(End - Start).GetSafeNormal().ToCompactString(), bHit ? 1 : 0,
+		*ImpactPoint.ToCompactString());
+	ClientEnclaveDebugShotAlignment(ActiveServerShotKey, Start, End, bHit, ImpactPoint);
+#endif
+}
+
+void AEnclavePlayerController::ClientEnclaveDebugShotAlignment_Implementation(int32 PredictionKey, FVector ServerStart, FVector ServerEnd, bool bHit, FVector ImpactPoint)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!IsShotAlignmentDebugEnabled() || !IsLocalController() || !GetWorld())
+	{
+		return;
+	}
+
+	FDebugServerShot Ray;
+	Ray.Start = ServerStart;
+	Ray.End = ServerEnd;
+	Ray.RecordedTime = GetWorld()->GetTimeSeconds();
+	Ray.ImpactPoint = ImpactPoint;
+	Ray.bHit = bHit;
+	DebugPruneShotHistory();
+	PendingServerShots.Add(PredictionKey, Ray);
+
+	// Yellow is the exact server trace, returned to the owning client for
+	// a SAME-WORLD overlay. Cyan was captured on the local Fire activation.
+	DrawDebugLine(GetWorld(), ServerStart, bHit ? ImpactPoint : ServerEnd, FColor::Yellow, false, 4.0f, 0, 2.0f);
+	if (bHit)
+	{
+		DrawDebugPoint(GetWorld(), ImpactPoint, 10.0f, FColor::Yellow, false, 4.0f);
+	}
+	DebugCompareShotIfReady(PredictionKey);
+#endif
+}
+
+void AEnclavePlayerController::DebugCompareShotIfReady(int32 PredictionKey)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	const FDebugShotRay* Client = PendingLocalShots.Find(PredictionKey);
+	const FDebugServerShot* Server = PendingServerShots.Find(PredictionKey);
+	if (!Client || !Server)
+	{
+		return; // RPC and local predicted activation can arrive in either order.
+	}
+
+	const FVector ClientDirection = (Client->End - Client->Start).GetSafeNormal();
+	const FVector ServerDirection = (Server->End - Server->Start).GetSafeNormal();
+	const float OriginDeltaCm = FVector::Dist(Client->Start, Server->Start);
+	const float DirectionDot = FMath::Clamp(FVector::DotProduct(ClientDirection, ServerDirection), -1.0f, 1.0f);
+	const float AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(DirectionDot));
+
+	// Compare the two rays at equal travel distance from their respective
+	// origins. Use the server hit depth for hits and 10 m for misses.
+	const float DepthCm = Server->bHit ? FVector::Dist(Server->Start, Server->ImpactPoint) : 1000.0f;
+	const FVector ClientAtDepth = Client->Start + ClientDirection * DepthCm;
+	const FVector ServerAtDepth = Server->Start + ServerDirection * DepthCm;
+	const FVector Offset = ServerAtDepth - ClientAtDepth;
+	const FRotationMatrix ClientBasis(ClientDirection.Rotation());
+	const float HorizontalCm = FVector::DotProduct(Offset, ClientBasis.GetUnitAxis(EAxis::Y));
+	const float VerticalCm = FVector::DotProduct(Offset, ClientBasis.GetUnitAxis(EAxis::Z));
+
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"ShotAlign COMPARE key=%d hit=%d depth=%.0fcm originDelta=%.1fcm angleDelta=%.3fdeg serverRelativeToCamera Right=%.1fcm Up=%.1fcm (rays captured at separate network times)",
+		PredictionKey, Server->bHit ? 1 : 0, DepthCm, OriginDeltaCm, AngleDegrees, HorizontalCm, VerticalCm);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::White,
+			FString::Printf(TEXT("ADS shot %d: origin %.1f cm | angle %.3f deg | server @ %.1f m: right %+.1f cm, up %+.1f cm"),
+				PredictionKey, OriginDeltaCm, AngleDegrees, DepthCm / 100.0f, HorizontalCm, VerticalCm));
+	}
+
+	PendingLocalShots.Remove(PredictionKey);
+	PendingServerShots.Remove(PredictionKey);
+#endif
+}
+
+void AEnclavePlayerController::DebugPruneShotHistory()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!GetWorld()) { return; }
+	const double Now = GetWorld()->GetTimeSeconds();
+	for (auto It = PendingLocalShots.CreateIterator(); It; ++It)
+	{
+		if (Now - It.Value().RecordedTime > 30.0 || PendingLocalShots.Num() > 128) { It.RemoveCurrent(); }
+	}
+	for (auto It = PendingServerShots.CreateIterator(); It; ++It)
+	{
+		if (Now - It.Value().RecordedTime > 30.0 || PendingServerShots.Num() > 128) { It.RemoveCurrent(); }
+	}
+#endif
+}
 
 AEnclavePlayerController::AEnclavePlayerController()
 {
@@ -280,6 +459,9 @@ void AEnclavePlayerController::OnUnPossess()
 	CachedInputReceiver = nullptr;
 	CachedInputConfigProvider = nullptr;
 	ActiveAvatarInputConfig = nullptr;
+	ActiveServerShotKey = INDEX_NONE;
+	PendingLocalShots.Reset();
+	PendingServerShots.Reset();
 
 	Super::OnUnPossess();
 }

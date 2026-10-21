@@ -53,8 +53,11 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	SpringArmComp = CreateDefaultSubobject<USpringArmComponent>("SpringArmComp");
 	SpringArmComp->SetupAttachment(GetRootComponent());
 	SpringArmComp->TargetArmLength = 0.0f;
-	SpringArmComp->bEnableCameraLag = true;
-	SpringArmComp->CameraLagSpeed = 15.f;
+	// The first-person gameplay eye is the camera component. Its position
+	// must not depend on a time-integrated spring-arm lag or a collision probe.
+	SpringArmComp->bEnableCameraLag = false;
+	SpringArmComp->bEnableCameraRotationLag = false;
+	SpringArmComp->bDoCollisionTest = false;
 	SpringArmComp->bUsePawnControlRotation = true;
 
 	// What if in the future we want the player to be able to alternate between first and third person views?
@@ -81,6 +84,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	InputRouterComp = CreateDefaultSubobject<UEnclaveInputRouterComponent>(TEXT("InputRouterComp"));
 	ViewComp = CreateDefaultSubobject<UEnclaveViewComponent>(TEXT("ViewComp"));
 	ViewComp->SetViewCamera(CameraComp);
+	ViewComp->SetFirstPersonMesh(FirstPersonMesh);
 
 	InventoryComp = CreateDefaultSubobject<UEnclaveInventoryComponent>(TEXT("InventoryComp"));
 	InventoryComp->SetIsReplicated(true);
@@ -93,6 +97,42 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 
 	HealthComp = CreateDefaultSubobject<UEnclaveGASHealthComponent>(TEXT("HealthComp"));
 	LifecycleComp = CreateDefaultSubobject<UEnclaveAvatarLifecycleComponent>(TEXT("LifecycleComp"));
+}
+
+FVector AEnclaveCharacter::GetPawnViewLocation() const
+{
+	// Keep the authored camera offset (including Blueprint relative transforms)
+	// rather than forcing the visual camera to the Character's BaseEyeHeight.
+	// This component also exists on authority for remote-controlled Pawns.
+	if (IsValid(CameraComp) && CameraComp->IsRegistered())
+	{
+		return CameraComp->GetComponentLocation();
+	}
+	return Super::GetPawnViewLocation();
+}
+
+void AEnclaveCharacter::DebugLogViewGeometryForShot(int32 PredictionKey, const FVector& RenderedViewLocation) const
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!IsValid(CameraComp) || !IsValid(SpringArmComp))
+	{
+		return;
+	}
+
+	const FVector Pivot = SpringArmComp->GetComponentLocation();
+	const FVector Socket = SpringArmComp->GetSocketLocation(USpringArmComponent::SocketName);
+	const FVector Camera = CameraComp->GetComponentLocation();
+	const FVector Eye = GetPawnViewLocation();
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"ShotAlign GEOMETRY key=%d renderedToCamera=%.2fcm cameraToPivot=%.2fcm cameraToSocket=%.2fcm cameraToGameplayEye=%.2fcm arm=%.2fcm lag=%d rotLag=%d collision=%d",
+		PredictionKey, FVector::Dist(RenderedViewLocation, Camera), FVector::Dist(Camera, Pivot),
+		FVector::Dist(Camera, Socket), FVector::Dist(Camera, Eye), SpringArmComp->TargetArmLength,
+		SpringArmComp->bEnableCameraLag ? 1 : 0, SpringArmComp->bEnableCameraRotationLag ? 1 : 0,
+		SpringArmComp->bDoCollisionTest ? 1 : 0);
+#else
+	(void)PredictionKey;
+	(void)RenderedViewLocation;
+#endif
 }
 
 void AEnclaveCharacter::PossessedBy(AController* NewController)
@@ -245,6 +285,13 @@ void AEnclaveCharacter::InitializeStowedItem()
 
 void AEnclaveCharacter::UnPossessed()
 {
+	// A PlayerState-owned ASC can outlive this pawn. Never leave the outgoing
+	// pawn's camera/first-person arms with local Focus transforms applied.
+	if (IsValid(ViewComp))
+	{
+		ViewComp->ResetFocus(/*bImmediate=*/true);
+	}
+
 	// The ASC is PlayerState-owned and may outlive this Pawn. Only tear down
 	// avatar-local consumers here; do not clear the ASC's global actor info,
 	// because a replacement avatar may initialize against the same ASC.
@@ -365,6 +412,16 @@ UAbilitySystemComponent* AEnclaveCharacter::GetAbilitySystemComponent() const
 void AEnclaveCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Blueprints can override native component defaults. Enforce the gameplay
+	// contract on every world instance (owning client AND authority), including
+	// a server that never renders the first-person arms.
+	if (IsValid(SpringArmComp))
+	{
+		SpringArmComp->bEnableCameraLag = false;
+		SpringArmComp->bEnableCameraRotationLag = false;
+		SpringArmComp->bDoCollisionTest = false;
+	}
 
 	if (IsValid(EquipmentComp))
 	{

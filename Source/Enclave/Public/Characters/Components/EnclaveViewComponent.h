@@ -12,6 +12,7 @@
 class ACharacter;
 class AEnclaveItem;
 class UCameraComponent;
+class USkeletalMeshComponent;
 
 /**
  * Local view/look presentation. Input is only Look; item actions reach GAS
@@ -36,9 +37,12 @@ public:
 	/** Explicit camera binding; an avatar may have more than one camera. */
 	void SetViewCamera(UCameraComponent* InCamera);
 
+	/** Camera-attached arms; the weapon's first-person mesh stays attached to its hand socket. */
+	void SetFirstPersonMesh(USkeletalMeshComponent* InMesh);
+
 	// IEnclaveFocusViewInterface. Called with already-resolved item settings.
 	virtual void BeginFocus(AEnclaveItem* SourceItem, const FEnclaveFocusViewSettings& Settings) override;
-	virtual void EndFocus(AEnclaveItem* SourceItem) override;
+	virtual void EndFocus(AEnclaveItem* SourceItem, bool bSourcePresentationRemoved = false) override;
 
 	/** Teardown/re-possession safety net; no stale Focus can retain camera changes. */
 	void ResetFocus(bool bImmediate = false);
@@ -47,6 +51,10 @@ private:
 	void RebuildInputFilters();
 	bool HandleLookInput(const FEnclaveInputEvent& InputEvent);
 	void BeginViewBlend(float InFOV, float InSensitivity, float Duration);
+	void ConfigureSightAlignment(AEnclaveItem* SourceItem, const FEnclaveFocusSightAlignmentSettings& Settings);
+	void ApplySightAlignment();
+	void RestoreSightAlignment();
+	void UpdateTickEnabled();
 
 	UPROPERTY(Transient)
 	TObjectPtr<ACharacter> CharacterOwner;
@@ -54,12 +62,28 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UCameraComponent> ViewCamera;
 
+	UPROPERTY(Transient)
+	TObjectPtr<USkeletalMeshComponent> FirstPersonMesh;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Tags", meta = (Categories = "Input"))
 	FGameplayTag LookInputTag;
 
 	FGameplayTagContainer InputFilters;
 	TWeakObjectPtr<AEnclaveItem> FocusSourceItem;
 
+	// Retain the old sight source while blending OUT, even after the cue ends.
+	// A weapon swap/detach instead restores the authored arms transform immediately.
+	TWeakObjectPtr<AEnclaveItem> AlignmentSourceItem;
+	FEnclaveFocusSightAlignmentSettings ActiveSightSettings;
+	FTransform BaseFirstPersonMeshRelativeTransform = FTransform::Identity;
+	FTransform CalibratedFirstPersonMeshRelativeTransform = FTransform::Identity;
+	bool bSightAlignmentBound = false;
+	bool bHasSightCalibration = false;
+	float CurrentSightAlignmentAlpha = 0.0f;
+	float BlendStartSightAlignmentAlpha = 0.0f;
+	float BlendTargetSightAlignmentAlpha = 0.0f;
+
+	bool bViewBlendInProgress = false;
 	bool bFocusActive = false;
 	bool bHasBaseFOV = false;
 	float BaseFOV = 90.0f;

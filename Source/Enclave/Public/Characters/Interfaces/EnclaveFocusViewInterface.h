@@ -27,7 +27,12 @@ class ENCLAVE_API IEnclaveFocusViewInterface
 
 public:
 	virtual void BeginFocus(AEnclaveItem* SourceItem, const FEnclaveFocusViewSettings& Settings) = 0;
-	virtual void EndFocus(AEnclaveItem* SourceItem) = 0;
+	/**
+	 * A normal cue End blends out. When the item is being removed from the
+	 * avatar's presentation, its old physical alignment must be discarded now,
+	 * even though the camera FOV may continue blending out.
+	 */
+	virtual void EndFocus(AEnclaveItem* SourceItem, bool bSourcePresentationRemoved = false) = 0;
 
 	/** Discover a view consumer without depending on a particular component. */
 	static IEnclaveFocusViewInterface* FindFocusView(AActor* Avatar);

@@ -3,6 +3,8 @@
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
 
 #include "Game/EnclaveGameModeBase.h"
+#include "Controllers/EnclavePlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "DrawDebugHelpers.h"
@@ -66,6 +68,18 @@ bool UEnclaveHitRegistrationSubsystem::TraceCurrentGeometry(const FEnclaveHitsca
 	Params.AddIgnoredActors(AttachedActors);
 
 	const bool bHit = World->LineTraceSingleByChannel(OutHit, Query.Start, Query.End, ECC_Weapon, Params);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (AEnclavePlayerController::IsShotAlignmentDebugEnabled())
+	{
+		if (const APawn* ShooterPawn = Cast<APawn>(Instigator))
+		{
+			if (AEnclavePlayerController* ShooterController = Cast<AEnclavePlayerController>(ShooterPawn->GetController()))
+			{
+				ShooterController->DebugRecordAuthoritativeTrace(Query.Start, Query.End, bHit, OutHit.ImpactPoint);
+			}
+		}
+	}
+#endif
 	if (CVarDebugFireTrace.GetValueOnGameThread())
 	{
 		DrawDebugLine(World, Query.Start, bHit ? OutHit.ImpactPoint : Query.End,

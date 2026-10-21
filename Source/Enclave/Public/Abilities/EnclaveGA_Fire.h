@@ -89,7 +89,7 @@ protected:
 
 private:
 	/** Server-only hit detection followed by target-agnostic Enclave damage dispatch for each confirmed hit. */
-	void PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor);
+	void PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor, const FGameplayAbilityActivationInfo& ActivationInfo);
 
 	/** Executes CueTag (GameplayCue.Item.Action.Fire, or .DryFire on an empty magazine) with the triggering source in EffectCauser/SourceObject and the ASC avatar as the cue target. UEnclaveGameplayCueNotify fans the cue out to avatar presentation and item-local cue response. Runs on the predicting owning client as well as the server. Presentation only. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
 	void ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);

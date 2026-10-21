@@ -6,6 +6,33 @@
 #include "Engine/DataAsset.h"
 #include "EnclaveFocusProfile.generated.h"
 
+/**
+ * Physical sight calibration for the owning player's camera-attached arms.
+ * Authored on the Focus profile (and therefore replaceable by a future optic).
+ * No gameplay fire origin, camera transform, or third-person mesh is changed.
+ */
+USTRUCT(BlueprintType)
+struct ENCLAVE_API FEnclaveFocusSightAlignmentSettings
+{
+	GENERATED_BODY()
+
+	/** Opt in per item; older profiles retain their FOV-only presentation. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|Sight")
+	bool bEnabled = false;
+
+	/** Socket on the item's FIRST-PERSON mesh, located at its rear sight/eyepiece. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|Sight")
+	FName SightSocketName = TEXT("ADS");
+
+	/** Where the sight socket should end up relative to the camera, in centimeters (X = forward). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|Sight", meta = (Units = "cm"))
+	FVector SightCameraLocation = FVector(12.0f, 0.0f, 0.0f);
+
+	/** Socket's desired orientation relative to the camera (socket +X points down the bore). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|Sight")
+	FRotator SightCameraRotation = FRotator::ZeroRotator;
+};
+
 /** Local visual settings; no equipment or gameplay-ability policy is stored here. */
 USTRUCT(BlueprintType)
 struct ENCLAVE_API FEnclaveFocusViewSettings
@@ -23,6 +50,10 @@ struct ENCLAVE_API FEnclaveFocusViewSettings
 	/** Multiplies the normal locally configured look input while focused. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "0.01"))
 	float LookSensitivityMultiplier = 0.65f;
+
+	/** Optional camera-space alignment of the physical weapon sights. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|Sight")
+	FEnclaveFocusSightAlignmentSettings SightAlignment;
 };
 
 /**

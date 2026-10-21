@@ -45,6 +45,19 @@ public:
 	UFUNCTION(Exec)
 	void EnclaveDebugClearSlot(const FString& SlotTagName);
 
+	/** Opt-in, non-gameplay per-shot camera-vs-authoritative-ray diagnostic. */
+	static bool IsShotAlignmentDebugEnabled();
+
+	/** Called only by a locally controlled GA_Fire activation (after CommitAbility). */
+	void DebugCaptureLocalShot(int32 PredictionKey);
+
+	/** Brackets the synchronous server-side fireable hit query; no gameplay inputs change. */
+	void DebugBeginAuthoritativeShot(int32 PredictionKey);
+	void DebugEndAuthoritativeShot();
+
+	/** Called with the REAL server hitscan query by HitRegistrationSubsystem. */
+	void DebugRecordAuthoritativeTrace(const FVector& Start, const FVector& End, bool bHit, const FVector& ImpactPoint);
+
 protected:
 
 	virtual void OnPossess(APawn* InPawn) override;
@@ -81,6 +94,31 @@ private:
 
 	UFUNCTION(Client, Reliable)
 	void ClientEnclaveDebugClearSlotResult(bool bSucceeded, const FString& ResultMessage);
+
+	/** Debug-only telemetry. Sent ONLY to the owning controller, not replicated gameplay data. */
+	UFUNCTION(Client, Reliable)
+	void ClientEnclaveDebugShotAlignment(int32 PredictionKey, FVector ServerStart, FVector ServerEnd, bool bHit, FVector ImpactPoint);
+
+	struct FDebugShotRay
+	{
+		FVector Start = FVector::ZeroVector;
+		FVector End = FVector::ZeroVector;
+		double RecordedTime = 0.0;
+	};
+
+	struct FDebugServerShot : FDebugShotRay
+	{
+		FVector ImpactPoint = FVector::ZeroVector;
+		bool bHit = false;
+	};
+
+	void DebugCompareShotIfReady(int32 PredictionKey);
+	void DebugPruneShotHistory();
+
+	// Diagnostic-only transient state. No replicated properties, no fire behavior changes.
+	int32 ActiveServerShotKey = INDEX_NONE;
+	TMap<int32, FDebugShotRay> PendingLocalShots;
+	TMap<int32, FDebugServerShot> PendingServerShots;
 
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents);
 
