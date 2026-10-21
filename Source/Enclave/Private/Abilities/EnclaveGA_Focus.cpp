@@ -47,11 +47,11 @@ void UEnclaveGA_Focus::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 		return;
 	}
 
-	// WaitInputRelease uses the same GAS input-edge replication already used
-	// by Equipment's PressAbilityInput/ReleaseAbilityInput lifecycle.
-	// Do not test an initially released server-side spec: its InputPressed
-	// flag may not yet mirror the locally predicted press.
-	UAbilityTask_WaitInputRelease* ReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, /*bTestAlreadyReleased=*/false);
+	// WaitInputRelease uses the GAS press/release lifecycle owned by Equipment.
+	// The initial-state check runs only for locally controlled actors, catching
+	// a very quick release that arrived before this task started listening. On
+	// a remote server copy it does not consult a potentially stale InputPressed.
+	UAbilityTask_WaitInputRelease* ReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, /*bTestAlreadyReleased=*/true);
 	if (!ReleaseTask)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/true, /*bWasCancelled=*/true);

@@ -18,7 +18,8 @@
  *   and report CanReload() (magazine not already full). Checked on both the
  *   predicting client and the server.
  * - Asset identity: Ability.Type.Action.Item.Reload. While active, Reload
- *   blocks abilities identified as Ability.Type.Action.Item.Fire.
+ *   blocks Fire and Focus by their ability-identity tags and cancels any
+ *   already-active Focus. A rejected/full-magazine Reload does not cancel it.
  * - ActivationOwnedTags still exposes State.Item.Reloading for observable
  *   gameplay/presentation state.
  * - The equip Gameplay Effect blocks the broad Ability.Type.Action.Item

@@ -11,7 +11,7 @@
 #include "Equipment/Items/EnclaveItem.h"
 #include "Abilities/Interfaces/EnclaveFocusProviderInterface.h"
 #include "Equipment/Focus/EnclaveFocusProfile.h"
-#include "Characters/Components/EnclaveViewComponent.h"
+#include "Characters/Interfaces/EnclaveFocusViewInterface.h"
 #include "GameplayTags/EnclavePresentationTags.h"
 #include "Engine/World.h"
 
@@ -106,12 +106,9 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 
 	// End the local view before the old item can disappear or a new item is
 	// presented. A later Focus cue Removed for the old item is harmless.
-	if (AActor* Avatar = GetOwner())
+	if (IEnclaveFocusViewInterface* View = IEnclaveFocusViewInterface::FindFocusView(GetOwner()))
 	{
-		if (UEnclaveViewComponent* View = Avatar->FindComponentByClass<UEnclaveViewComponent>())
-		{
-			View->EndFocus(PresentedWieldedItemState.Item.Get());
-		}
+		View->EndFocus(PresentedWieldedItemState.Item.Get());
 	}
 
 	// Active item actions belong to the presentation being removed. End them
@@ -134,6 +131,31 @@ void UEnclaveAvatarPresentationComponent::ClearWieldedItemPresentation()
 	PresentedWieldedItemState.Reset();
 }
 
+void UEnclaveAvatarPresentationComponent::HandleFocusViewPresentation(const FEnclaveItemPresentationActionEvent& Event)
+{
+	IEnclaveFocusViewInterface* View = IEnclaveFocusViewInterface::FindFocusView(GetOwner());
+	if (!View)
+	{
+		return;
+	}
+
+	if (Event.Phase == EEnclaveItemPresentationActionPhase::Started &&
+		IsValid(Event.Item) && PresentedWieldedItemState.Item.Get() == Event.Item.Get())
+	{
+		const IEnclaveFocusProviderInterface* Provider = Cast<IEnclaveFocusProviderInterface>(Event.Item.Get());
+		const UEnclaveFocusProfile* Profile = Provider ? Provider->ResolveFocusProfile() : nullptr;
+		if (IsValid(Profile))
+		{
+			View->BeginFocus(Event.Item.Get(), Profile->GetViewSettings());
+		}
+	}
+	else if (Event.Phase == EEnclaveItemPresentationActionPhase::Ended)
+	{
+		// A late removal from another item is rejected by the view consumer.
+		View->EndFocus(Event.Item.Get());
+	}
+}
+
 void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event)
 {
 	if (!ShouldRunTransientPresentation())
@@ -141,31 +163,11 @@ void UEnclaveAvatarPresentationComponent::HandleItemPresentationAction(const FEn
 		return;
 	}
 
-	// Focus is an item action, but its local view is controlled by ViewComponent,
-	// never by a weapon ability or raw input. Source identity prevents stale
-	// Removed cues for the old weapon from resetting a newer Focus.
+	// Keep Focus view effects separate from generic montage/item presentation.
+	// GAS owns the duration; this is only a semantic view response.
 	if (Event.Action.MatchesTagExact(EnclaveGameplayTags::Presentation_Item_Action_Focus))
 	{
-		if (AActor* Avatar = GetOwner())
-		{
-			if (UEnclaveViewComponent* View = Avatar->FindComponentByClass<UEnclaveViewComponent>())
-			{
-				if (Event.Phase == EEnclaveItemPresentationActionPhase::Started &&
-					IsValid(Event.Item) && PresentedWieldedItemState.Item.Get() == Event.Item.Get())
-				{
-					const IEnclaveFocusProviderInterface* Provider = Cast<IEnclaveFocusProviderInterface>(Event.Item.Get());
-					const UEnclaveFocusProfile* Profile = Provider ? Provider->ResolveFocusProfile() : nullptr;
-					if (IsValid(Profile))
-					{
-						View->BeginFocus(Event.Item.Get(), Profile->GetViewSettings());
-					}
-				}
-				else if (Event.Phase == EEnclaveItemPresentationActionPhase::Ended)
-				{
-					View->EndFocus(Event.Item.Get());
-				}
-			}
-		}
+		HandleFocusViewPresentation(Event);
 	}
 
 	const FEnclaveItemPresentationMontages* Presentation =

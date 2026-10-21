@@ -18,6 +18,12 @@ UEnclaveGA_Reload::UEnclaveGA_Reload()
 	// future alternate Fire ability only needs the Fire identity tag to obey it.
 	BlockAbilitiesWithTag.AddTag(EnclaveGameplayTags::Ability_Type_Action_Item_Fire);
 
+	// A successful Reload interrupts an existing Focus and prevents Focus from
+	// activating again until Reload has finished. An unsuccessful Reload (e.g.
+	// a full magazine) never activates and therefore does not cancel Focus.
+	CancelAbilitiesWithTag.AddTag(EnclaveGameplayTags::Ability_Type_Action_Item_Focus);
+	BlockAbilitiesWithTag.AddTag(EnclaveGameplayTags::Ability_Type_Action_Item_Focus);
+
 	// State remains useful independently of the interaction policy (animation,
 	// UI, debugging, etc.).
 	ActivationOwnedTags.AddTag(EnclaveGameplayTags::State_Item_Reloading);

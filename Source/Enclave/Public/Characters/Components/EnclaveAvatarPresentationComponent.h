@@ -104,6 +104,8 @@ private:
 	void UnlinkPresentedAnimLayers();
 	bool PlayMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage, float Duration) const;
 	void StopMontageOnMesh(USkeletalMeshComponent* MeshComp, UAnimMontage* Montage) const;
+	/** Bridges the Focus duration event to the avatar's local view contract. */
+	void HandleFocusViewPresentation(const FEnclaveItemPresentationActionEvent& Event);
 	void BeginActiveItemPresentationAction(const FEnclaveItemPresentationActionEvent& Event, const FEnclaveItemPresentationMontages* Presentation, bool bChoreographed);
 	bool EndActiveItemPresentationAction(const FGameplayTag& Action);
 	void EndAllActiveItemPresentationActions();

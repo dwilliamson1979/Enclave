@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Input/Interfaces/EnclaveInputHandlerInterface.h"
+#include "Characters/Interfaces/EnclaveFocusViewInterface.h"
 #include "Equipment/Focus/EnclaveFocusProfile.h"
 #include "EnclaveViewComponent.generated.h"
 
@@ -14,11 +15,11 @@ class UCameraComponent;
 
 /**
  * Local view/look presentation. Input is only Look; item actions reach GAS
- * through Equipment. Focus presentation arrives from AvatarPresentation,
- * with a resolved profile. This component never activates abilities.
+ * through Equipment. Focus arrives through IEnclaveFocusViewInterface
+ * with resolved settings. This component never activates abilities.
  */
 UCLASS(ClassGroup = (Enclave), meta = (BlueprintSpawnableComponent))
-class ENCLAVE_API UEnclaveViewComponent : public UActorComponent, public IEnclaveInputHandlerInterface
+class ENCLAVE_API UEnclaveViewComponent : public UActorComponent, public IEnclaveInputHandlerInterface, public IEnclaveFocusViewInterface
 {
 	GENERATED_BODY()
 
@@ -35,9 +36,9 @@ public:
 	/** Explicit camera binding; an avatar may have more than one camera. */
 	void SetViewCamera(UCameraComponent* InCamera);
 
-	/** Called by presentation only, with already-resolved item settings. */
-	void BeginFocus(AEnclaveItem* SourceItem, const FEnclaveFocusViewSettings& Settings);
-	void EndFocus(AEnclaveItem* SourceItem);
+	// IEnclaveFocusViewInterface. Called with already-resolved item settings.
+	virtual void BeginFocus(AEnclaveItem* SourceItem, const FEnclaveFocusViewSettings& Settings) override;
+	virtual void EndFocus(AEnclaveItem* SourceItem) override;
 
 	/** Teardown/re-possession safety net; no stale Focus can retain camera changes. */
 	void ResetFocus(bool bImmediate = false);
