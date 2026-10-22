@@ -10,6 +10,6 @@
 UENUM(BlueprintType)
 enum class EEnclaveLagCompensationMode : uint8
 {
-    Disabled UMETA(DisplayName = "Disabled (Present-Time)"),
-    ServerSideRewind UMETA(DisplayName = "Server-Side Rewind (Not Implemented)")
+	Disabled UMETA(DisplayName = "Disabled (Present-Time)"),
+	ServerSideRewind UMETA(DisplayName = "Server-Side Rewind (Not Implemented)")
 };

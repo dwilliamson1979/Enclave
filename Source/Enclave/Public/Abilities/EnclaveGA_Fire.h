@@ -83,34 +83,34 @@ public:
 	/** Overridden to resolve the triggering source's own cooldown effect (IEnclaveFireableInterface::GetFireCooldownEffectClass) instead of a static CooldownGameplayEffectClass configured on the ability. Falls back to Super (i.e. CooldownGameplayEffectClass, left unset here) if no fireable source can be resolved. */
 	virtual UGameplayEffect* GetCooldownGameplayEffect() const override;
 
-    /** GAS may call this on the Fire CDO before creating an execution instance.
-     * Resolve the item-provided cooldown from Handle/ActorInfo, never from
-     * GetCurrentSourceObject() in this pre-activation path.
-     */
-    virtual bool CheckCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags) const override;
+	/** GAS may call this on the Fire CDO before creating an execution instance.
+	 * Resolve the item-provided cooldown from Handle/ActorInfo, never from
+	 * GetCurrentSourceObject() in this pre-activation path.
+	 */
+	virtual bool CheckCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags) const override;
 
 	/** Super (any GE cost), then spends one activation's ammo from the triggering source if it implements IEnclaveAmmoConsumerInterface - really on the server, predicted on the owning client. */
 	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
 
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
-    virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
 private:
-    /** Server receives target data via GAS, keyed by spec and ORIGINAL activation key. */
-    void OnShotTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
-    void OnShotDataTimeout();
-    void ReleaseShotDataDelegate();
-    void CompleteAuthoritativeShot();
+	/** Server receives target data via GAS, keyed by spec and ORIGINAL activation key. */
+	void OnShotTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
+	void OnShotDataTimeout();
+	void ReleaseShotDataDelegate();
+	void CompleteAuthoritativeShot();
 
-    /** Transport timeout only, not a rewind allowance. */
-    UPROPERTY(EditDefaultsOnly, Category = "Combat|Shot Intent", meta = (ClampMin = "0.25", ClampMax = "5.0", Units = "s"))
-    float ShotDataTimeoutSeconds = 1.0f;
+	/** Transport timeout only, not a rewind allowance. */
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Shot Intent", meta = (ClampMin = "0.25", ClampMax = "5.0", Units = "s"))
+	float ShotDataTimeoutSeconds = 1.0f;
 
-    TWeakObjectPtr<UAbilitySystemComponent> PendingTargetDataASC;
-    FDelegateHandle ShotDataDelegateHandle;
-    FTimerHandle ShotDataTimeoutHandle;
-    bool bWaitingForShotData = false;
+	TWeakObjectPtr<UAbilitySystemComponent> PendingTargetDataASC;
+	FDelegateHandle ShotDataDelegateHandle;
+	FTimerHandle ShotDataTimeoutHandle;
+	bool bWaitingForShotData = false;
 
 	/** Server-only hit detection followed by target-agnostic Enclave damage dispatch for each confirmed hit. */
 	void PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor, const FGameplayAbilityActivationInfo& ActivationInfo);

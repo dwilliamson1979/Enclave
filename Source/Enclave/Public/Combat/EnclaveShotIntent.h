@@ -13,55 +13,57 @@
 USTRUCT()
 struct ENCLAVE_API FEnclaveShotIntent
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
-    UPROPERTY()
-    FVector_NetQuantize10 Origin = FVector::ZeroVector;
+	UPROPERTY()
+	FVector_NetQuantize10 Origin = FVector::ZeroVector;
 
-    UPROPERTY()
-    FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
+	UPROPERTY()
+	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
 
-    /** Shooter's estimate of synchronized server time, NOT trusted rewind time. */
-    UPROPERTY()
-    float ClientServerTimeSeconds = 0.0f;
+	/** Shooter's estimate of synchronized server time (double for long sessions).
+	 * This is untrusted timing evidence, NOT an authoritative rewind timestamp.
+	 */
+	UPROPERTY()
+	double ClientServerTimeSeconds = 0.0;
 
-    /** Diagnostics/ordering. Each shot uses its own GAS activation prediction key. */
-    UPROPERTY()
-    uint16 ShotSequence = 0;
+	/** Diagnostics/ordering. Each shot uses its own GAS activation prediction key. */
+	UPROPERTY()
+	uint16 ShotSequence = 0;
 
-    /** Reserved for a future server-enforced spread policy. Always zero for now. */
-    UPROPERTY()
-    uint32 SpreadSeed = 0;
+	/** Reserved for a future server-enforced spread policy. Always zero for now. */
+	UPROPERTY()
+	uint32 SpreadSeed = 0;
 };
 
 /** GAS Target Data envelope. Must use its concrete ScriptStruct for polymorphic network serialization. */
 USTRUCT()
 struct ENCLAVE_API FEnclaveGameplayAbilityTargetData_ShotIntent : public FGameplayAbilityTargetData
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
-    UPROPERTY()
-    FEnclaveShotIntent Shot;
+	UPROPERTY()
+	FEnclaveShotIntent Shot;
 
-    virtual UScriptStruct* GetScriptStruct() const override { return StaticStruct(); }
-    virtual FString ToString() const override { return TEXT("EnclaveShotIntent"); }
+	virtual UScriptStruct* GetScriptStruct() const override { return StaticStruct(); }
+	virtual FString ToString() const override { return TEXT("EnclaveShotIntent"); }
 
-    bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
-    {
-        bool bOriginOk = true;
-        bool bDirectionOk = true;
-        Shot.Origin.NetSerialize(Ar, Map, bOriginOk);
-        Shot.Direction.NetSerialize(Ar, Map, bDirectionOk);
-        Ar << Shot.ClientServerTimeSeconds;
-        Ar << Shot.ShotSequence;
-        Ar << Shot.SpreadSeed;
-        bOutSuccess = bOriginOk && bDirectionOk && !Ar.IsError();
-        return true;
-    }
+	bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+	{
+		bool bOriginOk = true;
+		bool bDirectionOk = true;
+		Shot.Origin.NetSerialize(Ar, Map, bOriginOk);
+		Shot.Direction.NetSerialize(Ar, Map, bDirectionOk);
+		Ar << Shot.ClientServerTimeSeconds;
+		Ar << Shot.ShotSequence;
+		Ar << Shot.SpreadSeed;
+		bOutSuccess = bOriginOk && bDirectionOk && !Ar.IsError();
+		return true;
+	}
 };
 
 template<>
 struct TStructOpsTypeTraits<FEnclaveGameplayAbilityTargetData_ShotIntent> : TStructOpsTypeTraitsBase2<FEnclaveGameplayAbilityTargetData_ShotIntent>
 {
-    enum { WithNetSerializer = true, WithCopy = true };
+	enum { WithNetSerializer = true, WithCopy = true };
 };

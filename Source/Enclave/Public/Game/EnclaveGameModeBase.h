@@ -24,12 +24,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Hit Detection")
 	EEnclaveWeaponHitDetectionMode GetWeaponHitDetectionMode() const { return WeaponHitDetectionMode; }
 
-    /** Effective server-only policy. SSR is not enabled until historical queries exist. */
-    UFUNCTION(BlueprintPure, Category = "Combat|Lag Compensation")
-    EEnclaveLagCompensationMode GetLagCompensationMode() const { return LagCompensationMode; }
+	/** Effective server-only policy. SSR is not enabled until historical queries exist. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Lag Compensation")
+	EEnclaveLagCompensationMode GetLagCompensationMode() const { return LagCompensationMode; }
 
-    UFUNCTION(BlueprintPure, Category = "Combat|Lag Compensation")
-    float GetMaxRewindAllowanceMs() const { return MaxRewindAllowanceMs; }
+	UFUNCTION(BlueprintPure, Category = "Combat|Lag Compensation")
+	float GetMaxRewindAllowanceMs() const { return MaxRewindAllowanceMs; }
 
 	/** Server-only notification; listeners configure their own collision representation. */
 	FEnclaveWeaponHitDetectionModeChanged& OnWeaponHitDetectionModeChanged() { return WeaponHitDetectionModeChanged; }
@@ -65,13 +65,13 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Hit Detection", meta = (AllowPrivateAccess = "true"))
 	EEnclaveWeaponHitDetectionMode WeaponHitDetectionMode = EEnclaveWeaponHitDetectionMode::Capsule;
 
-    /** Match/server temporal policy, independent of collision representation.
-     * Currently only Disabled is executable: selecting SSR logs a warning and forces Disabled at InitGame.
-     */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
-    EEnclaveLagCompensationMode LagCompensationMode = EEnclaveLagCompensationMode::Disabled;
+	/** Match/server temporal policy, independent of collision representation.
+	 * Currently only Disabled is executable: selecting SSR logs a warning and forces Disabled at InitGame.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
+	EEnclaveLagCompensationMode LagCompensationMode = EEnclaveLagCompensationMode::Disabled;
 
-    /** Future SSR historical-time cap, in milliseconds. Does not affect current traces. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", ClampMax = "500.0", UIMin = "0.0", UIMax = "500.0", Units = "ms"))
-    float MaxRewindAllowanceMs = 200.0f;
+	/** Future SSR historical-time cap, in milliseconds. Does not affect current traces. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", ClampMax = "500.0", UIMin = "0.0", UIMax = "500.0", Units = "ms"))
+	float MaxRewindAllowanceMs = 200.0f;
 };
