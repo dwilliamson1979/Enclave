@@ -16,6 +16,17 @@ void AEnclaveGameModeBase::InitGame(const FString& MapName, const FString& Optio
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
 
+    // Editor-exposed SSR configuration is only a contract at this milestone.
+    // Never claim rewind is active when RegisterHitscan still uses current geometry.
+    MaxRewindAllowanceMs = FMath::Clamp(MaxRewindAllowanceMs, 0.0f, 500.0f);
+    if (LagCompensationMode != EEnclaveLagCompensationMode::Disabled)
+    {
+        UE_LOG(LogEnclaveCombat, Warning,
+            TEXT("Server-Side Rewind is not implemented; forcing lag compensation to Disabled (present-time traces)."));
+        LagCompensationMode = EEnclaveLagCompensationMode::Disabled;
+    }
+    UE_LOG(LogEnclaveCombat, Log, TEXT("Match lag compensation: Disabled; future rewind allowance: %.1f ms."), MaxRewindAllowanceMs);
+
 	const FString HitDetectionModeOption = UGameplayStatics::ParseOption(Options, TEXT("WeaponHitDetectionMode"));
 
 	if (!HitDetectionModeOption.IsEmpty())
