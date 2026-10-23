@@ -315,7 +315,7 @@ bool AEnclaveCharacter::TeleportTo(const FVector& DestLocation, const FRotator& 
 	const bool bSucceeded = Super::TeleportTo(DestLocation, DestRotation, bIsATest, bNoCheck);
 	if (bSucceeded && !bIsATest && HasAuthority() && IsValid(TargetHistoryComp))
 	{
-		TargetHistoryComp->InvalidateHistory();
+		TargetHistoryComp->MarkHistoryDiscontinuity(); // Keep before/after frames but never interpolate through teleport.
 	}
 	return bSucceeded;
 }

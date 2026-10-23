@@ -31,6 +31,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Lag Compensation")
 	float GetMaxRewindAllowanceMs() const { return MaxRewindAllowanceMs; }
 
+	/** Single authority for the effective bounded rewind window in seconds. */
+	double GetMaxRewindSeconds() const
+	{
+		return FMath::Clamp(static_cast<double>(MaxRewindAllowanceMs), 0.0, 500.0) / 1000.0;
+	}
+
 	/** Server-only notification; listeners configure their own collision representation. */
 	FEnclaveWeaponHitDetectionModeChanged& OnWeaponHitDetectionModeChanged() { return WeaponHitDetectionModeChanged; }
 

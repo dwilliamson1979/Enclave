@@ -18,6 +18,9 @@ struct ENCLAVE_API FEnclaveTargetCapsuleFrame
 	FQuat Rotation = FQuat::Identity;
 	float RadiusCm = 0.0f;
 	float HalfHeightCm = 0.0f;
+	// True when this sample begins a new continuous movement/time segment.
+	// A query may return either endpoint but MUST NOT interpolate across the boundary.
+	bool bBreakBefore = false;
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	// C4B diagnostic-only process-monotonic capture; NEVER a network rewind clock.
 	double DebugCaptureProcessSeconds = 0.0;
@@ -55,7 +58,9 @@ struct ENCLAVE_API FEnclaveVisualHistoryTimeMatch
  * No live collision is moved, and no hit-registration behavior is changed.
  *
  * An independent character lifetime has an independent history. Teleports,
- * suspect jumps, time gaps, collision-shape changes, and death reset it.
+ * death, possession, and collision-policy changes fully invalidate it.
+ * Teleports, suspect movement jumps, and capture gaps mark segment breaks.
+ * Crouch/uncrouch preserve history: each frame records its own capsule size.
  * Interpolation is allowed only within a continuous recorded segment;
  * requests outside available history fail instead of extrapolating.
  *
@@ -83,8 +88,14 @@ public:
 	bool TryMatchVisualAnchorToHistory(const FVector& VisualAnchor, double ClientShotTimeSeconds,
 		double LookbackSeconds, double LookaheadSeconds, FEnclaveVisualHistoryTimeMatch& OutMatch) const;
 
-	/** Clear all samples at any avatar/history identity boundary. */
+	/** Clear all samples at avatar identity boundaries (death/possession/policy). */
 	void InvalidateHistory();
+
+	/** Preserve preceding history, but forbid interpolation into the next sample.
+	 * Call for an explicit teleport or scripted discontinuous reposition on authority.
+	 * Unknown large movement jumps and frame gaps are also detected automatically.
+	 */
+	void MarkHistoryDiscontinuity();
 
 	/** Read-only diagnostics; does not expose mutable history or client data. */
 	int32 GetHistorySampleCount() const { return Frames.Num(); }
@@ -98,5 +109,6 @@ protected:
 private:
 	// The small bounded array is never replicated and contains no UObject references.
 	TArray<FEnclaveTargetCapsuleFrame> Frames;
+	bool bBreakBeforeNextCapture = false;
 	double LastDebugSummaryTime = -1.0;
 };

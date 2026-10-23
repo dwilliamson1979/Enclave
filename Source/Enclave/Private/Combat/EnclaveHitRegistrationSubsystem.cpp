@@ -7,6 +7,7 @@
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Characters/EnclaveCharacter.h"
+#include "Components/CapsuleComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Controllers/EnclavePlayerController.h"
 #include "GameFramework/Pawn.h"
@@ -189,7 +190,7 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 	OutValidatedRay.Timing.ServerReceiptTimeSeconds = ServerReceiptTimeSeconds;
 	if (const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>())
 	{
-		OutValidatedRay.Timing.MaxRewindSeconds = FMath::Clamp(static_cast<double>(GameMode->GetMaxRewindAllowanceMs()), 0.0, 500.0) / 1000.0;
+		OutValidatedRay.Timing.MaxRewindSeconds = GameMode->GetMaxRewindSeconds();
 	}
 	// The C4 patrol trajectory inverse fit is debug-only and does not resolve
 	// trustworthy presentation timing. Keep authoritative traces present-time.
@@ -362,6 +363,38 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareHistoricalCapsules(const FEnc
 		WorldBlockDistanceCm < NearestHitDistanceCm;
 	const bool bShadowHit = bHistoricalCandidate && !bOccluded;
 	const bool bComparable = AvailableHistories > 0 && MissingHistories == 0;
+
+	// C4C live-geometry self-check: compare our analytic capsule intersection
+	// against Chaos component tracing for a live Enclave character hit. This is
+	// independent of the historical candidate and cannot change the hit result.
+	if (bLiveHit)
+	{
+		AEnclaveCharacter* LiveCharacter = Cast<AEnclaveCharacter>(LiveHit.GetActor());
+		UCapsuleComponent* LiveCapsule = IsValid(LiveCharacter) ? LiveCharacter->GetCapsuleComponent() : nullptr;
+		if (IsValid(LiveCapsule))
+		{
+			FEnclaveTargetCapsuleFrame LiveCapsuleFrame;
+			LiveCapsuleFrame.Center = LiveCapsule->GetComponentLocation();
+			LiveCapsuleFrame.Rotation = LiveCapsule->GetComponentQuat();
+			LiveCapsuleFrame.RadiusCm = LiveCapsule->GetScaledCapsuleRadius();
+			LiveCapsuleFrame.HalfHeightCm = LiveCapsule->GetScaledCapsuleHalfHeight();
+			double AnalyticDistanceCm = 0.0;
+			FVector AnalyticPoint;
+			const bool bAnalyticHit = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
+				Query.Start, Query.End, LiveCapsuleFrame, AnalyticDistanceCm, AnalyticPoint);
+			FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(EnclaveSSRLiveCapsuleCheck), true);
+			FHitResult ComponentHit;
+			const bool bComponentHit = LiveCapsule->LineTraceComponent(
+				ComponentHit, Query.Start, Query.End, CapsuleParams);
+			const double DeltaCm = bAnalyticHit && bComponentHit
+				? FMath::Abs(AnalyticDistanceCm - static_cast<double>(ComponentHit.Distance)) : -1.0;
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRShadow CAPSULE_CHECK key=%u actor=%s analytic=%d component=%d analyticDistanceCm=%.2f componentDistanceCm=%.2f deltaCm=%.3f (CURRENT-TIME SELF-CHECK; SHADOW ONLY)",
+				Query.ShotSequence, *GetNameSafe(LiveCharacter), bAnalyticHit ? 1 : 0,
+				bComponentHit ? 1 : 0, bAnalyticHit ? AnalyticDistanceCm : -1.0,
+				bComponentHit ? static_cast<double>(ComponentHit.Distance) : -1.0, DeltaCm);
+		}
+	}
 
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
 		"SSRShadow SERVER key=%u shotAgeMs=%.1f targetHistoryTime=%.6f presentationOffsetMs=0.0 available=%d missing=%d historicalCandidate=%s historicalEntryCm=%.1f historicalPoint=%s worldBlock=%s worldBlockCm=%.1f occluded=%d shadowHit=%d liveHit=%d liveActor=%s comparable=%d sameActor=%d (UNRECONCILED SHOT-TIME BASELINE; SHADOW ONLY; does not authorize hits)",

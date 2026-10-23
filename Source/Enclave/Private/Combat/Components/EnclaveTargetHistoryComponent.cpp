@@ -66,6 +66,18 @@ void UEnclaveTargetHistoryComponent::EndPlay(const EEndPlayReason::Type EndPlayR
 void UEnclaveTargetHistoryComponent::InvalidateHistory()
 {
 	Frames.Reset();
+	bBreakBeforeNextCapture = false;
+}
+
+void UEnclaveTargetHistoryComponent::MarkHistoryDiscontinuity()
+{
+	// The next authoritative sample starts a new continuous segment.
+	// Keep the previous segment within the normal retention limit: a shot
+	// captured before the teleport can still query the old position.
+	if (IsValid(GetOwner()) && GetOwner()->HasAuthority())
+	{
+		bBreakBeforeNextCapture = true;
+	}
 }
 
 bool UEnclaveTargetHistoryComponent::GetHistoryTimeBounds(double& OutOldestTime, double& OutNewestTime) const
@@ -121,30 +133,74 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 		return;
 	}
 
+	const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>();
+	if (!IsValid(GameMode))
+	{
+		// No authoritative rewind policy. Do not retain history under a guessed cap.
+		InvalidateHistory();
+		return;
+	}
+
+	Next.bBreakBefore = bBreakBeforeNextCapture;
 	if (!Frames.IsEmpty())
 	{
 		const FEnclaveTargetCapsuleFrame& Previous = Frames.Last();
 		const double SampleGap = Next.ServerTimeSeconds - Previous.ServerTimeSeconds;
-		const double MaxContinuousDisplacement = EnclaveTargetHistory::MaxContinuousSpeedCmPerSecond * SampleGap +
-			EnclaveTargetHistory::MovementSlackCm;
-		const bool bTimeDiscontinuity = SampleGap <= 0.0 || SampleGap > EnclaveTargetHistory::MaxCaptureGapSeconds;
-		const bool bLocationDiscontinuity = !bTimeDiscontinuity &&
-			FVector::DistSquared(Previous.Center, Next.Center) > FMath::Square(MaxContinuousDisplacement);
-		const bool bShapeDiscontinuity =
-			FMath::Abs(Previous.RadiusCm - Next.RadiusCm) > EnclaveTargetHistory::ShapeChangeToleranceCm ||
-			FMath::Abs(Previous.HalfHeightCm - Next.HalfHeightCm) > EnclaveTargetHistory::ShapeChangeToleranceCm;
-		if (bTimeDiscontinuity || bLocationDiscontinuity || bShapeDiscontinuity)
+		if (SampleGap == 0.0)
 		{
-			// Never blend across a hitch, jump/teleport, or abrupt capsule change.
+			// GameState time did not advance. A duplicate timestamp would break
+			// the ordered history; wait for the next authoritative sample.
+			return;
+		}
+		if (SampleGap < 0.0)
+		{
+			// Authoritative clock reset: old sample timestamps are no longer
+			// comparable to new timestamps. This is an identity/timebase reset,
+			// not a teleport, so a full invalidation is required.
 			InvalidateHistory();
+		}
+		else
+		{
+			const double MaxContinuousDisplacement = EnclaveTargetHistory::MaxContinuousSpeedCmPerSecond * SampleGap +
+				EnclaveTargetHistory::MovementSlackCm;
+			const bool bGap = SampleGap > EnclaveTargetHistory::MaxCaptureGapSeconds;
+			const bool bJump = !bGap &&
+				FVector::DistSquared(Previous.Center, Next.Center) > FMath::Square(MaxContinuousDisplacement);
+			Next.bBreakBefore |= bGap || bJump;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+			if (CVarDebugSSRHistory.GetValueOnGameThread() != 0)
+			{
+				if (Next.bBreakBefore)
+				{
+					ENCLAVE_LOG(LogEnclaveCombat, Log,
+						"SSRHistory BREAK target=%s reason=%s gapMs=%.1f retained=%d (no interpolation across boundary)",
+						*GetNameSafe(Character), bBreakBeforeNextCapture ? TEXT("explicit") : (bGap ? TEXT("gap") : TEXT("jump")),
+						SampleGap * 1000.0, Frames.Num());
+				}
+				const bool bShapeChange =
+					FMath::Abs(Previous.RadiusCm - Next.RadiusCm) > EnclaveTargetHistory::ShapeChangeToleranceCm ||
+					FMath::Abs(Previous.HalfHeightCm - Next.HalfHeightCm) > EnclaveTargetHistory::ShapeChangeToleranceCm;
+				if (bShapeChange)
+				{
+					ENCLAVE_LOG(LogEnclaveCombat, Log,
+						"SSRHistory SHAPE target=%s halfHeight=%.1f->%.1f radius=%.1f->%.1f retained=%d (shape step, no reset)",
+						*GetNameSafe(Character), Previous.HalfHeightCm, Next.HalfHeightCm,
+						Previous.RadiusCm, Next.RadiusCm, Frames.Num());
+				}
+			}
+#endif
 		}
 	}
 
+	// There can be no earlier segment to break after a reset/first capture.
+	if (Frames.IsEmpty())
+	{
+		Next.bBreakBefore = false;
+	}
 	Frames.Add(Next);
+	bBreakBeforeNextCapture = false;
 
-	const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>();
-	const double MaxRewindSeconds = IsValid(GameMode)
-		? FMath::Clamp(static_cast<double>(GameMode->GetMaxRewindAllowanceMs()), 0.0, 500.0) / 1000.0 : 0.2;
+	const double MaxRewindSeconds = GameMode->GetMaxRewindSeconds();
 	const double EarliestAllowedTime = Next.ServerTimeSeconds - MaxRewindSeconds - EnclaveTargetHistory::ExtraRetentionSeconds;
 	int32 NumExpired = 0;
 	while (NumExpired < Frames.Num() && Frames[NumExpired].ServerTimeSeconds < EarliestAllowedTime)
@@ -209,7 +265,7 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 		if (ServerTimeSeconds > Older.ServerTimeSeconds && ServerTimeSeconds < Newer.ServerTimeSeconds)
 		{
 			const double Span = Newer.ServerTimeSeconds - Older.ServerTimeSeconds;
-			if (Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds)
+			if (Newer.bBreakBefore || Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds)
 			{
 				return false;
 			}
@@ -217,8 +273,14 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 			OutFrame.ServerTimeSeconds = ServerTimeSeconds;
 			OutFrame.Center = FMath::Lerp(Older.Center, Newer.Center, Alpha);
 			OutFrame.Rotation = FQuat::Slerp(Older.Rotation, Newer.Rotation, Alpha).GetNormalized();
-			OutFrame.RadiusCm = FMath::Lerp(Older.RadiusCm, Newer.RadiusCm, Alpha);
-			OutFrame.HalfHeightCm = FMath::Lerp(Older.HalfHeightCm, Newer.HalfHeightCm, Alpha);
+			// Avoid blending through nonexistent capsule dimensions during abrupt
+			// crouch/uncrouch changes. Shape steps at the newer recorded instant;
+			// position and orientation remain continuous when no break was marked.
+			const bool bShapeStep =
+				FMath::Abs(Older.RadiusCm - Newer.RadiusCm) > EnclaveTargetHistory::ShapeChangeToleranceCm ||
+				FMath::Abs(Older.HalfHeightCm - Newer.HalfHeightCm) > EnclaveTargetHistory::ShapeChangeToleranceCm;
+			OutFrame.RadiusCm = bShapeStep ? Older.RadiusCm : FMath::Lerp(Older.RadiusCm, Newer.RadiusCm, Alpha);
+			OutFrame.HalfHeightCm = bShapeStep ? Older.HalfHeightCm : FMath::Lerp(Older.HalfHeightCm, Newer.HalfHeightCm, Alpha);
 			return true;
 		}
 	}
@@ -266,7 +328,7 @@ bool UEnclaveTargetHistoryComponent::TryMatchVisualAnchorToHistory(const FVector
 		const FEnclaveTargetCapsuleFrame& Older = Frames[Index - 1];
 		const FEnclaveTargetCapsuleFrame& Newer = Frames[Index];
 		const double Span = Newer.ServerTimeSeconds - Older.ServerTimeSeconds;
-		if (Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds)
+		if (Newer.bBreakBefore || Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds)
 		{
 			continue;
 		}
