@@ -1,0 +1,215 @@
+// Copyright Lightcarrier Studios
+
+#include "Combat/Components/EnclaveTargetHistoryComponent.h"
+
+#include "Characters/EnclaveCharacter.h"
+#include "Components/CapsuleComponent.h"
+#include "Game/EnclaveGameModeBase.h"
+#include "GameFramework/GameStateBase.h"
+#include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
+#include "Debug/EnclaveDebug.h"
+#include "Engine/World.h"
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+#include "HAL/IConsoleManager.h"
+static TAutoConsoleVariable<int32> CVarDebugSSRHistory(
+	TEXT("Enclave.Debug.SSRHistory"), 0,
+	TEXT("Log a 2-second server-side summary of Stage C2 capsule history (0=off, 1=on). Does not enable rewind."),
+	ECVF_Cheat);
+#endif
+
+namespace EnclaveTargetHistory
+{
+	// C2 records every authoritative frame, including dedicated-server frames.
+	// A fixed extra margin keeps a little history beyond the policy's rewind cap.
+	constexpr double ExtraRetentionSeconds = 0.125;
+	constexpr double MaxCaptureGapSeconds = 0.150;
+	constexpr int32 MaxFrames = 128;
+	constexpr double MaxContinuousSpeedCmPerSecond = 2000.0;
+	constexpr double MovementSlackCm = 30.0;
+	constexpr float ShapeChangeToleranceCm = 0.5f;
+}
+
+UEnclaveTargetHistoryComponent::UEnclaveTargetHistoryComponent()
+{
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickGroup = TG_PostPhysics;
+	SetIsReplicatedByDefault(false);
+}
+
+void UEnclaveTargetHistoryComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// This component is present on replicated avatars, but ONLY the server
+	// records target geometry. Clients neither tick nor store historical frames.
+	if (!IsValid(GetOwner()) || !GetOwner()->HasAuthority() ||
+		!GetWorld() || GetWorld()->GetNetMode() == NM_Client)
+	{
+		SetComponentTickEnabled(false);
+		return;
+	}
+
+	Frames.Reserve(48);
+}
+
+void UEnclaveTargetHistoryComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	InvalidateHistory();
+	Super::EndPlay(EndPlayReason);
+}
+
+void UEnclaveTargetHistoryComponent::InvalidateHistory()
+{
+	Frames.Reset();
+}
+
+bool UEnclaveTargetHistoryComponent::GetHistoryTimeBounds(double& OutOldestTime, double& OutNewestTime) const
+{
+	OutOldestTime = 0.0;
+	OutNewestTime = 0.0;
+	if (Frames.IsEmpty())
+	{
+		return false;
+	}
+
+	OutOldestTime = Frames[0].ServerTimeSeconds;
+	OutNewestTime = Frames.Last().ServerTimeSeconds;
+	return true;
+}
+
+void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	const AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	const UCapsuleComponent* Capsule = IsValid(Character) ? Character->GetCapsuleComponent() : nullptr;
+	const UEnclaveAvatarLifecycleComponent* Lifecycle = IsValid(Character)
+		? Character->FindComponentByClass<UEnclaveAvatarLifecycleComponent>() : nullptr;
+	if (!IsValid(Character) || !Character->HasAuthority() || !IsValid(GameState) ||
+		!IsValid(Capsule) || (IsValid(Lifecycle) && Lifecycle->IsDead()))
+	{
+		InvalidateHistory();
+		return;
+	}
+
+	FEnclaveTargetCapsuleFrame Next;
+	Next.ServerTimeSeconds = GameState->GetServerWorldTimeSeconds();
+	Next.Center = Capsule->GetComponentLocation();
+	Next.Rotation = Capsule->GetComponentQuat();
+	Next.RadiusCm = Capsule->GetScaledCapsuleRadius();
+	Next.HalfHeightCm = Capsule->GetScaledCapsuleHalfHeight();
+	if (!FMath::IsFinite(Next.ServerTimeSeconds) || Next.ServerTimeSeconds < 0.0 ||
+		Next.Center.ContainsNaN() || Next.Rotation.ContainsNaN() ||
+		!FMath::IsFinite(Next.RadiusCm) || !FMath::IsFinite(Next.HalfHeightCm) ||
+		Next.RadiusCm <= 0.0f || Next.HalfHeightCm < Next.RadiusCm)
+	{
+		InvalidateHistory();
+		return;
+	}
+
+	if (!Frames.IsEmpty())
+	{
+		const FEnclaveTargetCapsuleFrame& Previous = Frames.Last();
+		const double SampleGap = Next.ServerTimeSeconds - Previous.ServerTimeSeconds;
+		const double MaxContinuousDisplacement = EnclaveTargetHistory::MaxContinuousSpeedCmPerSecond * SampleGap +
+			EnclaveTargetHistory::MovementSlackCm;
+		const bool bTimeDiscontinuity = SampleGap <= 0.0 || SampleGap > EnclaveTargetHistory::MaxCaptureGapSeconds;
+		const bool bLocationDiscontinuity = !bTimeDiscontinuity &&
+			FVector::DistSquared(Previous.Center, Next.Center) > FMath::Square(MaxContinuousDisplacement);
+		const bool bShapeDiscontinuity =
+			FMath::Abs(Previous.RadiusCm - Next.RadiusCm) > EnclaveTargetHistory::ShapeChangeToleranceCm ||
+			FMath::Abs(Previous.HalfHeightCm - Next.HalfHeightCm) > EnclaveTargetHistory::ShapeChangeToleranceCm;
+		if (bTimeDiscontinuity || bLocationDiscontinuity || bShapeDiscontinuity)
+		{
+			// Never blend across a hitch, jump/teleport, or abrupt capsule change.
+			InvalidateHistory();
+		}
+	}
+
+	Frames.Add(Next);
+
+	const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>();
+	const double MaxRewindSeconds = IsValid(GameMode)
+		? FMath::Clamp(static_cast<double>(GameMode->GetMaxRewindAllowanceMs()), 0.0, 500.0) / 1000.0 : 0.2;
+	const double EarliestAllowedTime = Next.ServerTimeSeconds - MaxRewindSeconds - EnclaveTargetHistory::ExtraRetentionSeconds;
+	int32 NumExpired = 0;
+	while (NumExpired < Frames.Num() && Frames[NumExpired].ServerTimeSeconds < EarliestAllowedTime)
+	{
+		++NumExpired;
+	}
+	if (NumExpired > 0)
+	{
+		Frames.RemoveAt(0, NumExpired, EAllowShrinking::No);
+	}
+	if (Frames.Num() > EnclaveTargetHistory::MaxFrames)
+	{
+		Frames.RemoveAt(0, Frames.Num() - EnclaveTargetHistory::MaxFrames, EAllowShrinking::No);
+	}
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (CVarDebugSSRHistory.GetValueOnGameThread() != 0 &&
+		(LastDebugSummaryTime < 0.0 || Next.ServerTimeSeconds - LastDebugSummaryTime >= 2.0))
+	{
+		LastDebugSummaryTime = Next.ServerTimeSeconds;
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRHistory SERVER target=%s frames=%d oldest=%.6f newest=%.6f spanMs=%.1f capsule=%s (recording only; no rewind)",
+			*GetNameSafe(Character), Frames.Num(), Frames[0].ServerTimeSeconds,
+			Frames.Last().ServerTimeSeconds,
+			(Frames.Last().ServerTimeSeconds - Frames[0].ServerTimeSeconds) * 1000.0,
+			*Next.Center.ToCompactString());
+	}
+#endif
+}
+
+bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSeconds,
+	FEnclaveTargetCapsuleFrame& OutFrame) const
+{
+	OutFrame = FEnclaveTargetCapsuleFrame();
+	const AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
+	const UEnclaveAvatarLifecycleComponent* Lifecycle = IsValid(Character)
+		? Character->FindComponentByClass<UEnclaveAvatarLifecycleComponent>() : nullptr;
+	if (!IsValid(Character) || !Character->HasAuthority() ||
+		(IsValid(Lifecycle) && Lifecycle->IsDead()) ||
+		!FMath::IsFinite(ServerTimeSeconds) || Frames.IsEmpty() ||
+		ServerTimeSeconds < Frames[0].ServerTimeSeconds ||
+		ServerTimeSeconds > Frames.Last().ServerTimeSeconds)
+	{
+		return false;
+	}
+
+	// The history is short and strictly ordered. Never extrapolate before
+	// first sample, after last sample, or across a cleared discontinuity.
+	for (int32 Index = 0; Index < Frames.Num(); ++Index)
+	{
+		const FEnclaveTargetCapsuleFrame& Older = Frames[Index];
+		if (ServerTimeSeconds == Older.ServerTimeSeconds)
+		{
+			OutFrame = Older;
+			return true;
+		}
+		if (Index + 1 >= Frames.Num())
+		{
+			break;
+		}
+		const FEnclaveTargetCapsuleFrame& Newer = Frames[Index + 1];
+		if (ServerTimeSeconds > Older.ServerTimeSeconds && ServerTimeSeconds < Newer.ServerTimeSeconds)
+		{
+			const double Span = Newer.ServerTimeSeconds - Older.ServerTimeSeconds;
+			if (Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds)
+			{
+				return false;
+			}
+			const float Alpha = static_cast<float>((ServerTimeSeconds - Older.ServerTimeSeconds) / Span);
+			OutFrame.ServerTimeSeconds = ServerTimeSeconds;
+			OutFrame.Center = FMath::Lerp(Older.Center, Newer.Center, Alpha);
+			OutFrame.Rotation = FQuat::Slerp(Older.Rotation, Newer.Rotation, Alpha).GetNormalized();
+			OutFrame.RadiusCm = FMath::Lerp(Older.RadiusCm, Newer.RadiusCm, Alpha);
+			OutFrame.HalfHeightCm = FMath::Lerp(Older.HalfHeightCm, Newer.HalfHeightCm, Alpha);
+			return true;
+		}
+	}
+	return false;
+}

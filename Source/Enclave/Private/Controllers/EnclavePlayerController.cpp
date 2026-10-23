@@ -1,6 +1,7 @@
 #include "Controllers/EnclavePlayerController.h"
 #include "Characters/EnclaveCharacter.h"
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
+#include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Debug/EnclaveSSRPatrolComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -196,10 +197,32 @@ void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementati
 	const FVector SpatialDelta = CurrentServerCapsuleCenter - FVector(ClientVisualProxyAnchor);
 	const double SampleReceiptTime = GS->GetServerWorldTimeSeconds();
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRVisual SERVER key=%d patrolTarget=%s clientVisualProxyAnchor=%s serverCapsuleAtProbeReceipt=%s delta=%s deltaCm=%.2f serverTargetSpeedCmS=%.1f clientShotAgeAtProbeReceiptMs=%.1f (UNTRUSTED SAMPLE; independent RPC; no historical lookup/rewind)",
+		"SSRVisual SERVER key=%d patrolTarget=%s clientVisualProxyAnchor=%s serverCapsuleAtProbeReceipt=%s delta=%s deltaCm=%.2f serverTargetSpeedCmS=%.1f clientShotAgeAtProbeReceiptMs=%.1f (UNTRUSTED SAMPLE; independent RPC; diagnostic only)",
 		PredictionKey, *GetNameSafe(PatrolTarget), *FVector(ClientVisualProxyAnchor).ToCompactString(),
 		*CurrentServerCapsuleCenter.ToCompactString(), *SpatialDelta.ToCompactString(), SpatialDelta.Size(),
 		TargetVelocity.Size(), (SampleReceiptTime - ClientShotServerTimeSeconds) * 1000.0);
+
+	// C2 shadow lookup at the client's estimated shot CAPTURE time, not a
+	// rewind decision. Client-visible geometry is usually older even at that
+	// instant. This residual is NOT the effective target presentation delay.
+	if (const UEnclaveTargetHistoryComponent* History = PatrolTarget->FindComponentByClass<UEnclaveTargetHistoryComponent>())
+	{
+		FEnclaveTargetCapsuleFrame ShotTimeFrame;
+		if (History->TryGetCapsuleAtTime(ClientShotServerTimeSeconds, ShotTimeFrame))
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRVisual HISTORY key=%d patrolTarget=%s serverCapsuleAtClientShot=%s clientVisualDeltaAtShotCm=%.2f frames=%d (SHOT-TIME SHADOW LOOKUP ONLY; not visual-delay estimate or hit authority)",
+				PredictionKey, *GetNameSafe(PatrolTarget), *ShotTimeFrame.Center.ToCompactString(),
+				FVector::Distance(ShotTimeFrame.Center, FVector(ClientVisualProxyAnchor)),
+				History->GetHistorySampleCount());
+		}
+		else
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRVisual HISTORY key=%d patrolTarget=%s unavailable (no bracketed continuous capsule history at client shot time)",
+				PredictionKey, *GetNameSafe(PatrolTarget));
+		}
+	}
 #else
 	(void)PredictionKey;
 	(void)PatrolTarget;

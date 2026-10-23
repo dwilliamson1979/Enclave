@@ -12,6 +12,7 @@
 #include "Abilities/Effects/EnclaveGameplayEffectScopePolicy.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
 #include "Health/Components/EnclaveHealthComponent.h"
+#include "Combat/Components/EnclaveTargetHistoryComponent.h"
 
 UEnclaveAvatarLifecycleComponent::UEnclaveAvatarLifecycleComponent()
 {
@@ -113,6 +114,13 @@ void UEnclaveAvatarLifecycleComponent::EnterDeadState(const FEnclaveDamageReques
 	if (!IsValid(Owner) || !Owner->HasAuthority() || !IsValid(ASC) || IsDead())
 	{
 		return;
+	}
+
+	// A new death must not allow a subsequent historical query to
+	// resurrect the old alive target through stale collision history.
+	if (UEnclaveTargetHistoryComponent* TargetHistory = Owner->FindComponentByClass<UEnclaveTargetHistoryComponent>())
+	{
+		TargetHistory->InvalidateHistory();
 	}
 
 	// Body identity is avatar-owned and survives ASC unbinding.

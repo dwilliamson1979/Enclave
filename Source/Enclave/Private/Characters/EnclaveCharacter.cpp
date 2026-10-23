@@ -22,6 +22,7 @@
 #include "Characters/Components/EnclaveAvatarPresentationComponent.h"
 #include "Health/Components/EnclaveGASHealthComponent.h"
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
+#include "Combat/Components/EnclaveTargetHistoryComponent.h"
 
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
@@ -97,6 +98,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 
 	HealthComp = CreateDefaultSubobject<UEnclaveGASHealthComponent>(TEXT("HealthComp"));
 	LifecycleComp = CreateDefaultSubobject<UEnclaveAvatarLifecycleComponent>(TEXT("LifecycleComp"));
+	TargetHistoryComp = CreateDefaultSubobject<UEnclaveTargetHistoryComponent>(TEXT("TargetHistoryComp"));
 }
 
 FVector AEnclaveCharacter::GetPawnViewLocation() const
@@ -138,6 +140,10 @@ void AEnclaveCharacter::DebugLogViewGeometryForShot(int32 PredictionKey, const F
 void AEnclaveCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	if (HasAuthority() && IsValid(TargetHistoryComp))
+	{
+		TargetHistoryComp->InvalidateHistory(); // New controller/avatar ownership boundary.
+	}
 
 	// Server-side: PlayerState is already valid by this point.
 	InitializeAbilityActorInfo();
@@ -285,6 +291,10 @@ void AEnclaveCharacter::InitializeStowedItem()
 
 void AEnclaveCharacter::UnPossessed()
 {
+	if (HasAuthority() && IsValid(TargetHistoryComp))
+	{
+		TargetHistoryComp->InvalidateHistory();
+	}
 	// A PlayerState-owned ASC can outlive this pawn. Never leave the outgoing
 	// pawn's camera/first-person arms with local Focus transforms applied.
 	if (IsValid(ViewComp))
@@ -298,6 +308,16 @@ void AEnclaveCharacter::UnPossessed()
 	UninitializeAbilitySystemConsumers();
 
 	Super::UnPossessed();
+}
+
+bool AEnclaveCharacter::TeleportTo(const FVector& DestLocation, const FRotator& DestRotation, bool bIsATest, bool bNoCheck)
+{
+	const bool bSucceeded = Super::TeleportTo(DestLocation, DestRotation, bIsATest, bNoCheck);
+	if (bSucceeded && !bIsATest && HasAuthority() && IsValid(TargetHistoryComp))
+	{
+		TargetHistoryComp->InvalidateHistory();
+	}
+	return bSucceeded;
 }
 
 void AEnclaveCharacter::OnRep_PlayerState()
@@ -493,6 +513,10 @@ void AEnclaveCharacter::HandleOnWeaponHitDetectionModeChanged(EEnclaveWeaponHitD
 void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy(EEnclaveWeaponHitDetectionMode Mode)
 {
 	if (!HasAuthority()) { return; }
+	if (IsValid(TargetHistoryComp))
+	{
+		TargetHistoryComp->InvalidateHistory(); // Never span a collision-policy transition.
+	}
 
 	UCapsuleComponent* Capsule = GetCapsuleComponent();
 	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();

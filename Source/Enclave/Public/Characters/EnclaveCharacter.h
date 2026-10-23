@@ -27,6 +27,7 @@ class UEnclaveAvatarPresentationComponent;
 class UAbilitySystemComponent;
 class UEnclaveGASHealthComponent;
 class UEnclaveAvatarLifecycleComponent;
+class UEnclaveTargetHistoryComponent;
 
 /** Author-defined starting inventory entry with an explicit equipment slot. */
 USTRUCT(BlueprintType)
@@ -53,6 +54,7 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
+	virtual bool TeleportTo(const FVector& DestLocation, const FRotator& DestRotation, bool bIsATest = false, bool bNoCheck = false) override;
 
 	/**
 	 * Canonical first-person gameplay origin. APawn::GetActorEyesViewPoint
@@ -180,6 +182,10 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lifecycle", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveAvatarLifecycleComponent> LifecycleComp = nullptr;
+
+	/** Nonreplicated, server-only Stage C2 collision capsule history. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveTargetHistoryComponent> TargetHistoryComp = nullptr;
 
 	/** Non-owning cache of the PlayerState-owned ASC currently initialized for this avatar. */
 	TWeakObjectPtr<UAbilitySystemComponent> CachedAbilitySystemComponent;
