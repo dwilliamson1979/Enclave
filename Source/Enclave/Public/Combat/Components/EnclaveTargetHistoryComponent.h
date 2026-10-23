@@ -18,6 +18,12 @@ struct ENCLAVE_API FEnclaveTargetCapsuleFrame
 	FQuat Rotation = FQuat::Identity;
 	float RadiusCm = 0.0f;
 	float HalfHeightCm = 0.0f;
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	// C4B diagnostic-only process-monotonic capture; NEVER a network rewind clock.
+	double DebugCaptureProcessSeconds = 0.0;
+	double DebugCaptureWorldSeconds = 0.0;
+	uint64 DebugCaptureFrame = 0;
+#endif
 };
 
 /**
@@ -34,6 +40,14 @@ struct ENCLAVE_API FEnclaveVisualHistoryTimeMatch
 	double MatchedSpeedCmPerSecond = 0.0;
 	int32 EvaluatedSegments = 0;
 	bool bAmbiguous = false;
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	// Interpolated within the same authoritative history segment as the fit.
+	// Comparability to the client's monotonic clock REQUIRES the same process ID.
+	double DebugMatchedProcessSeconds = 0.0;
+	double DebugMatchedWorldSeconds = 0.0;
+	uint64 DebugOlderFrame = 0;
+	uint64 DebugNewerFrame = 0;
+#endif
 };
 
 /**

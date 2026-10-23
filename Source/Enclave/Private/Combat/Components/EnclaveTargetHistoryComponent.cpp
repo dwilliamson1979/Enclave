@@ -9,6 +9,10 @@
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 #include "Debug/EnclaveDebug.h"
 #include "Engine/World.h"
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+#include "HAL/PlatformTime.h"
+#include "CoreGlobals.h"
+#endif
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 #include "HAL/IConsoleManager.h"
@@ -101,6 +105,13 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 	Next.Rotation = Capsule->GetComponentQuat();
 	Next.RadiusCm = Capsule->GetScaledCapsuleRadius();
 	Next.HalfHeightCm = Capsule->GetScaledCapsuleHalfHeight();
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// The transform and process clock are sampled together after physics. This
+	// monotonic sample is for same-process PIE diagnosis ONLY, not hit authority.
+	Next.DebugCaptureProcessSeconds = FPlatformTime::Seconds();
+	Next.DebugCaptureWorldSeconds = World->GetTimeSeconds();
+	Next.DebugCaptureFrame = GFrameCounter;
+#endif
 	if (!FMath::IsFinite(Next.ServerTimeSeconds) || Next.ServerTimeSeconds < 0.0 ||
 		Next.Center.ContainsNaN() || Next.Rotation.ContainsNaN() ||
 		!FMath::IsFinite(Next.RadiusCm) || !FMath::IsFinite(Next.HalfHeightCm) ||
@@ -290,6 +301,15 @@ bool UEnclaveTargetHistoryComponent::TryMatchVisualAnchorToHistory(const FVector
 			BestResidualCm = Residual;
 			BestMatchTime = MatchTime;
 			BestSpeedCmPerSecond = Speed;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+			const double FullSegmentAlpha = (MatchTime - Older.ServerTimeSeconds) / Span;
+			OutMatch.DebugMatchedProcessSeconds = FMath::Lerp(
+				Older.DebugCaptureProcessSeconds, Newer.DebugCaptureProcessSeconds, FullSegmentAlpha);
+			OutMatch.DebugMatchedWorldSeconds = FMath::Lerp(
+				Older.DebugCaptureWorldSeconds, Newer.DebugCaptureWorldSeconds, FullSegmentAlpha);
+			OutMatch.DebugOlderFrame = Older.DebugCaptureFrame;
+			OutMatch.DebugNewerFrame = Newer.DebugCaptureFrame;
+#endif
 		}
 	}
 

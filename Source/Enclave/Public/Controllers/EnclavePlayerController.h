@@ -89,7 +89,9 @@ private:
 	 */
 	UFUNCTION(Server, Unreliable)
 	void ServerEnclaveDebugPatrolVisualSample(int32 PredictionKey, AEnclaveCharacter* PatrolTarget,
-		FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds);
+		FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds,
+		uint32 ClientProcessId, double ClientVisualCaptureProcessSeconds,
+		double ClientVisualSampleWorldSeconds, double ClientVisualSampleServerEstimateSeconds);
 
 	UFUNCTION(Server, Reliable)
 	void ServerEnclaveDebugRespawn();

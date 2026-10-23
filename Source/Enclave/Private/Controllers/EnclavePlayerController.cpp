@@ -23,6 +23,10 @@
 #include "HAL/IConsoleManager.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+#include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
+#endif
 
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/Pawn.h"
@@ -150,11 +154,27 @@ void AEnclavePlayerController::DebugLogSSRProxySample(int32 PredictionKey, doubl
 	// the designed skeletal-mesh base offset and is NOT a capsule center.
 	// This is a game-thread visual-proxy estimate, not a pixel/render timestamp.
 	const FVector VisualProxyAnchor = Capsule->GetComponentLocation() + MeshSmoothingDeltaWorld;
+	// Capture AFTER reading the visual anchor, before dispatching the unreliable
+	// RPC. In same-process PIE this monotonic value shares a clock with server
+	// history; in separate-process or remote play it must not be compared.
+	const double ClientVisualCaptureProcessSeconds = FPlatformTime::Seconds();
+	const uint32 ClientProcessId = FPlatformProcess::GetCurrentProcessId();
+	const double ClientVisualSampleWorldSeconds = GetWorld()->GetTimeSeconds();
+	const double ClientVisualSampleServerEstimateSeconds = GS ? GS->GetServerWorldTimeSeconds() : -1.0;
 	if (FMath::IsFinite(ClientShotServerTimeSeconds) && ClientShotServerTimeSeconds >= 0.0)
 	{
 		ServerEnclaveDebugPatrolVisualSample(PredictionKey, Closest,
-			FVector_NetQuantize10(VisualProxyAnchor), ClientShotServerTimeSeconds);
+			FVector_NetQuantize10(VisualProxyAnchor), ClientShotServerTimeSeconds,
+			ClientProcessId, ClientVisualCaptureProcessSeconds,
+			ClientVisualSampleWorldSeconds, ClientVisualSampleServerEstimateSeconds);
 	}
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRTimingClock CLIENT key=%d pid=%u shotEstimate=%.6f visualEstimate=%.6f localWorld=%.6f gameStateDeltaMs=%+.1f shotToVisualMs=%+.1f visualProcessTime=%.6f (DEBUG ONLY; process clock comparable only when server PID matches)",
+		PredictionKey, ClientProcessId, ClientShotServerTimeSeconds,
+		ClientVisualSampleServerEstimateSeconds, ClientVisualSampleWorldSeconds,
+		(ClientVisualSampleServerEstimateSeconds - ClientVisualSampleWorldSeconds) * 1000.0,
+		(ClientVisualSampleServerEstimateSeconds - ClientShotServerTimeSeconds) * 1000.0,
+		ClientVisualCaptureProcessSeconds);
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
 		"SSRPreflight PROXY key=%d patrolTarget=%s distanceCm=%.1f capsuleWorld=%s meshSmoothingDeltaWorld=%s meshSmoothingMagnitudeCm=%.2f targetSpeedCmS=%.1f smoothingMode=%d smoothingComplete=%d configuredSmoothLocationMs=%.1f configuredSmoothRotationMs=%.1f clientServerTimeEstimate=%.6f (MESH OFFSET ONLY; not visual-time delay)",
 		PredictionKey, *GetNameSafe(Closest), FMath::Sqrt(NearestDistSq),
@@ -173,13 +193,19 @@ void AEnclavePlayerController::DebugLogSSRProxySample(int32 PredictionKey, doubl
 }
 
 void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementation(int32 PredictionKey,
-	AEnclaveCharacter* PatrolTarget, FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds)
+	AEnclaveCharacter* PatrolTarget, FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds,
+	uint32 ClientProcessId, double ClientVisualCaptureProcessSeconds,
+	double ClientVisualSampleWorldSeconds, double ClientVisualSampleServerEstimateSeconds)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (!HasAuthority() || !UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled() ||
 		!GetWorld() || !IsValid(PatrolTarget) || PatrolTarget->GetWorld() != GetWorld() ||
 		!PatrolTarget->FindComponentByClass<UEnclaveSSRPatrolComponent>() ||
 		!FMath::IsFinite(ClientShotServerTimeSeconds) || ClientShotServerTimeSeconds < 0.0 ||
+		!FMath::IsFinite(ClientVisualCaptureProcessSeconds) || ClientVisualCaptureProcessSeconds < 0.0 ||
+		!FMath::IsFinite(ClientVisualSampleWorldSeconds) || ClientVisualSampleWorldSeconds < 0.0 ||
+		!FMath::IsFinite(ClientVisualSampleServerEstimateSeconds) ||
+		ClientVisualSampleServerEstimateSeconds < 0.0 ||
 		FVector(ClientVisualProxyAnchor).ContainsNaN())
 	{
 		return;
@@ -197,6 +223,27 @@ void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementati
 	const FVector TargetVelocity = PatrolTarget->GetVelocity();
 	const FVector SpatialDelta = CurrentServerCapsuleCenter - FVector(ClientVisualProxyAnchor);
 	const double SampleReceiptTime = GS->GetServerWorldTimeSeconds();
+	const double ServerReceiptProcessSeconds = FPlatformTime::Seconds();
+	const uint32 ServerProcessId = FPlatformProcess::GetCurrentProcessId();
+	const bool bSharedProcessClock = ClientProcessId == ServerProcessId &&
+		ClientVisualCaptureProcessSeconds <= ServerReceiptProcessSeconds &&
+		ServerReceiptProcessSeconds - ClientVisualCaptureProcessSeconds < 0.5;
+	const UEnclaveTargetHistoryComponent* ReceiptHistory =
+		PatrolTarget->FindComponentByClass<UEnclaveTargetHistoryComponent>();
+	double OldestHistoryTime = 0.0;
+	double NewestHistoryTime = 0.0;
+	const bool bHasHistory = IsValid(ReceiptHistory) && ReceiptHistory->GetHistoryTimeBounds(
+		OldestHistoryTime, NewestHistoryTime);
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRTimingClock SERVER key=%d clientPid=%u serverPid=%u mode=%s serverWorld=%.6f serverEstimate=%.6f serverGameStateDeltaMs=%+.1f visualEstimate=%.6f reportedShotAgeMs=%.1f latestHistoryAgeMs=%.1f captureToReceiptProcessMs=%.1f (DEBUG ONLY; mono comparable ONLY for same process)",
+		PredictionKey, ClientProcessId, ServerProcessId,
+		bSharedProcessClock ? TEXT("shared_process") : TEXT("not_comparable"),
+		GetWorld()->GetTimeSeconds(), SampleReceiptTime,
+		(SampleReceiptTime - GetWorld()->GetTimeSeconds()) * 1000.0,
+		ClientVisualSampleServerEstimateSeconds,
+		(SampleReceiptTime - ClientShotServerTimeSeconds) * 1000.0,
+		bHasHistory ? (SampleReceiptTime - NewestHistoryTime) * 1000.0 : -1.0,
+		bSharedProcessClock ? (ServerReceiptProcessSeconds - ClientVisualCaptureProcessSeconds) * 1000.0 : -1.0);
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
 		"SSRVisual SERVER key=%d patrolTarget=%s clientVisualProxyAnchor=%s serverCapsuleAtProbeReceipt=%s delta=%s deltaCm=%.2f serverTargetSpeedCmS=%.1f clientShotAgeAtProbeReceiptMs=%.1f (UNTRUSTED SAMPLE; independent RPC; diagnostic only)",
 		PredictionKey, *GetNameSafe(PatrolTarget), *FVector(ClientVisualProxyAnchor).ToCompactString(),
@@ -219,8 +266,16 @@ void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementati
 	const double ShotTime = ClientShotServerTimeSeconds;
 	const double ReceiptTime = SampleReceiptTime;
 	const int32 ShotKey = PredictionKey;
+	// Debug-only telemetry. This capture is never used to choose a rewind time.
+	const double VisualCaptureProcessSeconds = ClientVisualCaptureProcessSeconds;
+	const double VisualSampleWorldSeconds = ClientVisualSampleWorldSeconds;
+	const double VisualSampleEstimateSeconds = ClientVisualSampleServerEstimateSeconds;
+	const bool bSameProcess = bSharedProcessClock;
+	const double ReceiptProcessSeconds = ServerReceiptProcessSeconds;
 	FTimerDelegate TimingMatchDelegate = FTimerDelegate::CreateWeakLambda(this,
-		[this, WeakPatrol, VisualAnchor, ShotTime, ReceiptTime, ShotKey]()
+		[this, WeakPatrol, VisualAnchor, ShotTime, ReceiptTime, ShotKey,
+		 VisualCaptureProcessSeconds, VisualSampleWorldSeconds, VisualSampleEstimateSeconds,
+		 bSameProcess, ReceiptProcessSeconds]()
 		{
 			--PendingSSRVisualTimingMatches;
 			const AEnclaveCharacter* Target = WeakPatrol.Get();
@@ -249,6 +304,20 @@ void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementati
 				-Match.SignedOffsetSeconds * 1000.0, Match.ResidualCm,
 				Match.MatchedSpeedCmPerSecond, Match.EvaluatedSegments,
 				Match.bAmbiguous ? 1 : 0, (ReceiptTime - ShotTime) * 1000.0);
+			// The inverse trajectory fit now includes when its server motion frames
+			// were actually sampled, not just what World.Time was assigned to them.
+			// Never compare monotonic times from different processes (or hosts).
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRTimingPhase SERVER key=%d status=%s mode=%s matchMinusClientCaptureMs=%+.1f receiptMinusClientCaptureMs=%.1f matchMinusReceiptMs=%+.1f matchWorldMinusClientEstimateMs=%+.1f clientGameStateDeltaMs=%+.1f historyFrames=%llu..%llu (DEBUG ONLY; game-thread anchors, not render timestamps; no gameplay authority)",
+				ShotKey, bPlausibleFit ? TEXT("fitted") : TEXT("inconclusive"),
+				bSameProcess ? TEXT("shared_process") : TEXT("not_comparable"),
+				bSameProcess ? (Match.DebugMatchedProcessSeconds - VisualCaptureProcessSeconds) * 1000.0 : -1.0,
+				bSameProcess ? (ReceiptProcessSeconds - VisualCaptureProcessSeconds) * 1000.0 : -1.0,
+				bSameProcess ? (Match.DebugMatchedProcessSeconds - ReceiptProcessSeconds) * 1000.0 : -1.0,
+				(Match.DebugMatchedWorldSeconds - VisualSampleEstimateSeconds) * 1000.0,
+				(VisualSampleEstimateSeconds - VisualSampleWorldSeconds) * 1000.0,
+				static_cast<unsigned long long>(Match.DebugOlderFrame),
+				static_cast<unsigned long long>(Match.DebugNewerFrame));
 		});
 	FTimerHandle TimingMatchTimer;
 	GetWorld()->GetTimerManager().SetTimer(TimingMatchTimer, TimingMatchDelegate, 0.120f, false);
@@ -279,6 +348,10 @@ void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementati
 	(void)PatrolTarget;
 	(void)ClientVisualProxyAnchor;
 	(void)ClientShotServerTimeSeconds;
+	(void)ClientProcessId;
+	(void)ClientVisualCaptureProcessSeconds;
+	(void)ClientVisualSampleWorldSeconds;
+	(void)ClientVisualSampleServerEstimateSeconds;
 #endif
 }
 
