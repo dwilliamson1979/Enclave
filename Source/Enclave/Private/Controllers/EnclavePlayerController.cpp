@@ -89,7 +89,7 @@ void AEnclavePlayerController::DebugCaptureLocalShot(int32 PredictionKey)
 #endif
 }
 
-void AEnclavePlayerController::DebugLogSSRProxySample(int32 PredictionKey) const
+void AEnclavePlayerController::DebugLogSSRProxySample(int32 PredictionKey, double ClientShotServerTimeSeconds)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (!UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled() || !IsLocalController() || !GetPawn() || !GetWorld())
@@ -101,13 +101,13 @@ void AEnclavePlayerController::DebugLogSSRProxySample(int32 PredictionKey) const
 	// human simulated proxy may be closer than the moving bot and silently hide
 	// the data we are trying to collect. Blueprint-added components are present
 	// on the client even when the component itself does not replicate properties.
-	const AEnclaveCharacter* Closest = nullptr;
+	AEnclaveCharacter* Closest = nullptr;
 	double NearestDistSq = TNumericLimits<double>::Max();
 	int32 SimulatedPatrolCount = 0;
 	int32 OtherPatrolCount = 0;
 	for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
 	{
-		const AEnclaveCharacter* Candidate = *It;
+		AEnclaveCharacter* Candidate = *It;
 		if (!IsValid(Candidate) || Candidate == GetPawn() ||
 			!Candidate->FindComponentByClass<UEnclaveSSRPatrolComponent>())
 		{
@@ -143,6 +143,16 @@ void AEnclavePlayerController::DebugLogSSRProxySample(int32 PredictionKey) const
 	const FVector BaseMeshRelative = Closest->GetBaseTranslationOffset();
 	const FVector CurrentMeshRelative = Mesh->GetRelativeLocation();
 	const FVector MeshSmoothingDeltaWorld = Capsule->GetComponentTransform().TransformVectorNoScale(CurrentMeshRelative - BaseMeshRelative);
+	// Compare matching anatomical anchors: capsule center plus the cosmetic
+	// mesh smoothing displacement. Raw Mesh->GetComponentLocation() contains
+	// the designed skeletal-mesh base offset and is NOT a capsule center.
+	// This is a game-thread visual-proxy estimate, not a pixel/render timestamp.
+	const FVector VisualProxyAnchor = Capsule->GetComponentLocation() + MeshSmoothingDeltaWorld;
+	if (FMath::IsFinite(ClientShotServerTimeSeconds) && ClientShotServerTimeSeconds >= 0.0)
+	{
+		ServerEnclaveDebugPatrolVisualSample(PredictionKey, Closest,
+			FVector_NetQuantize10(VisualProxyAnchor), ClientShotServerTimeSeconds);
+	}
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
 		"SSRPreflight PROXY key=%d patrolTarget=%s distanceCm=%.1f capsuleWorld=%s meshSmoothingDeltaWorld=%s meshSmoothingMagnitudeCm=%.2f targetSpeedCmS=%.1f smoothingMode=%d smoothingComplete=%d configuredSmoothLocationMs=%.1f configuredSmoothRotationMs=%.1f clientServerTimeEstimate=%.6f (MESH OFFSET ONLY; not visual-time delay)",
 		PredictionKey, *GetNameSafe(Closest), FMath::Sqrt(NearestDistSq),
@@ -151,8 +161,50 @@ void AEnclavePlayerController::DebugLogSSRProxySample(int32 PredictionKey) const
 		static_cast<int32>(Move->NetworkSmoothingMode), Move->bNetworkSmoothingComplete ? 1 : 0,
 		Move->NetworkSimulatedSmoothLocationTime * 1000.0, Move->NetworkSimulatedSmoothRotationTime * 1000.0,
 		ServerTimeEstimate);
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRVisual CLIENT key=%d patrolTarget=%s visualProxyAnchor=%s clientShotTime=%.6f (DEBUG RPC, game-thread mesh anchor; not authoritative)",
+		PredictionKey, *GetNameSafe(Closest), *VisualProxyAnchor.ToCompactString(), ClientShotServerTimeSeconds);
 #else
 	(void)PredictionKey;
+	(void)ClientShotServerTimeSeconds;
+#endif
+}
+
+void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementation(int32 PredictionKey,
+	AEnclaveCharacter* PatrolTarget, FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!HasAuthority() || !UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled() ||
+		!GetWorld() || !IsValid(PatrolTarget) || PatrolTarget->GetWorld() != GetWorld() ||
+		!PatrolTarget->FindComponentByClass<UEnclaveSSRPatrolComponent>() ||
+		!FMath::IsFinite(ClientShotServerTimeSeconds) || ClientShotServerTimeSeconds < 0.0 ||
+		FVector(ClientVisualProxyAnchor).ContainsNaN())
+	{
+		return;
+	}
+
+	const AGameStateBase* GS = GetWorld()->GetGameState();
+	if (!IsValid(GS))
+	{
+		return;
+	}
+
+	const FVector CurrentServerCapsuleCenter = PatrolTarget->GetCapsuleComponent()
+		? PatrolTarget->GetCapsuleComponent()->GetComponentLocation()
+		: PatrolTarget->GetActorLocation();
+	const FVector TargetVelocity = PatrolTarget->GetVelocity();
+	const FVector SpatialDelta = CurrentServerCapsuleCenter - FVector(ClientVisualProxyAnchor);
+	const double SampleReceiptTime = GS->GetServerWorldTimeSeconds();
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRVisual SERVER key=%d patrolTarget=%s clientVisualProxyAnchor=%s serverCapsuleAtProbeReceipt=%s delta=%s deltaCm=%.2f serverTargetSpeedCmS=%.1f clientShotAgeAtProbeReceiptMs=%.1f (UNTRUSTED SAMPLE; independent RPC; no historical lookup/rewind)",
+		PredictionKey, *GetNameSafe(PatrolTarget), *FVector(ClientVisualProxyAnchor).ToCompactString(),
+		*CurrentServerCapsuleCenter.ToCompactString(), *SpatialDelta.ToCompactString(), SpatialDelta.Size(),
+		TargetVelocity.Size(), (SampleReceiptTime - ClientShotServerTimeSeconds) * 1000.0);
+#else
+	(void)PredictionKey;
+	(void)PatrolTarget;
+	(void)ClientVisualProxyAnchor;
+	(void)ClientShotServerTimeSeconds;
 #endif
 }
 

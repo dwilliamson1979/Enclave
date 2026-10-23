@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Engine/NetSerialization.h"
 #include "Input/Core/EnclaveInputTypes.h"
 #include "EnclavePlayerController.generated.h"
 
@@ -10,6 +11,7 @@ class UEnclaveInputConfig;
 class IEnclaveInputReceiverInterface;
 class IEnclaveInputConfigProviderInterface;
 class UEnclaveCombatFeedbackComponent;
+class AEnclaveCharacter;
 
 UCLASS()
 class ENCLAVE_API AEnclavePlayerController : public APlayerController
@@ -51,8 +53,10 @@ public:
 	/** Called only by a locally controlled GA_Fire activation (after CommitAbility). */
 	void DebugCaptureLocalShot(int32 PredictionKey);
 
-	/** Stage C0: sample ONE nearby simulated proxy's mesh-vs-capsule smoothing offset on the owning client. */
-	void DebugLogSSRProxySample(int32 PredictionKey) const;
+	/** Stage C1: sample a locally simulated patrol's visual proxy anchor at shot capture.
+	 * Debug-only, no effect on hit registration. Sends an unreliable telemetry RPC.
+	 */
+	void DebugLogSSRProxySample(int32 PredictionKey, double ClientShotServerTimeSeconds);
 
 	/** Brackets the synchronous server-side fireable hit query; no gameplay inputs change. */
 	void DebugBeginAuthoritativeShot(int32 PredictionKey);
@@ -79,6 +83,13 @@ protected:
 	virtual bool CanProcessInput(const FEnclaveInputEvent& InputEvent) const;
 
 private:
+
+	/** Optional debug-only telemetry; no gameplay decision may consume this RPC.
+	 * Its independent arrival time must not be confused with Fire target-data receipt.
+	 */
+	UFUNCTION(Server, Unreliable)
+	void ServerEnclaveDebugPatrolVisualSample(int32 PredictionKey, AEnclaveCharacter* PatrolTarget,
+		FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds);
 
 	UFUNCTION(Server, Reliable)
 	void ServerEnclaveDebugRespawn();

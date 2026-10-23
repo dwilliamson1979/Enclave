@@ -92,7 +92,8 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 		OutRejectionReason = TEXT("server clock unavailable");
 		return false;
 	}
-	const double DeltaSeconds = GameState->GetServerWorldTimeSeconds() - Intent.ClientServerTimeSeconds;
+	const double ServerReceiptTimeSeconds = GameState->GetServerWorldTimeSeconds();
+	const double DeltaSeconds = ServerReceiptTimeSeconds - Intent.ClientServerTimeSeconds;
 	if (DeltaSeconds > EnclaveShotValidation::MaxShotAgeSeconds ||
 		DeltaSeconds < -EnclaveShotValidation::MaxFutureLeadSeconds)
 	{
@@ -180,6 +181,14 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 	OutValidatedRay.Origin = FVector(Intent.Origin);
 	OutValidatedRay.Direction = ClientDirection;
 	OutValidatedRay.ClientServerTimeSeconds = Intent.ClientServerTimeSeconds;
+	OutValidatedRay.Timing.ClientEstimatedShotTimeSeconds = Intent.ClientServerTimeSeconds;
+	OutValidatedRay.Timing.ServerReceiptTimeSeconds = ServerReceiptTimeSeconds;
+	if (const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>())
+	{
+		OutValidatedRay.Timing.MaxRewindSeconds = FMath::Clamp(static_cast<double>(GameMode->GetMaxRewindAllowanceMs()), 0.0, 500.0) / 1000.0;
+	}
+	// Stage C1 only: the effective client presentation delay is not established,
+	// so no historical target timestamp is resolved or used by RegisterHitscan.
 	return true;
 }
 

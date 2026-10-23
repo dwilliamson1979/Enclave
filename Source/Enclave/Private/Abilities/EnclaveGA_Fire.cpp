@@ -98,6 +98,9 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		return;
 	}
 
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	double DebugClientShotServerTimeSeconds = 0.0;
+#endif
 	if (!bAuthority)
 	{
 		// Capture the exact pawn-eye viewpoint at Fire activation (not at
@@ -142,6 +145,7 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		default:
 			break;
 		}
+		DebugClientShotServerTimeSeconds = ShotData->Shot.ClientServerTimeSeconds;
 #endif
 		TargetData.Add(ShotData);
 
@@ -171,7 +175,8 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		}
 		if (UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled() && !bAuthority)
 		{
-			DebugController->DebugLogSSRProxySample(ActivationInfo.GetActivationPredictionKey().Current);
+			DebugController->DebugLogSSRProxySample(ActivationInfo.GetActivationPredictionKey().Current,
+				DebugClientShotServerTimeSeconds);
 		}
 	}
 #endif

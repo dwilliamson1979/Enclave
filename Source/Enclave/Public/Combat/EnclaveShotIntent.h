@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Engine/NetSerialization.h"
+#include "Combat/EnclaveShotTiming.h"
 #include "EnclaveShotIntent.generated.h"
 
 /** UNTRUSTED shooter viewpoint captured on the owning client. The server
@@ -45,6 +46,9 @@ struct ENCLAVE_API FEnclaveValidatedShotRay
 	FVector Origin = FVector::ZeroVector;
 	FVector Direction = FVector::ForwardVector; // normalized
 	double ClientServerTimeSeconds = 0.0; // provenance, NOT a rewind timestamp
+
+	/** Server-owned receipt time and future historical-lookup policy. Never authorizes hits on its own. */
+	FEnclaveShotTimingContext Timing;
 };
 
 /** GAS Target Data envelope. Must use its concrete ScriptStruct for polymorphic network serialization. */
