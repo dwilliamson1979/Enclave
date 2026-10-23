@@ -163,9 +163,16 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (AEnclavePlayerController* DebugController = Cast<AEnclavePlayerController>(ActorInfo->PlayerController.Get());
-		IsValid(DebugController) && DebugController->IsLocalController() && AEnclavePlayerController::IsShotAlignmentDebugEnabled())
+		IsValid(DebugController) && DebugController->IsLocalController())
 	{
-		DebugController->DebugCaptureLocalShot(ActivationInfo.GetActivationPredictionKey().Current);
+		if (AEnclavePlayerController::IsShotAlignmentDebugEnabled())
+		{
+			DebugController->DebugCaptureLocalShot(ActivationInfo.GetActivationPredictionKey().Current);
+		}
+		if (UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled() && !bAuthority)
+		{
+			DebugController->DebugLogSSRProxySample(ActivationInfo.GetActivationPredictionKey().Current);
+		}
 	}
 #endif
 

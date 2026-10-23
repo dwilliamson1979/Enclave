@@ -1,5 +1,12 @@
 #include "Controllers/EnclavePlayerController.h"
 #include "Characters/EnclaveCharacter.h"
+#include "Combat/EnclaveHitRegistrationSubsystem.h"
+#include "Debug/EnclaveSSRPatrolComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/GameStateBase.h"
+#include "EngineUtils.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -79,6 +86,73 @@ void AEnclavePlayerController::DebugCaptureLocalShot(int32 PredictionKey)
 		"ShotAlign CLIENT key=%d origin=%s dir=%s", PredictionKey,
 		*Ray.Start.ToCompactString(), *(Ray.End - Ray.Start).GetSafeNormal().ToCompactString());
 	DebugCompareShotIfReady(PredictionKey);
+#endif
+}
+
+void AEnclavePlayerController::DebugLogSSRProxySample(int32 PredictionKey) const
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled() || !IsLocalController() || !GetPawn() || !GetWorld())
+	{
+		return;
+	}
+
+	// Explicitly sample a Stage C0 patrol target, not the nearest player. A stationary
+	// human simulated proxy may be closer than the moving bot and silently hide
+	// the data we are trying to collect. Blueprint-added components are present
+	// on the client even when the component itself does not replicate properties.
+	const AEnclaveCharacter* Closest = nullptr;
+	double NearestDistSq = TNumericLimits<double>::Max();
+	int32 SimulatedPatrolCount = 0;
+	int32 OtherPatrolCount = 0;
+	for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
+	{
+		const AEnclaveCharacter* Candidate = *It;
+		if (!IsValid(Candidate) || Candidate == GetPawn() ||
+			!Candidate->FindComponentByClass<UEnclaveSSRPatrolComponent>())
+		{
+			continue;
+		}
+		if (Candidate->GetLocalRole() != ROLE_SimulatedProxy)
+		{
+			++OtherPatrolCount;
+			continue;
+		}
+		++SimulatedPatrolCount;
+		const double DistSq = FVector::DistSquared(GetPawn()->GetActorLocation(), Candidate->GetActorLocation());
+		if (DistSq < NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			Closest = Candidate;
+		}
+	}
+
+	const AGameStateBase* GS = GetWorld()->GetGameState();
+	const double ServerTimeEstimate = GS ? GS->GetServerWorldTimeSeconds() : -1.0;
+	if (!Closest || !Closest->GetMesh() || !Closest->GetCapsuleComponent() || !Closest->GetCharacterMovement())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRPreflight PROXY key=%d no simulated SSR patrol target available (simulatedPatrols=%d otherRolePatrols=%d); check BP patrol component, actor replication and client role; clientServerTimeEstimate=%.6f",
+			PredictionKey, SimulatedPatrolCount, OtherPatrolCount, ServerTimeEstimate);
+		return;
+	}
+
+	const USkeletalMeshComponent* Mesh = Closest->GetMesh();
+	const UCapsuleComponent* Capsule = Closest->GetCapsuleComponent();
+	const UCharacterMovementComponent* Move = Closest->GetCharacterMovement();
+	const FVector BaseMeshRelative = Closest->GetBaseTranslationOffset();
+	const FVector CurrentMeshRelative = Mesh->GetRelativeLocation();
+	const FVector MeshSmoothingDeltaWorld = Capsule->GetComponentTransform().TransformVectorNoScale(CurrentMeshRelative - BaseMeshRelative);
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRPreflight PROXY key=%d patrolTarget=%s distanceCm=%.1f capsuleWorld=%s meshSmoothingDeltaWorld=%s meshSmoothingMagnitudeCm=%.2f targetSpeedCmS=%.1f smoothingMode=%d smoothingComplete=%d configuredSmoothLocationMs=%.1f configuredSmoothRotationMs=%.1f clientServerTimeEstimate=%.6f (MESH OFFSET ONLY; not visual-time delay)",
+		PredictionKey, *GetNameSafe(Closest), FMath::Sqrt(NearestDistSq),
+		*Capsule->GetComponentLocation().ToCompactString(), *MeshSmoothingDeltaWorld.ToCompactString(),
+		MeshSmoothingDeltaWorld.Size(), Closest->GetVelocity().Size(),
+		static_cast<int32>(Move->NetworkSmoothingMode), Move->bNetworkSmoothingComplete ? 1 : 0,
+		Move->NetworkSimulatedSmoothLocationTime * 1000.0, Move->NetworkSimulatedSmoothRotationTime * 1000.0,
+		ServerTimeEstimate);
+#else
+	(void)PredictionKey;
 #endif
 }
 

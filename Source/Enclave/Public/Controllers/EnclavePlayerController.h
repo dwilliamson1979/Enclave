@@ -51,6 +51,9 @@ public:
 	/** Called only by a locally controlled GA_Fire activation (after CommitAbility). */
 	void DebugCaptureLocalShot(int32 PredictionKey);
 
+	/** Stage C0: sample ONE nearby simulated proxy's mesh-vs-capsule smoothing offset on the owning client. */
+	void DebugLogSSRProxySample(int32 PredictionKey) const;
+
 	/** Brackets the synchronous server-side fireable hit query; no gameplay inputs change. */
 	void DebugBeginAuthoritativeShot(int32 PredictionKey);
 	void DebugEndAuthoritativeShot();

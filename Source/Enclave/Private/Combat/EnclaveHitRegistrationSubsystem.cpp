@@ -8,10 +8,27 @@
 #include "Controllers/EnclavePlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerState.h"
 #include "GameFramework/Actor.h"
 #include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
 #include "Debug/EnclaveDebug.h"
+
+static TAutoConsoleVariable<bool> CVarDebugSSRPreflight(
+	TEXT("Enclave.Debug.SSRPreflight"),
+	false,
+	TEXT("Stage C0 only: independently measure server-vs-client shooter ray, reported shot age and RTT, and comparison of weapon vs world-only origin obstruction. Also logs one nearby simulated-proxy mesh smoothing sample per local shot. Does not alter hit validation, hitscan, or rewind."),
+	ECVF_Cheat);
+
+bool UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	return CVarDebugSSRPreflight.GetValueOnGameThread();
+#else
+	return false;
+#endif
+}
 
 static TAutoConsoleVariable<bool> CVarDebugFireTrace(
 	TEXT("Enclave.Debug.FireTrace"),
@@ -87,14 +104,28 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 	FRotator ServerRotation;
 	Shooter->GetActorEyesViewPoint(ServerEye, ServerRotation);
 	const double OriginDeltaCm = FVector::Distance(ServerEye, FVector(Intent.Origin));
+	const FVector ClientDirection = FVector(Intent.Direction).GetSafeNormal();
+	const double Dot = FMath::Clamp(FVector::DotProduct(ServerRotation.Vector(), ClientDirection), -1.0, 1.0);
+	const double AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(Dot));
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (IsSSRPreflightDebugEnabled())
+	{
+		const APawn* ShooterPawn = Cast<APawn>(Shooter);
+		const APlayerState* ShooterPS = ShooterPawn ? ShooterPawn->GetPlayerState() : nullptr;
+		const double PingMs = ShooterPS ? ShooterPS->GetPingInMilliseconds() : -1.0;
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRPreflight SERVER shooter=%s key=%u originDeltaCm=%.2f aimDeltaDeg=%.2f clientTimestampAgeMs=%.1f playerStateRTTMs=%.1f shooterSpeedCmS=%.1f serverEye=%s clientOrigin=%s serverAim=%s clientAim=%s (PRESENT-TIME comparison; RTT is an estimate)",
+			*GetNameSafe(Shooter), ExpectedShotSequence, OriginDeltaCm, AngleDegrees,
+			DeltaSeconds * 1000.0, PingMs, Shooter->GetVelocity().Size(),
+			*ServerEye.ToCompactString(), *FVector(Intent.Origin).ToCompactString(),
+			*ServerRotation.Vector().ToCompactString(), *ClientDirection.ToCompactString());
+	}
+#endif
 	if (OriginDeltaCm > EnclaveShotValidation::MaxOriginSeparationCm)
 	{
 		OutRejectionReason = FString::Printf(TEXT("shot origin too far from shooter (%.1fcm)"), OriginDeltaCm);
 		return false;
 	}
-	const FVector ClientDirection = FVector(Intent.Direction).GetSafeNormal();
-	const double Dot = FMath::Clamp(FVector::DotProduct(ServerRotation.Vector(), ClientDirection), -1.0, 1.0);
-	const double AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(Dot));
 	if (AngleDegrees > EnclaveShotValidation::MaxDirectionDeltaDegrees)
 	{
 		OutRejectionReason = FString::Printf(TEXT("shot direction outside present-time tolerance (%.1fdeg)"), AngleDegrees);
@@ -112,7 +143,34 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 		Shooter->GetAttachedActors(AttachedActors);
 		Params.AddIgnoredActors(AttachedActors);
 		FHitResult Obstruction;
-		if (World->LineTraceSingleByChannel(Obstruction, ServerEye, FVector(Intent.Origin), ECC_Weapon, Params))
+		const bool bWeaponBlocked = World->LineTraceSingleByChannel(Obstruction, ServerEye, FVector(Intent.Origin), ECC_Weapon, Params);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+		if (IsSSRPreflightDebugEnabled())
+		{
+			// SHADOW QUERY ONLY. Compare the existing Weapon-channel decision with
+			// world-object geometry excluding Pawns. This deliberately does not
+			// affect Stage B validity, nor claim both channels are equivalent.
+			FCollisionQueryParams WorldParams(SCENE_QUERY_STAT(EnclaveShotOriginWorldProbe), true);
+			WorldParams.AddIgnoredActor(Shooter);
+			WorldParams.AddIgnoredActors(AttachedActors);
+			for (TActorIterator<APawn> It(World); It; ++It)
+			{
+				WorldParams.AddIgnoredActor(*It);
+			}
+			FCollisionObjectQueryParams WorldObjects;
+			WorldObjects.AddObjectTypesToQuery(ECC_WorldStatic);
+			WorldObjects.AddObjectTypesToQuery(ECC_WorldDynamic);
+			FHitResult WorldObstruction;
+			const bool bWorldBlocked = World->LineTraceSingleByObjectType(WorldObstruction,
+				ServerEye, FVector(Intent.Origin), WorldObjects, WorldParams);
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRPreflight OBSTRUCTION key=%u weaponBlocked=%d weaponActor=%s weaponIsPawn=%d worldObjectBlocked=%d worldActor=%s disagreement=%d (world probe ignores Pawns and includes WorldStatic+WorldDynamic; DIAGNOSTIC ONLY)",
+				ExpectedShotSequence, bWeaponBlocked ? 1 : 0, *GetNameSafe(Obstruction.GetActor()),
+				Cast<APawn>(Obstruction.GetActor()) ? 1 : 0, bWorldBlocked ? 1 : 0,
+				*GetNameSafe(WorldObstruction.GetActor()), bWeaponBlocked != bWorldBlocked ? 1 : 0);
+		}
+#endif
+		if (bWeaponBlocked)
 		{
 			OutRejectionReason = TEXT("blocking geometry between server eye and shot origin");
 			return false;

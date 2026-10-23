@@ -47,6 +47,9 @@ public:
 
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
+	/** Stage C0 instrumentation only; does not enable server-side rewind. */
+	static bool IsSSRPreflightDebugEnabled();
+
 	/** Checks untrusted remote player aim against present authoritative shooter
 	 * state. Tolerances intentionally allow network delay, and therefore are
 	 * NOT a substitute for shooter-history or anti-cheat verification.
