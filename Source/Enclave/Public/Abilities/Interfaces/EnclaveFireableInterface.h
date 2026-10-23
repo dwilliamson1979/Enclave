@@ -9,6 +9,7 @@
 
 class UGameplayEffect;
 class AActor;
+struct FEnclaveValidatedShotRay;
 
 UINTERFACE(MinimalAPI, BlueprintType)
 class UEnclaveFireableInterface : public UInterface
@@ -40,13 +41,12 @@ public:
 	 * (FEnclaveHitResult) - a single hitscan trace today
 	 * (AEnclaveFirearmWeapon::PerformFireHitDetection), a multi-pellet cone
 	 * or a projectile spawn later without any change to UEnclaveGA_Fire.
-	 * Trace range, aim source, and damage are all this implementation's own
-	 * concern, not something the ability supplies or dictates - this
-	 * deliberately does NOT take a ViewLocation/ViewRotation computed by the
-	 * ability, so a non-eye-based Fireable (a deployed turret tracking its
-	 * own target) isn't forced to pretend it aims from InstigatorToIgnore's
-	 * camera. An eye-based implementation is free to call
-	 * InstigatorToIgnore->GetActorEyesViewPoint() itself.
+	 * Trace range and damage remain the implementation's own concern.
+	 * ValidatedShotRay is non-null ONLY for a remote owning player's shot
+	 * accepted by server-side shot-intent validation. Eye-based implementations
+	 * must use that ray when provided. A null ray means the authoritative local
+	 * path (listen host, AI, turret) chooses its own aim source. Non-eye-based
+	 * Fireables may supply their own appropriate implementation.
 	 *
 	 * Damage is computed per-hit rather than being a single flat
 	 * GetFireDamageAmount() so an implementation can vary it using data only
@@ -64,7 +64,7 @@ public:
 	 * bool - so a multi-hit implementation (a shotgun's pellets) is a
 	 * drop-in replacement with no change to how the ability consumes this.
 	 */
-	virtual TArray<FEnclaveHitResult> PerformFireHitDetection(AActor* InstigatorToIgnore) const = 0;
+	virtual TArray<FEnclaveHitResult> PerformFireHitDetection(AActor* InstigatorToIgnore, const FEnclaveValidatedShotRay* ValidatedShotRay) const = 0;
 
 	/** This thing's fire-rate cooldown Gameplay Effect. May return null - UEnclaveGA_Fire::GetCooldownGameplayEffect() falls back to its own (unset) base CooldownGameplayEffectClass in that case. */
 	virtual TSubclassOf<UGameplayEffect> GetFireCooldownEffectClass() const = 0;

@@ -116,10 +116,9 @@ public:
 	virtual const UEnclaveFocusProfile* ResolveFocusProfile() const override;
 
 	// IEnclaveFireableInterface - this weapon's contract with UEnclaveGA_Fire.
-	// PerformFireHitDetection is handed only InstigatorToIgnore - it resolves
-	// its own aim source (GetActorEyesViewPoint) rather than being told one,
-	// so a future non-eye-based Fireable isn't forced into the same contract.
-	virtual TArray<FEnclaveHitResult> PerformFireHitDetection(AActor* InstigatorToIgnore) const override;
+	// The server-supplied ray is present only for a validated remote shot.
+	// Authoritative local shots still derive their aim from the instigator.
+	virtual TArray<FEnclaveHitResult> PerformFireHitDetection(AActor* InstigatorToIgnore, const FEnclaveValidatedShotRay* ValidatedShotRay) const override;
 	virtual TSubclassOf<UGameplayEffect> GetFireCooldownEffectClass() const override;
 
 	// IEnclaveAmmoConsumerInterface - UEnclaveGA_Fire's ammo cost.

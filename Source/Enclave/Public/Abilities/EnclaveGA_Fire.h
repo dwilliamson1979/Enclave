@@ -10,6 +10,7 @@
 
 class UGameplayEffect;
 class UAbilitySystemComponent;
+struct FEnclaveValidatedShotRay;
 
 /**
  * Hitscan fire ability.
@@ -101,7 +102,7 @@ private:
 	void OnShotTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
 	void OnShotDataTimeout();
 	void ReleaseShotDataDelegate();
-	void CompleteAuthoritativeShot();
+	void CompleteAuthoritativeShot(const FEnclaveValidatedShotRay& ValidatedRay);
 
 	/** Transport timeout only, not a rewind allowance. */
 	UPROPERTY(EditDefaultsOnly, Category = "Combat|Shot Intent", meta = (ClampMin = "0.25", ClampMax = "5.0", Units = "s"))
@@ -113,7 +114,7 @@ private:
 	bool bWaitingForShotData = false;
 
 	/** Server-only hit detection followed by target-agnostic Enclave damage dispatch for each confirmed hit. */
-	void PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor, const FGameplayAbilityActivationInfo& ActivationInfo);
+	void PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor, const FGameplayAbilityActivationInfo& ActivationInfo, const FEnclaveValidatedShotRay* ValidatedRay = nullptr);
 
 	/** Executes CueTag (GameplayCue.Item.Action.Fire, or .DryFire on an empty magazine) with the triggering source in EffectCauser/SourceObject and the ASC avatar as the cue target. UEnclaveGameplayCueNotify fans the cue out to avatar presentation and item-local cue response. Runs on the predicting owning client as well as the server. Presentation only. SourceASC/AvatarActor are resolved once in ActivateAbility and passed in, same as PerformHitDetection. */
 	void ExecuteSourceCue(const FGameplayTag& CueTag, UAbilitySystemComponent* SourceASC, AActor* AvatarActor);

@@ -6,6 +6,7 @@
 #include "AbilitySystemGlobals.h"
 #include "GameplayEffect.h"
 #include "Combat/EnclaveShotIntent.h"
+#include "Combat/EnclaveHitRegistrationSubsystem.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "GameplayPrediction.h"
 #include "GameFramework/GameStateBase.h"
@@ -16,6 +17,7 @@
 #include "GameFramework/Pawn.h"
 #include "Controllers/EnclavePlayerController.h"
 #include "Debug/EnclaveDebug.h"
+#include "HAL/IConsoleManager.h"
 
 #include "GameplayTags/EnclaveAbilityTags.h"
 #include "GameplayTags/EnclaveGameplayCueTags.h"
@@ -25,6 +27,16 @@
 #include "Combat/Interfaces/EnclaveHitFeedbackInterface.h"
 #include "Combat/EnclaveDamageRequest.h"
 #include "Combat/EnclaveDamageStatics.h"
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+// Owning-client-only test injection. The server must reject bad data without
+// spending ammo or performing hit registration. Never enabled by default.
+static TAutoConsoleVariable<int32> CVarDebugShotIntentFault(
+	TEXT("Enclave.Debug.ShotIntentFault"),
+	0,
+	TEXT("Client shot validation test: 0=normal, 1=origin +1000cm, 2=reversed direction, 3=time -5s, 4=wrong sequence, 5=nonzero spread seed."),
+	ECVF_Cheat);
+#endif
 
 UEnclaveGA_Fire::UEnclaveGA_Fire()
 {
@@ -64,8 +76,8 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 
 	if (bRemotePlayerOnServer)
 	{
-		// Stage A: server MUST keep this activation alive until its matching
-		// Target Data arrives. Do not commit, cue, or trace until then.
+		// Wait for the matching client shot intent before validating, committing,
+		// playing a cue, or tracing. Local authority still fires immediately.
 		PendingTargetDataASC = SourceASC;
 		bWaitingForShotData = true;
 		ShotDataDelegateHandle = SourceASC->AbilityTargetDataSetDelegate(Handle, ActivationInfo.GetActivationPredictionKey())
@@ -106,6 +118,31 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 				ShotData->Shot.ClientServerTimeSeconds = GameState->GetServerWorldTimeSeconds();
 			}
 		}
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+		// Negative-path verification without hand-editing network packets.
+		// The valid client still predicts the shot, but the server must not
+		// commit ammo/cooldown, cue, trace, or damage for malformed intent.
+		switch (CVarDebugShotIntentFault.GetValueOnGameThread())
+		{
+		case 1:
+			ShotData->Shot.Origin = FVector(ShotData->Shot.Origin) + FVector(1000.0, 0.0, 0.0);
+			break;
+		case 2:
+			ShotData->Shot.Direction = -ViewRotation.Vector();
+			break;
+		case 3:
+			ShotData->Shot.ClientServerTimeSeconds -= 5.0;
+			break;
+		case 4:
+			++ShotData->Shot.ShotSequence;
+			break;
+		case 5:
+			ShotData->Shot.SpreadSeed = 1;
+			break;
+		default:
+			break;
+		}
+#endif
 		TargetData.Add(ShotData);
 
 		// GAS caches this by spec + ORIGINAL activation prediction key.
@@ -185,16 +222,39 @@ void UEnclaveGA_Fire::OnShotTargetDataReceived(const FGameplayAbilityTargetDataH
 	if (AEnclavePlayerController::IsShotAlignmentDebugEnabled())
 	{
 		UE_LOG(LogEnclaveCombat, Log,
-			TEXT("FireIntent RECEIVED key=%d sequence=%u origin=%s direction=%s time=%.6f (transport only; server eye trace still authoritative)"),
+			TEXT("FireIntent RECEIVED key=%d sequence=%u origin=%s direction=%s time=%.6f (untrusted; awaiting server validation)"),
 			CurrentActivationInfo.GetActivationPredictionKey().Current, Shot.ShotSequence,
 			*Origin.ToString(), *Direction.ToString(), Shot.ClientServerTimeSeconds);
 	}
 #endif
 
-	CompleteAuthoritativeShot();
+	UWorld* World = GetWorld();
+	UEnclaveHitRegistrationSubsystem* Registration = World ? World->GetSubsystem<UEnclaveHitRegistrationSubsystem>() : nullptr;
+	const AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+	FEnclaveValidatedShotRay ValidatedRay;
+	FString RejectReason;
+	if (!IsValid(Registration) || !Registration->ValidateClientShotIntent(Shot, Avatar,
+		static_cast<uint16>(CurrentActivationInfo.GetActivationPredictionKey().Current), ValidatedRay, RejectReason))
+	{
+		UE_LOG(LogEnclaveCombat, Warning, TEXT("FireIntent REJECT validation key=%d reason=%s"),
+			CurrentActivationInfo.GetActivationPredictionKey().Current,
+			IsValid(Registration) ? *RejectReason : TEXT("hit registration subsystem unavailable"));
+		AcknowledgeUnspentAmmo(CurrentActivationInfo);
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (AEnclavePlayerController::IsShotAlignmentDebugEnabled())
+	{
+		UE_LOG(LogEnclaveCombat, Log, TEXT("FireIntent ACCEPTED key=%d origin=%s direction=%s time=%.6f"),
+			CurrentActivationInfo.GetActivationPredictionKey().Current,
+			*ValidatedRay.Origin.ToString(), *ValidatedRay.Direction.ToString(), ValidatedRay.ClientServerTimeSeconds);
+	}
+#endif
+	CompleteAuthoritativeShot(ValidatedRay);
 }
 
-void UEnclaveGA_Fire::CompleteAuthoritativeShot()
+void UEnclaveGA_Fire::CompleteAuthoritativeShot(const FEnclaveValidatedShotRay& ValidatedRay)
 {
 	const FGameplayAbilityActorInfo* ActorInfo = CurrentActorInfo;
 	const FGameplayAbilityActivationInfo ActivationInfo = CurrentActivationInfo;
@@ -208,9 +268,9 @@ void UEnclaveGA_Fire::CompleteAuthoritativeShot()
 		return;
 	}
 	ExecuteSourceCue(EnclaveGameplayTags::GameplayCue_Item_Action_Fire, ASC, Avatar);
-	// Stage A intentionally keeps the original server-derived ray. Stage B
-	// will validate the payload, then pass an accepted ray to the fireable.
-	PerformHitDetection(ActorInfo, Avatar, ActivationInfo);
+	// Accepted shot geometry now drives the actual authoritative hitscan.
+	// Collision and damage remain exclusively server-owned.
+	PerformHitDetection(ActorInfo, Avatar, ActivationInfo, &ValidatedRay);
 	EndAbility(CurrentSpecHandle, ActorInfo, ActivationInfo, true, false);
 }
 
@@ -286,7 +346,7 @@ bool UEnclaveGA_Fire::CheckCooldown(const FGameplayAbilitySpecHandle Handle, con
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 		if (AEnclavePlayerController::IsShotAlignmentDebugEnabled())
 		{
-			UE_LOG(LogEnclaveCombat, Warning, TEXT("FireIntent cooldown check rejected by base GAS cooldown policy; avatar=%s"),
+			UE_LOG(LogEnclaveCombat, Log, TEXT("FireIntent cooldown check rejected by base GAS cooldown policy; avatar=%s"),
 				*GetNameSafe(ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr));
 		}
 #endif
@@ -338,7 +398,7 @@ bool UEnclaveGA_Fire::CheckCooldown(const FGameplayAbilitySpecHandle Handle, con
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (AEnclavePlayerController::IsShotAlignmentDebugEnabled())
 	{
-		UE_LOG(LogEnclaveCombat, Warning, TEXT("FireIntent cooldown check rejected by item effect; avatar=%s tags=%s"),
+		UE_LOG(LogEnclaveCombat, Log, TEXT("FireIntent cooldown check rejected by item effect; avatar=%s tags=%s"),
 			*GetNameSafe(ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr), *GrantedCooldownTags.ToStringSimple());
 	}
 #endif
@@ -416,7 +476,8 @@ void UEnclaveGA_Fire::NotifyHitConfirmed(const FGameplayAbilityActorInfo* ActorI
 	}
 }
 
-void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor, const FGameplayAbilityActivationInfo& ActivationInfo)
+void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* ActorInfo, AActor* AvatarActor,
+	const FGameplayAbilityActivationInfo& ActivationInfo, const FEnclaveValidatedShotRay* ValidatedRay)
 {
 	if (!IsValid(AvatarActor))
 	{
@@ -432,12 +493,9 @@ void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* Actor
 		return;
 	}
 
-	// Everything about how this thing aims (camera-based, a muzzle socket, a
-	// turret's own tracked target), the shape of its trace (range, channel,
-	// single line vs. a future multi-pellet cone or projectile), and each
-	// hit's own damage (FEnclaveHitResult) is entirely the triggering source's
-	// concern now. This ability supplies only who is doing the shooting and
-	// consumes whatever hit results come back.
+	// The fireable owns range, hit shape and damage. It receives a server-
+	// accepted ray only for remote players; host and AI paths pass nullptr
+	// so the implementation resolves its own authoritative aiming source.
 	// The hit-registration subsystem observes the precise authoritative
 	// query. Bracket this synchronous call with the GAS activation key so
 	// its owning-client result can match the predicted camera sample.
@@ -456,7 +514,7 @@ void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* Actor
 		DebugController->DebugBeginAuthoritativeShot(ActivationInfo.GetActivationPredictionKey().Current);
 	}
 #endif
-	const TArray<FEnclaveHitResult> HitResults = Fireable->PerformFireHitDetection(AvatarActor);
+	const TArray<FEnclaveHitResult> HitResults = Fireable->PerformFireHitDetection(AvatarActor, ValidatedRay);
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (bCaptureDebugShot)
 	{

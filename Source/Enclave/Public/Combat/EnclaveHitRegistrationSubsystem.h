@@ -7,21 +7,19 @@
 #include "EnclaveHitRegistrationSubsystem.generated.h"
 
 class AActor;
+struct FEnclaveShotIntent;
+struct FEnclaveValidatedShotRay;
 
 /**
  * Server-side hitscan query prepared by a trusted fireable source.
  * Intentionally does not contain damage: weapons retain damage calculation,
  * and damage processing remains downstream of registration.
  *
- * FUTURE - Shot intent / rewind (not implemented):
- *   Client sends untrusted (timestamp, aim origin, aim direction) via GAS Target Data.
- *   UEnclaveGA_Fire receives GAS Target Data, validates timing and delegates
- *   authoritative plausibility checks. The IEnclaveFireableInterface contract
- *   must be extended to accept a validated shot input (or a server-generated
- *   fallback for AI/turrets); AEnclaveFirearmWeapon then builds this query.
- *   Validate shooter pose, origin/direction, obstacles, weapon, cadence, spread
- *   and range. Target rewind is a separate, later feature.
- *   Registration can then choose present-time or historical target geometry.
+ * Stage B: a remote player sends untrusted aim intent via GAS Target Data.
+ *   The server checks basic shooter-origin, aim, timestamp, and sequence
+ *   plausibility and passes an accepted ray to the Fireable. The Fireable
+ *   still builds this query using its own range and damage policy.
+ *   True historical pose validation / target rewind are NOT yet implemented.
  */
 struct ENCLAVE_API FEnclaveHitscanQuery
 {
@@ -48,6 +46,15 @@ class ENCLAVE_API UEnclaveHitRegistrationSubsystem : public UWorldSubsystem
 public:
 
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
+
+	/** Checks untrusted remote player aim against present authoritative shooter
+	 * state. Tolerances intentionally allow network delay, and therefore are
+	 * NOT a substitute for shooter-history or anti-cheat verification.
+	 * No state or ammunition is modified on rejection.
+	 */
+	bool ValidateClientShotIntent(const FEnclaveShotIntent& Intent, const AActor* Shooter,
+		uint16 ExpectedShotSequence, FEnclaveValidatedShotRay& OutValidatedRay,
+		FString& OutRejectionReason) const;
 
 	/** Returns true only when a blocking hit was registered; server only. */
 	bool RegisterHitscan(const FEnclaveHitscanQuery& Query, FHitResult& OutHit) const;

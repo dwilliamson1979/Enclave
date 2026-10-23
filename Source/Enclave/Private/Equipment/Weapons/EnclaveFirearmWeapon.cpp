@@ -11,6 +11,7 @@
 #include "Equipment/Weapons/Data/EnclaveFirearmWeaponDefinition.h"
 #include "GameplayTags/EnclavePresentationTags.h"
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
+#include "Combat/EnclaveShotIntent.h"
 
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -322,7 +323,7 @@ void AEnclaveFirearmWeapon::PlaySoundAtMuzzle(USoundBase* Sound)
 	}
 }
 
-TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor* InstigatorToIgnore) const
+TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor* InstigatorToIgnore, const FEnclaveValidatedShotRay* ValidatedShotRay) const
 {
 	TArray<FEnclaveHitResult> Results;
 
@@ -337,20 +338,26 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 	UEnclaveHitRegistrationSubsystem* Registration = World ? World->GetSubsystem<UEnclaveHitRegistrationSubsystem>() : nullptr;
 	if (!Registration) { return Results; }
 
-	// The firearm owns aim source, range and damage; registration owns how the
-	// authoritative shot intersects the currently selected target geometry.
-	// FUTURE: GA_Fire receives client shot intent as GAS Target Data. Extend
-	// IEnclaveFireableInterface::PerformFireHitDetection to accept validated
-	// shot input (with a server-generated fallback for AI/turrets). The firearm
-	// chooses the query origin/direction; registration resolves the collision.
-	// Downstream FEnclaveHitResult -> DamageRequest remains unchanged.
+	// The firearm still owns range and damage. The ray is either the server-
+	// validated client view or the authoritative locally resolved aim source.
+	// Hit registration alone decides what the ray intersects.
 	FVector ViewLocation;
-	FRotator ViewRotation;
-	InstigatorToIgnore->GetActorEyesViewPoint(ViewLocation, ViewRotation);
+	FVector ViewDirection;
+	if (ValidatedShotRay)
+	{
+		ViewLocation = ValidatedShotRay->Origin;
+		ViewDirection = ValidatedShotRay->Direction;
+	}
+	else
+	{
+		FRotator ViewRotation;
+		InstigatorToIgnore->GetActorEyesViewPoint(ViewLocation, ViewRotation);
+		ViewDirection = ViewRotation.Vector();
+	}
 
 	FEnclaveHitscanQuery Query;
 	Query.Start = ViewLocation;
-	Query.End = ViewLocation + (ViewRotation.Vector() * FirearmWeaponDefinition->GetTraceRange());
+	Query.End = ViewLocation + (ViewDirection * FirearmWeaponDefinition->GetTraceRange());
 	Query.Instigator = InstigatorToIgnore;
 
 	FHitResult HitResult;

@@ -6,9 +6,9 @@
 #include "Engine/NetSerialization.h"
 #include "EnclaveShotIntent.generated.h"
 
-/** UNTRUSTED captured shooter viewpoint. At Stage A it is transport-only;
- * authoritative traces still use the server viewpoint. Do not treat this
- * payload as validated shot input until Stage B.
+/** UNTRUSTED shooter viewpoint captured on the owning client. The server
+ * must validate it before it can influence authoritative hit registration.
+ * The timestamp is NOT yet suitable for historical target rewind.
  */
 USTRUCT()
 struct ENCLAVE_API FEnclaveShotIntent
@@ -34,6 +34,17 @@ struct ENCLAVE_API FEnclaveShotIntent
 	/** Reserved for a future server-enforced spread policy. Always zero for now. */
 	UPROPERTY()
 	uint32 SpreadSeed = 0;
+};
+
+/** Server-accepted ray, created only after validating an untrusted shot intent.
+ * This is an in-process value: never send it over the network as client authority.
+ * Rewind will later require more accurate time sync and historical shooter poses.
+ */
+struct ENCLAVE_API FEnclaveValidatedShotRay
+{
+	FVector Origin = FVector::ZeroVector;
+	FVector Direction = FVector::ForwardVector; // normalized
+	double ClientServerTimeSeconds = 0.0; // provenance, NOT a rewind timestamp
 };
 
 /** GAS Target Data envelope. Must use its concrete ScriptStruct for polymorphic network serialization. */
