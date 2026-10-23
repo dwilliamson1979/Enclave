@@ -26,3 +26,30 @@ bool FEnclaveShotTimingContext::TryResolveTargetHistoryTime(double EffectivePres
 	OutTargetTimeSeconds = CandidateTargetTime;
 	return true;
 }
+
+
+bool FEnclaveShotTimingContext::TryResolveServerDerivedHistoryTime(double AdditionalSmoothingSeconds, double& OutTargetTimeSeconds) const
+{
+	OutTargetTimeSeconds = 0.0;
+	if (!FMath::IsFinite(ServerReceiptTimeSeconds) ||
+		!FMath::IsFinite(ServerObservedRTTSeconds) ||
+		!FMath::IsFinite(MaxRewindSeconds) ||
+		!FMath::IsFinite(AdditionalSmoothingSeconds) ||
+		ServerReceiptTimeSeconds < 0.0 || ServerObservedRTTSeconds < 0.0 ||
+		MaxRewindSeconds <= 0.0 || AdditionalSmoothingSeconds < 0.0)
+	{
+		return false;
+	}
+
+	const double EstimatedTargetAge = ServerObservedRTTSeconds + AdditionalSmoothingSeconds;
+	const double Candidate = ServerReceiptTimeSeconds - EstimatedTargetAge;
+	if (!FMath::IsFinite(EstimatedTargetAge) ||
+		EstimatedTargetAge > MaxRewindSeconds ||
+		!FMath::IsFinite(Candidate) || Candidate < 0.0)
+	{
+		return false;
+	}
+
+	OutTargetTimeSeconds = Candidate;
+	return true;
+}

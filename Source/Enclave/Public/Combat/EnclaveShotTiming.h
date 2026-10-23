@@ -25,6 +25,12 @@ struct ENCLAVE_API FEnclaveShotTimingContext
 	double ServerReceiptTimeSeconds = 0.0;
 	double MaxRewindSeconds = 0.0;
 
+	/** Approximate round-trip time measured/retained by the authoritative PlayerState.
+	 * A negative value means unavailable. Not supplied by the client and not a
+	 * render-time or one-way-latency measurement.
+	 */
+	double ServerObservedRTTSeconds = -1.0;
+
 	/** Measured age at server validation; includes uplink and clock-estimation error. */
 	double GetObservedShotAgeSeconds() const
 	{
@@ -41,4 +47,13 @@ struct ENCLAVE_API FEnclaveShotTimingContext
 	 * safe fallback policy (present-time or no historical hit).
 	 */
 	bool TryResolveTargetHistoryTime(double EffectivePresentationDelaySeconds, double& OutTargetTimeSeconds) const;
+
+	/**
+	 * Server-derived diagnostic anchor, independent of the client's timestamp:
+	 *   targetTime = serverReceipt - serverObservedRTT - additionalSmoothing.
+	 * This symmetric-path / interpolation approximation is NOT yet a proven
+	 * authoritative target-render time. Never clamp a failed rewind to the oldest
+	 * frame. Only C4D shadow comparisons may consume it until C5 is reviewed.
+	 */
+	bool TryResolveServerDerivedHistoryTime(double AdditionalSmoothingSeconds, double& OutTargetTimeSeconds) const;
 };
