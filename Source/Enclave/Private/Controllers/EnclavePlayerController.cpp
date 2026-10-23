@@ -22,6 +22,7 @@
 #include "Math/RotationMatrix.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/Pawn.h"
@@ -201,6 +202,56 @@ void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementati
 		PredictionKey, *GetNameSafe(PatrolTarget), *FVector(ClientVisualProxyAnchor).ToCompactString(),
 		*CurrentServerCapsuleCenter.ToCompactString(), *SpatialDelta.ToCompactString(), SpatialDelta.Size(),
 		TargetVelocity.Size(), (SampleReceiptTime - ClientShotServerTimeSeconds) * 1000.0);
+
+	// Stage C4: postpone this DEBUG-ONLY comparison briefly so authoritative
+	// history includes both sides of the client-supplied shot timestamp. A
+	// same-frame comparison cannot see the later server positions that previous
+	// patrol logs suggested were closest to the client-visible anchor.
+	// The RPC is untrusted; this inverse lookup is NOT a gameplay clock source.
+	if (PendingSSRVisualTimingMatches >= 8 ||
+		FMath::Abs(SampleReceiptTime - ClientShotServerTimeSeconds) > 0.500)
+	{
+		return;
+	}
+	++PendingSSRVisualTimingMatches;
+	const TWeakObjectPtr<AEnclaveCharacter> WeakPatrol = PatrolTarget;
+	const FVector VisualAnchor = FVector(ClientVisualProxyAnchor);
+	const double ShotTime = ClientShotServerTimeSeconds;
+	const double ReceiptTime = SampleReceiptTime;
+	const int32 ShotKey = PredictionKey;
+	FTimerDelegate TimingMatchDelegate = FTimerDelegate::CreateWeakLambda(this,
+		[this, WeakPatrol, VisualAnchor, ShotTime, ReceiptTime, ShotKey]()
+		{
+			--PendingSSRVisualTimingMatches;
+			const AEnclaveCharacter* Target = WeakPatrol.Get();
+			if (!IsValid(Target) || !GetWorld() || !GetWorld()->GetGameState())
+			{
+				return;
+			}
+			const UEnclaveTargetHistoryComponent* History =
+				Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
+			FEnclaveVisualHistoryTimeMatch Match;
+			if (!IsValid(History) || !History->TryMatchVisualAnchorToHistory(
+				VisualAnchor, ShotTime, 0.100, 0.100, Match))
+			{
+				ENCLAVE_LOG(LogEnclaveCombat, Log,
+					"SSRTimingMatch SERVER key=%d patrolTarget=%s status=no_matchable_history shotTime=%.6f receiptAgeMs=%.1f (DEBUG ONLY; no gameplay timing)",
+					ShotKey, *GetNameSafe(Target), ShotTime, (ReceiptTime - ShotTime) * 1000.0);
+				return;
+			}
+
+			const bool bPlausibleFit = !Match.bAmbiguous && Match.ResidualCm <= 5.0;
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRTimingMatch SERVER key=%d patrolTarget=%s status=%s clientShotTime=%.6f matchedServerTime=%.6f signedMatchOffsetMs=%+.1f apparentVisualAgeMs=%+.1f residualCm=%.2f serverTargetSpeedCmS=%.1f segments=%d ambiguous=%d receiptAgeMs=%.1f (UNTRUSTED PATROL TELEMETRY; signed trajectory fit, NOT presentation delay or gameplay authority)",
+				ShotKey, *GetNameSafe(Target),
+				bPlausibleFit ? TEXT("fitted") : TEXT("inconclusive"), ShotTime,
+				Match.MatchedServerTimeSeconds, Match.SignedOffsetSeconds * 1000.0,
+				-Match.SignedOffsetSeconds * 1000.0, Match.ResidualCm,
+				Match.MatchedSpeedCmPerSecond, Match.EvaluatedSegments,
+				Match.bAmbiguous ? 1 : 0, (ReceiptTime - ShotTime) * 1000.0);
+		});
+	FTimerHandle TimingMatchTimer;
+	GetWorld()->GetTimerManager().SetTimer(TimingMatchTimer, TimingMatchDelegate, 0.120f, false);
 
 	// C2 shadow lookup at the client's estimated shot CAPTURE time, not a
 	// rewind decision. Client-visible geometry is usually older even at that

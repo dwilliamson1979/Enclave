@@ -134,6 +134,9 @@ private:
 	TMap<int32, FDebugShotRay> PendingLocalShots;
 	TMap<int32, FDebugServerShot> PendingServerShots;
 
+	// C4 diagnostic RPCs must not queue unbounded delayed history comparisons.
+	int32 PendingSSRVisualTimingMatches = 0;
+
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents);
 
 	void RefreshPossessedPawnInputState();

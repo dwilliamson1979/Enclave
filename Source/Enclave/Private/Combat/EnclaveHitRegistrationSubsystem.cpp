@@ -191,8 +191,8 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 	{
 		OutValidatedRay.Timing.MaxRewindSeconds = FMath::Clamp(static_cast<double>(GameMode->GetMaxRewindAllowanceMs()), 0.0, 500.0) / 1000.0;
 	}
-	// Stage C1 only: the effective client presentation delay is not established,
-	// so no historical target timestamp is resolved or used by RegisterHitscan.
+	// The C4 patrol trajectory inverse fit is debug-only and does not resolve
+	// trustworthy presentation timing. Keep authoritative traces present-time.
 	return true;
 }
 

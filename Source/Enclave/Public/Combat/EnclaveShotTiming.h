@@ -14,7 +14,8 @@
  * ServerReceiptTimeSeconds is read from the authoritative GameState clock at
  * shot validation. EffectivePresentationDelaySeconds is deliberately NOT
  * estimated from half-RTT or from mesh-to-capsule smoothing distance here.
- * C2 will supply a measured/bounded visual delay from target history.
+ * A future trusted timing policy must establish that delay. C4 patrol-trajectory
+ * matches are untrusted diagnostics, NOT a measured delay or clock correction.
  *
  * No C1 code enables rewind or alters current-time hit registration.
  */

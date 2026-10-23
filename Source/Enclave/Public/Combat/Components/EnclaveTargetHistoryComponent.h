@@ -21,6 +21,22 @@ struct ENCLAVE_API FEnclaveTargetCapsuleFrame
 };
 
 /**
+ * Diagnostic inverse position-to-time lookup against recorded server capsule
+ * centers. A positive SignedOffsetSeconds means the client's sampled visual
+ * anchor best matches server target movement AFTER its supplied shot time.
+ * This is NOT trusted gameplay timing and NOT a measured presentation delay.
+ */
+struct ENCLAVE_API FEnclaveVisualHistoryTimeMatch
+{
+	double MatchedServerTimeSeconds = 0.0;
+	double SignedOffsetSeconds = 0.0;
+	double ResidualCm = 0.0;
+	double MatchedSpeedCmPerSecond = 0.0;
+	int32 EvaluatedSegments = 0;
+	bool bAmbiguous = false;
+};
+
+/**
  * Stage C2: bounded, nonreplicated, authority-only capsule history per avatar.
  * No live collision is moved, and no hit-registration behavior is changed.
  *
@@ -45,6 +61,13 @@ public:
 	 * timing context must independently enforce the match rewind allowance.
 	 */
 	bool TryGetCapsuleAtTime(double ServerTimeSeconds, FEnclaveTargetCapsuleFrame& OutFrame) const;
+
+	/** Debug-only trajectory inversion for the separately reported patrol visual anchor.
+	 * Only moves along recorded continuous server segments; never extrapolates.
+	 * The result must never influence damage, firing, or the rewind policy.
+	 */
+	bool TryMatchVisualAnchorToHistory(const FVector& VisualAnchor, double ClientShotTimeSeconds,
+		double LookbackSeconds, double LookaheadSeconds, FEnclaveVisualHistoryTimeMatch& OutMatch) const;
 
 	/** Clear all samples at any avatar/history identity boundary. */
 	void InvalidateHistory();

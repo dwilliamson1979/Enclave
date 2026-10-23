@@ -213,3 +213,106 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 	}
 	return false;
 }
+
+
+bool UEnclaveTargetHistoryComponent::TryMatchVisualAnchorToHistory(const FVector& VisualAnchor,
+	double ClientShotTimeSeconds, double LookbackSeconds, double LookaheadSeconds,
+	FEnclaveVisualHistoryTimeMatch& OutMatch) const
+{
+	OutMatch = FEnclaveVisualHistoryTimeMatch();
+	const AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
+	const UEnclaveAvatarLifecycleComponent* Lifecycle = IsValid(Character)
+		? Character->FindComponentByClass<UEnclaveAvatarLifecycleComponent>() : nullptr;
+	if (!IsValid(Character) || !Character->HasAuthority() ||
+		(IsValid(Lifecycle) && Lifecycle->IsDead()) || VisualAnchor.ContainsNaN() ||
+		!FMath::IsFinite(ClientShotTimeSeconds) || ClientShotTimeSeconds < 0.0 ||
+		!FMath::IsFinite(LookbackSeconds) || !FMath::IsFinite(LookaheadSeconds) ||
+		LookbackSeconds < 0.0 || LookaheadSeconds < 0.0 || Frames.Num() < 2)
+	{
+		return false;
+	}
+
+	// Limit this diagnostic even if an incorrect caller supplies a huge window.
+	const double Start = ClientShotTimeSeconds - FMath::Min(LookbackSeconds, 0.150);
+	const double End = ClientShotTimeSeconds + FMath::Min(LookaheadSeconds, 0.150);
+	if (Start > Frames.Last().ServerTimeSeconds || End < Frames[0].ServerTimeSeconds)
+	{
+		return false;
+	}
+
+	struct FCandidate
+	{
+		double TimeSeconds;
+		double ResidualCm;
+	};
+	TArray<FCandidate, TInlineAllocator<128>> Candidates;
+	double BestResidualCm = TNumericLimits<double>::Max();
+	double BestMatchTime = 0.0;
+	double BestSpeedCmPerSecond = 0.0;
+
+	for (int32 Index = 1; Index < Frames.Num(); ++Index)
+	{
+		const FEnclaveTargetCapsuleFrame& Older = Frames[Index - 1];
+		const FEnclaveTargetCapsuleFrame& Newer = Frames[Index];
+		const double Span = Newer.ServerTimeSeconds - Older.ServerTimeSeconds;
+		if (Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds)
+		{
+			continue;
+		}
+
+		const double SegmentStart = FMath::Max(Start, Older.ServerTimeSeconds);
+		const double SegmentEnd = FMath::Min(End, Newer.ServerTimeSeconds);
+		if (SegmentStart >= SegmentEnd)
+		{
+			continue;
+		}
+
+		const FVector PositionStart = FMath::Lerp(Older.Center, Newer.Center,
+			(SegmentStart - Older.ServerTimeSeconds) / Span);
+		const FVector PositionEnd = FMath::Lerp(Older.Center, Newer.Center,
+			(SegmentEnd - Older.ServerTimeSeconds) / Span);
+		const FVector Motion = PositionEnd - PositionStart;
+		const double MotionLengthSq = Motion.SizeSquared();
+		const double Speed = FMath::Sqrt(MotionLengthSq) / (SegmentEnd - SegmentStart);
+		// A stationary capsule cannot identify *when* the client viewed it.
+		if (Speed < 150.0 || MotionLengthSq < FMath::Square(0.1))
+		{
+			continue;
+		}
+
+		const double Alpha = FMath::Clamp(FVector::DotProduct(VisualAnchor - PositionStart, Motion) /
+			MotionLengthSq, 0.0, 1.0);
+		const double MatchTime = FMath::Lerp(SegmentStart, SegmentEnd, Alpha);
+		const double Residual = FVector::Dist(VisualAnchor, PositionStart + Alpha * Motion);
+		Candidates.Add({ MatchTime, Residual });
+		if (Residual < BestResidualCm)
+		{
+			BestResidualCm = Residual;
+			BestMatchTime = MatchTime;
+			BestSpeedCmPerSecond = Speed;
+		}
+	}
+
+	if (Candidates.IsEmpty())
+	{
+		return false;
+	}
+
+	OutMatch.MatchedServerTimeSeconds = BestMatchTime;
+	OutMatch.SignedOffsetSeconds = BestMatchTime - ClientShotTimeSeconds;
+	OutMatch.ResidualCm = BestResidualCm;
+	OutMatch.MatchedSpeedCmPerSecond = BestSpeedCmPerSecond;
+	OutMatch.EvaluatedSegments = Candidates.Num();
+	// Another similarly fitting point more than 25ms away makes the inverse
+	// time underdetermined (e.g. near a patrol reversal). Report, do not guess.
+	for (const FCandidate& Candidate : Candidates)
+	{
+		if (FMath::Abs(Candidate.TimeSeconds - BestMatchTime) > 0.025 &&
+			Candidate.ResidualCm <= BestResidualCm + 1.5)
+		{
+			OutMatch.bAmbiguous = true;
+			break;
+		}
+	}
+	return true;
+}
