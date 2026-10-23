@@ -359,6 +359,12 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 	Query.Start = ViewLocation;
 	Query.End = ViewLocation + (ViewDirection * FirearmWeaponDefinition->GetTraceRange());
 	Query.Instigator = InstigatorToIgnore;
+	if (ValidatedShotRay)
+	{
+		Query.bHasValidatedClientTiming = true;
+		Query.ValidatedClientTiming = ValidatedShotRay->Timing;
+		Query.ShotSequence = ValidatedShotRay->ShotSequence;
+	}
 
 	FHitResult HitResult;
 	const bool bHit = Registration->RegisterHitscan(Query, HitResult);

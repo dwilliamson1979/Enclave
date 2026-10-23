@@ -6,10 +6,12 @@
 
 #include "Debug/EnclaveDebug.h"
 #include "Player/EnclavePlayerState.h"
+#include "UI/EnclaveHUD.h"
 
 AEnclaveGameModeBase::AEnclaveGameModeBase()
 {
 	PlayerStateClass = AEnclavePlayerState::StaticClass();
+	HUDClass = AEnclaveHUD::StaticClass();
 }
 
 void AEnclaveGameModeBase::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)

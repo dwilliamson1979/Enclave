@@ -49,6 +49,9 @@ struct ENCLAVE_API FEnclaveValidatedShotRay
 
 	/** Server-owned receipt time and future historical-lookup policy. Never authorizes hits on its own. */
 	FEnclaveShotTimingContext Timing;
+
+	/** Correlation only: the validated client shot key, never hit authority. */
+	uint16 ShotSequence = 0;
 };
 
 /** GAS Target Data envelope. Must use its concrete ScriptStruct for polymorphic network serialization. */

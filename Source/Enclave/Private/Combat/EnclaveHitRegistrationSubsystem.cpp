@@ -4,6 +4,9 @@
 
 #include "Game/EnclaveGameModeBase.h"
 #include "Combat/EnclaveShotIntent.h"
+#include "Combat/EnclaveHistoricalCapsuleIntersection.h"
+#include "Combat/Components/EnclaveTargetHistoryComponent.h"
+#include "Characters/EnclaveCharacter.h"
 #include "GameFramework/GameStateBase.h"
 #include "Controllers/EnclavePlayerController.h"
 #include "GameFramework/Pawn.h"
@@ -181,6 +184,7 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 	OutValidatedRay.Origin = FVector(Intent.Origin);
 	OutValidatedRay.Direction = ClientDirection;
 	OutValidatedRay.ClientServerTimeSeconds = Intent.ClientServerTimeSeconds;
+	OutValidatedRay.ShotSequence = Intent.ShotSequence;
 	OutValidatedRay.Timing.ClientEstimatedShotTimeSeconds = Intent.ClientServerTimeSeconds;
 	OutValidatedRay.Timing.ServerReceiptTimeSeconds = ServerReceiptTimeSeconds;
 	if (const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>())
@@ -209,7 +213,11 @@ bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuer
 		? GameMode->GetWeaponHitDetectionMode()
 		: EEnclaveWeaponHitDetectionMode::Capsule;
 
-	return TraceCurrentGeometry(Query, OutHit, Mode);
+	const bool bCurrentHit = TraceCurrentGeometry(Query, OutHit, Mode);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	DebugCompareHistoricalCapsules(Query, bCurrentHit, OutHit, Mode);
+#endif
+	return bCurrentHit;
 }
 
 bool UEnclaveHitRegistrationSubsystem::TraceCurrentGeometry(const FEnclaveHitscanQuery& Query, FHitResult& OutHit, EEnclaveWeaponHitDetectionMode Mode) const
@@ -253,3 +261,116 @@ bool UEnclaveHitRegistrationSubsystem::TraceCurrentGeometry(const FEnclaveHitsca
 	}
 	return bHit;
 }
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+static TAutoConsoleVariable<int32> CVarDebugSSRShadow(
+	TEXT("Enclave.Debug.SSRShadow"),
+	0,
+	TEXT("Stage C3: 0=off, 1=compare the authoritative present-time hit with a NON-MUTATING historical capsule ray at the validated client shot time (0ms extra presentation offset). Capsule mode only. Never grants hits or damage."),
+	ECVF_Cheat);
+
+void UEnclaveHitRegistrationSubsystem::DebugCompareHistoricalCapsules(const FEnclaveHitscanQuery& Query,
+	bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const
+{
+	if (CVarDebugSSRShadow.GetValueOnGameThread() == 0 || !Query.bHasValidatedClientTiming)
+	{
+		return;
+	}
+
+	// Never claim that capsule geometry models the skeletal Physics Asset.
+	if (Mode != EEnclaveWeaponHitDetectionMode::Capsule)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRShadow SERVER key=%u skipped=unsupported_skeletal_mode (SHADOW ONLY; no gameplay effect)",
+			Query.ShotSequence);
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	AActor* Shooter = Query.Instigator.Get();
+	if (!World || World->GetNetMode() == NM_Client || !IsValid(Shooter))
+	{
+		return;
+	}
+
+	// The C1 timing resolver enforces server-owned bounds. Zero is explicitly a
+	// DIAGNOSTIC BASELINE, not a measured presentation delay or an SSR policy.
+	double HistoricalTimeSeconds = 0.0;
+	if (!Query.ValidatedClientTiming.TryResolveTargetHistoryTime(0.0, HistoricalTimeSeconds))
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRShadow SERVER key=%u skipped=invalid_timing shotAgeMs=%.1f maxRewindMs=%.1f (0ms presentation baseline; SHADOW ONLY)",
+			Query.ShotSequence, Query.ValidatedClientTiming.GetObservedShotAgeSeconds() * 1000.0,
+			Query.ValidatedClientTiming.MaxRewindSeconds * 1000.0);
+		return;
+	}
+
+	AEnclaveCharacter* NearestTarget = nullptr;
+	double NearestHitDistanceCm = FVector::Dist(Query.Start, Query.End) + 1.0;
+	FVector NearestHitPoint = FVector::ZeroVector;
+	int32 AvailableHistories = 0;
+	int32 MissingHistories = 0;
+
+	// Read character-owned history. No live actor movement, component collision
+	// changes, or world rewind; return only the nearest historical capsule entry.
+	FCollisionQueryParams WorldParams(SCENE_QUERY_STAT(EnclaveSSRShadowWorld), true);
+	WorldParams.AddIgnoredActor(Shooter);
+	TArray<AActor*> AttachedActors;
+	Shooter->GetAttachedActors(AttachedActors);
+	WorldParams.AddIgnoredActors(AttachedActors);
+	for (TActorIterator<AEnclaveCharacter> It(World); It; ++It)
+	{
+		AEnclaveCharacter* Target = *It;
+		if (!IsValid(Target) || Target == Shooter)
+		{
+			continue;
+		}
+
+		// Ignore every Enclave character in the independent world obstruction
+		// query; their present-time bodies must not conceal historic candidates.
+		WorldParams.AddIgnoredActor(Target);
+		const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
+		FEnclaveTargetCapsuleFrame Capsule;
+		if (!IsValid(History) || !History->TryGetCapsuleAtTime(HistoricalTimeSeconds, Capsule))
+		{
+			++MissingHistories;
+			continue;
+		}
+
+		++AvailableHistories;
+		double HitDistanceCm = 0.0;
+		FVector HitPoint;
+		if (FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(Query.Start, Query.End,
+			Capsule, HitDistanceCm, HitPoint) && HitDistanceCm < NearestHitDistanceCm)
+		{
+			NearestTarget = Target;
+			NearestHitDistanceCm = HitDistanceCm;
+			NearestHitPoint = HitPoint;
+		}
+	}
+
+	// Preserve present-time Weapon-channel environmental occlusion, including
+	// dynamic props. This probe is independent of (and cannot replace) the
+	// authoritative live trace. Non-Enclave Pawns can still obstruct it.
+	FHitResult WorldHit;
+	const bool bWorldBlocked = World->LineTraceSingleByChannel(WorldHit,
+		Query.Start, Query.End, ECC_Weapon, WorldParams);
+	const double WorldBlockDistanceCm = bWorldBlocked
+		? FVector::Dist(Query.Start, WorldHit.ImpactPoint) : -1.0;
+	const bool bHistoricalCandidate = NearestTarget != nullptr;
+	const bool bOccluded = bHistoricalCandidate && bWorldBlocked &&
+		WorldBlockDistanceCm < NearestHitDistanceCm;
+	const bool bShadowHit = bHistoricalCandidate && !bOccluded;
+	const bool bComparable = AvailableHistories > 0 && MissingHistories == 0;
+
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRShadow SERVER key=%u shotAgeMs=%.1f targetHistoryTime=%.6f presentationOffsetMs=0.0 available=%d missing=%d historicalCandidate=%s historicalEntryCm=%.1f historicalPoint=%s worldBlock=%s worldBlockCm=%.1f occluded=%d shadowHit=%d liveHit=%d liveActor=%s comparable=%d sameActor=%d (UNRECONCILED SHOT-TIME BASELINE; SHADOW ONLY; does not authorize hits)",
+		Query.ShotSequence, Query.ValidatedClientTiming.GetObservedShotAgeSeconds() * 1000.0,
+		HistoricalTimeSeconds, AvailableHistories, MissingHistories, *GetNameSafe(NearestTarget),
+		bHistoricalCandidate ? NearestHitDistanceCm : -1.0, *NearestHitPoint.ToCompactString(),
+		*GetNameSafe(WorldHit.GetActor()), WorldBlockDistanceCm, bOccluded ? 1 : 0,
+		bShadowHit ? 1 : 0, bLiveHit ? 1 : 0, *GetNameSafe(LiveHit.GetActor()),
+		bComparable ? 1 : 0,
+		(bShadowHit && bLiveHit && LiveHit.GetActor() == NearestTarget) ? 1 : 0);
+}
+#endif
