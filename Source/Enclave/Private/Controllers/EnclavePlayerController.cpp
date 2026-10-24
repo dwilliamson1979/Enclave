@@ -49,8 +49,8 @@ static TAutoConsoleVariable<bool> CVarDebugShotAlignment(
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 static TAutoConsoleVariable<bool> CVarDebugSSRGameplayGate(
-    TEXT("Enclave.Debug.SSRGameplayGate"), false,
-    TEXT("Shadow-only capsule hit/miss gameplay classifier; use on remote client and listen server. NO damage authority."), ECVF_Cheat);
+	TEXT("Enclave.Debug.SSRGameplayGate"), false,
+	TEXT("Shadow-only capsule hit/miss gameplay classifier; use on remote client and listen server. NO damage authority."), ECVF_Cheat);
 
 static TAutoConsoleVariable<bool> CVarDebugSSREcho(
 	TEXT("Enclave.Debug.SSREcho"), false,
@@ -75,85 +75,123 @@ bool AEnclavePlayerController::IsSSRClockDebugEnabled()
 bool AEnclavePlayerController::IsSSRGameplayGateEnabled()
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-    return CVarDebugSSRGameplayGate.GetValueOnGameThread();
+	return CVarDebugSSRGameplayGate.GetValueOnGameThread();
 #else
-    return false;
+	return false;
 #endif
 }
 
 bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, const FVector& ShotOrigin,
-    const FVector& ShotDirection, FEnclaveSSRGameplayClaim& OutClaim) const
+	const FVector& ShotDirection, FEnclaveSSRGameplayClaim& OutClaim) const
 {
-    OutClaim = FEnclaveSSRGameplayClaim();
+	OutClaim = FEnclaveSSRGameplayClaim();
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-    if (!IsSSRGameplayGateEnabled() || !IsLocalController() || !GetWorld() || !GetPawn())
-    {
-        return false;
-    }
-    // Selection is intentionally loose (up to 300cm from ray): clear MISSES must be sampled.
-    // The selected target must be a simulated proxy with a paired native movement update.
-    AEnclaveCharacter* Candidate = nullptr;
-    double BestDistSq = FMath::Square(300.0);
-    const FVector Direction = ShotDirection.GetSafeNormal();
-    for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
-    {
-        AEnclaveCharacter* Target = *It;
-        if (!IsValid(Target) || Target == GetPawn() || Target->GetLocalRole() != ROLE_SimulatedProxy ||
-            !IsValid(Target->GetCapsuleComponent())) { continue; }
-        const FVector Delta = Target->GetCapsuleComponent()->GetComponentLocation() - ShotOrigin;
-        const double Along = FVector::DotProduct(Delta, Direction);
-        if (Along <= 0.0 || Along > 10000.0) { continue; }
-        const double DistSq = (Delta - Direction * Along).SizeSquared();
-        if (DistSq < BestDistSq) { BestDistSq = DistSq; Candidate = Target; }
-    }
-    if (!IsValid(Candidate)) { return false; }
-    const FEnclaveSSRReceivedProxyUpdate& Update = Candidate->DebugGetLastReceivedProxyUpdate();
-    const double Elapsed = GetWorld()->GetTimeSeconds() - Update.ClientReceiveWorldSeconds;
-    if (Update.ReceiveCount == 0 || !FMath::IsFinite(Update.ServerStamp) || Update.ServerStamp <= 0.0f ||
-        !FMath::IsFinite(Elapsed) || Elapsed < 0.0 || Elapsed > 0.100) { return false; }
+	if (!IsSSRGameplayGateEnabled() || !IsLocalController() || !GetWorld() || !GetPawn())
+	{
+		return false;
+	}
 
-    const UCapsuleComponent* Capsule = Candidate->GetCapsuleComponent();
-    if (!IsValid(Candidate->GetMesh())) { return false; }
-    // CharacterMovement smooths the third-person MESH separately from its proxy
-    // collision capsule. Translate the reference capsule by the current mesh
-    // smoothing offset: closer to a shooter-visible silhouette than the raw
-    // capsule, but still a deliberate approximation (no per-bone rewind).
-    const FVector MeshSmoothOffset = Capsule->GetComponentTransform().TransformVectorNoScale(
-        Candidate->GetMesh()->GetRelativeLocation() - Candidate->GetBaseTranslationOffset());
-    FEnclaveTargetCapsuleFrame Reference;
-    Reference.Center = Capsule->GetComponentLocation() + MeshSmoothOffset;
-    Reference.Rotation = Capsule->GetComponentQuat();
-    Reference.RadiusCm = Capsule->GetScaledCapsuleRadius();
-    Reference.HalfHeightCm = Capsule->GetScaledCapsuleHalfHeight();
-    constexpr float MarginCm = 10.0f;
-    if (Reference.RadiusCm <= MarginCm + 1.0f) { return false; }
-    FEnclaveTargetCapsuleFrame Inner = Reference;
-    Inner.RadiusCm -= MarginCm;
-    Inner.HalfHeightCm -= MarginCm;
-    FEnclaveTargetCapsuleFrame Outer = Reference;
-    Outer.RadiusCm += MarginCm;
-    Outer.HalfHeightCm += MarginCm;
-    const FVector RayEnd = ShotOrigin + Direction * 10000.0;
-    double DistCm = 0.0;
-    FVector Point;
-    const bool bClearHit = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
-        ShotOrigin, RayEnd, Inner, DistCm, Point);
-    const bool bWithinOuter = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
-        ShotOrigin, RayEnd, Outer, DistCm, Point);
-    OutClaim.Classification = bClearHit ? 1 : (bWithinOuter ? 3 : 2);
-    OutClaim.Target = Candidate;
-    OutClaim.EchoedMovementStamp = Update.ServerStamp;
-    OutClaim.SecondsSinceMovementUpdate = static_cast<float>(Elapsed);
-    ENCLAVE_LOG(LogEnclaveCombat, Log,
-        "SSRGameplay CLIENT key=%d target=%s category=%d stamp=%.6f elapsedMs=%.1f smoothingCm=%.2f (10cm mesh-anchored proxy-capsule margin; approximate view, NOT actual rendered silhouette; debug only)",
-        PredictionKey, *GetNameSafe(Candidate), static_cast<int32>(OutClaim.Classification),
-        OutClaim.EchoedMovementStamp, Elapsed * 1000.0, MeshSmoothOffset.Size());
-    return true;
+	const FVector Direction = ShotDirection.GetSafeNormal();
+	if (Direction.IsNearlyZero())
+	{
+		return false;
+	}
+	const FVector RayEnd = ShotOrigin + Direction * 10000.0;
+	constexpr float MarginCm = 10.0f;
+	constexpr float MaximumClearMissCm = 40.0f;
+
+	// Only consider targets intersecting the reference capsule inflated by 40 cm.
+	// Beyond 40 cm is an excluded FAR MISS, not a trivially successful clear miss.
+	// Select the earliest enlarged-capsule entry along the ray, not the closest
+	// center: a tall capsule can be near the ray even when its center is not.
+	AEnclaveCharacter* Candidate = nullptr;
+	FEnclaveTargetCapsuleFrame SelectedReference;
+	float SelectedSmoothingCm = 0.0f;
+	double ClosestEntryCm = 10001.0;
+	for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
+	{
+		AEnclaveCharacter* Target = *It;
+		if (!IsValid(Target) || Target == GetPawn() || Target->GetLocalRole() != ROLE_SimulatedProxy ||
+			!IsValid(Target->GetCapsuleComponent()) || !IsValid(Target->GetMesh()))
+		{
+			continue;
+		}
+
+		const UCapsuleComponent* Capsule = Target->GetCapsuleComponent();
+		const FVector MeshSmoothOffset = Capsule->GetComponentTransform().TransformVectorNoScale(
+			Target->GetMesh()->GetRelativeLocation() - Target->GetBaseTranslationOffset());
+		FEnclaveTargetCapsuleFrame Reference;
+		Reference.Center = Capsule->GetComponentLocation() + MeshSmoothOffset;
+		Reference.Rotation = Capsule->GetComponentQuat();
+		Reference.RadiusCm = Capsule->GetScaledCapsuleRadius();
+		Reference.HalfHeightCm = Capsule->GetScaledCapsuleHalfHeight();
+		if (Reference.RadiusCm <= MarginCm + 1.0f)
+		{
+			continue;
+		}
+
+		FEnclaveTargetCapsuleFrame Outer40 = Reference;
+		Outer40.RadiusCm += MaximumClearMissCm;
+		Outer40.HalfHeightCm += MaximumClearMissCm;
+		double EntryCm = 0.0;
+		FVector EntryPoint;
+		if (FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
+			ShotOrigin, RayEnd, Outer40, EntryCm, EntryPoint) && EntryCm < ClosestEntryCm)
+		{
+			ClosestEntryCm = EntryCm;
+			Candidate = Target;
+			SelectedReference = Reference;
+			SelectedSmoothingCm = MeshSmoothOffset.Size();
+		}
+	}
+	if (!IsValid(Candidate))
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRGameplay CLIENT key=%d status=far_miss_excluded (no capsule within 40cm; DEBUG ONLY)",
+			PredictionKey);
+		return false;
+	}
+
+	const FEnclaveSSRReceivedProxyUpdate& Update = Candidate->DebugGetLastReceivedProxyUpdate();
+	const double Elapsed = GetWorld()->GetTimeSeconds() - Update.ClientReceiveWorldSeconds;
+	if (Update.ReceiveCount == 0 || !FMath::IsFinite(Update.ServerStamp) || Update.ServerStamp <= 0.0f ||
+		!FMath::IsFinite(Elapsed) || Elapsed < 0.0 || Elapsed > 0.100)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRGameplay CLIENT key=%d status=proxy_update_unavailable elapsedMs=%.2f (DEBUG ONLY)",
+			PredictionKey, Elapsed * 1000.0);
+		return false;
+	}
+
+	// Mesh-anchored collision proxy is a test approximation, NOT the rendered
+	// skeletal silhouette. The 10 cm inner/outer margins remain unchanged.
+	FEnclaveTargetCapsuleFrame Inner = SelectedReference;
+	Inner.RadiusCm -= MarginCm;
+	Inner.HalfHeightCm -= MarginCm;
+	FEnclaveTargetCapsuleFrame Outer10 = SelectedReference;
+	Outer10.RadiusCm += MarginCm;
+	Outer10.HalfHeightCm += MarginCm;
+	double DistanceCm = 0.0;
+	FVector Point;
+	const bool bClearHit = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
+		ShotOrigin, RayEnd, Inner, DistanceCm, Point);
+	const bool bWithin10Cm = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
+		ShotOrigin, RayEnd, Outer10, DistanceCm, Point);
+	// A clear miss intersects Outer40 (candidate selection) but NOT Outer10.
+	OutClaim.Classification = bClearHit ? 1 : (bWithin10Cm ? 3 : 2);
+	OutClaim.Target = Candidate;
+	OutClaim.EchoedMovementStamp = Update.ServerStamp;
+	OutClaim.SecondsSinceMovementUpdate = static_cast<float>(Elapsed);
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRGameplay CLIENT key=%d target=%s category=%d stamp=%.6f elapsedMs=%.1f smoothingCm=%.2f (10cm hit/miss margin; clear misses 10-40cm outside capsule; approximate mesh anchor; DEBUG ONLY)",
+		PredictionKey, *GetNameSafe(Candidate), static_cast<int32>(OutClaim.Classification),
+		OutClaim.EchoedMovementStamp, Elapsed * 1000.0, SelectedSmoothingCm);
+	return true;
 #else
-    (void)PredictionKey;
-    (void)ShotOrigin;
-    (void)ShotDirection;
-    return false;
+	(void)PredictionKey;
+	(void)ShotOrigin;
+	(void)ShotDirection;
+	return false;
 #endif
 }
 

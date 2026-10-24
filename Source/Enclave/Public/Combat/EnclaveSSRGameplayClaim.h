@@ -10,9 +10,9 @@ class AActor;
  */
 struct FEnclaveSSRGameplayClaim
 {
-    // 0=no sample, 1=clear hit, 2=clear miss, 3=near miss (10cm geometric margin).
-    uint8 Classification = 0;
-    AActor* Target = nullptr;
-    float EchoedMovementStamp = 0.0f;
-    float SecondsSinceMovementUpdate = 0.0f;
+	// 0=no sample, 1=clear hit, 2=clear miss, 3=near miss (10cm geometric margin).
+	uint8 Classification = 0;
+	TWeakObjectPtr<AActor> Target;
+	float EchoedMovementStamp = 0.0f;
+	float SecondsSinceMovementUpdate = 0.0f;
 };

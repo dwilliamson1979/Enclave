@@ -83,22 +83,28 @@ struct ENCLAVE_API FEnclaveGameplayAbilityTargetData_ShotIntent : public FGamepl
 		Ar << Shot.ShotSequence;
 		Ar << Shot.SpreadSeed;
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-        // Same GAS TargetData RPC: no second packet stream or additional shot RPC.
-        uint8 HasSample = Shot.SSRGameplayClaim.Classification != 0 ? 1 : 0;
-        Ar.SerializeBits(&HasSample, 1);
-        if (HasSample)
-        {
-            Ar << Shot.SSRGameplayClaim.Classification;
-            UObject* TargetObject = Shot.SSRGameplayClaim.Target;
-            const bool bMapped = Map && Map->SerializeObject(Ar, AActor::StaticClass(), TargetObject);
-            if (Ar.IsLoading()) { Shot.SSRGameplayClaim.Target = Cast<AActor>(TargetObject); }
-            Ar << Shot.SSRGameplayClaim.EchoedMovementStamp;
-            Ar << Shot.SSRGameplayClaim.SecondsSinceMovementUpdate;
-            // Mapping failure disables only the optional diagnostic claim.
-            // Never reject an otherwise legal GAS shot because a test target
-            // actor was not resolved by the connection's package map.
-            if (!bMapped) { Shot.SSRGameplayClaim = FEnclaveSSRGameplayClaim(); }
-        }
+		// Same GAS TargetData RPC: no second packet stream or additional shot RPC.
+		uint8 HasSample = Shot.SSRGameplayClaim.Classification != 0 ? 1 : 0;
+		Ar.SerializeBits(&HasSample, 1);
+		if (HasSample)
+		{
+			Ar << Shot.SSRGameplayClaim.Classification;
+			UObject* TargetObject = Shot.SSRGameplayClaim.Target.Get();
+			const bool bMapped = Map && Map->SerializeObject(Ar, AActor::StaticClass(), TargetObject);
+			if (Ar.IsLoading())
+			{
+				Shot.SSRGameplayClaim.Target = Cast<AActor>(TargetObject);
+			}
+			Ar << Shot.SSRGameplayClaim.EchoedMovementStamp;
+			Ar << Shot.SSRGameplayClaim.SecondsSinceMovementUpdate;
+			// Mapping failure disables only the optional diagnostic claim.
+			// Never reject an otherwise legal GAS shot because a test target
+			// actor was not resolved by the connection's package map.
+			if (!bMapped)
+			{
+				Shot.SSRGameplayClaim = FEnclaveSSRGameplayClaim();
+			}
+		}
 #endif
 		bOutSuccess = bOriginOk && bDirectionOk && !Ar.IsError();
 		return true;

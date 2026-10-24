@@ -296,78 +296,100 @@ bool UEnclaveHitRegistrationSubsystem::TraceCurrentGeometry(const FEnclaveHitsca
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHitscanQuery& Query,
-    bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const
+	bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const
 {
-    if (!AEnclavePlayerController::IsSSRGameplayGateEnabled() ||
-        !Query.bHasValidatedClientTiming || Query.SSRGameplayClaim.Classification == 0)
-    {
-        return;
-    }
-    const FEnclaveSSRGameplayClaim& Claim = Query.SSRGameplayClaim;
-    const AEnclaveCharacter* Target = Cast<AEnclaveCharacter>(Claim.Target);
-    const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
-    UWorld* World = GetWorld();
-    const AActor* Shooter = Query.Instigator.Get();
-    const bool bLiveOnClaimedTarget = bLiveHit && LiveHit.GetActor() == Target;
-    if (!World || !IsValid(Shooter) || !IsValid(Target) || Target == Shooter ||
-        Target->GetWorld() != World || Mode != EEnclaveWeaponHitDetectionMode::Capsule ||
-        Claim.Classification < 1 || Claim.Classification > 3)
-    {
-        ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRGameplay SERVER key=%u status=invalid_claim category=%d",
-            Query.ShotSequence, static_cast<int32>(Claim.Classification));
-        return;
-    }
-    const double Stamp = static_cast<double>(Claim.EchoedMovementStamp);
-    const double Elapsed = static_cast<double>(Claim.SecondsSinceMovementUpdate);
-    const double Age = Timing.ServerReceiptTimeSeconds - Stamp;
-    const double RTT = Timing.ServerObservedRTTSeconds;
-    // Same server-authored time domain; never accept future, out-of-window,
-    // or implausibly old target snapshots. No clamp to oldest buffered sample.
-    constexpr double BoundaryToleranceSeconds = 0.0005; // float rounding only
-    constexpr double RTTMarginSeconds = 0.050;
-    // Conservative proxy-update bound: one advertised movement interval plus a
-    // 30Hz frame allowance. The hard 100ms ceiling prevents abusing throttled actors.
-    const double AdvertisedIntervalSeconds = 1.0 / FMath::Max(1.0f, Target->NetUpdateFrequency);
-    const double MaxElapsedSeconds = FMath::Min(0.100, AdvertisedIntervalSeconds + 1.0 / 30.0);
-    const bool bTimePlausible = FMath::IsFinite(Stamp) && Stamp > 0.0 &&
-        FMath::IsFinite(Elapsed) && Elapsed >= 0.0 && Elapsed <= MaxElapsedSeconds &&
-        FMath::IsFinite(RTT) && RTT >= 0.0 &&
-        Age >= -BoundaryToleranceSeconds &&
-        Age <= Timing.MaxRewindSeconds + BoundaryToleranceSeconds &&
-        Age <= RTT + RTTMarginSeconds + BoundaryToleranceSeconds &&
-        (Age - Elapsed) >= -BoundaryToleranceSeconds;
-    if (!bTimePlausible)
-    {
-        ENCLAVE_LOG(LogEnclaveCombat, Log,
-            "SSRGameplay SERVER key=%u status=rejected_time category=%d ageMs=%.2f elapsedMs=%.2f rttMs=%.1f liveTargetHit=%d (shadow; fallback would be PRESENT)",
-            Query.ShotSequence, static_cast<int32>(Claim.Classification), Age * 1000.0,
-            Elapsed * 1000.0, RTT * 1000.0, bLiveOnClaimedTarget ? 1 : 0);
-        return;
-    }
-    const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
-    FEnclaveTargetCapsuleFrame BaseFrame;
-    FEnclaveTargetCapsuleFrame ElapsedFrame;
-    const bool bBase = IsValid(History) && History->TryGetCapsuleAtTime(Stamp, BaseFrame);
-    const bool bElapsed = IsValid(History) && History->TryGetCapsuleAtTime(Stamp + Elapsed, ElapsedFrame);
-    if (!bBase && !bElapsed)
-    {
-        ENCLAVE_LOG(LogEnclaveCombat, Log,
-            "SSRGameplay SERVER key=%u status=missing_history category=%d ageMs=%.2f elapsedMs=%.2f liveTargetHit=%d (shadow; fallback would be PRESENT)",
-            Query.ShotSequence, static_cast<int32>(Claim.Classification), Age * 1000.0, Elapsed * 1000.0, bLiveOnClaimedTarget ? 1 : 0);
-        return;
-    }
-    const double QueryStartSeconds = FPlatformTime::Seconds();
-    FEnclaveHistoricalHitQuery Historical(World, Query.Start, Query.End, Query.Instigator.Get());
-    const FEnclaveHistoricalHitQueryResult StampResult = bBase ? Historical.Trace(Stamp, Target) : FEnclaveHistoricalHitQueryResult();
-    const FEnclaveHistoricalHitQueryResult ElapsedResult = bElapsed ? Historical.Trace(Stamp + Elapsed, Target) : FEnclaveHistoricalHitQueryResult();
-    const double CPUms = (FPlatformTime::Seconds() - QueryStartSeconds) * 1000.0;
-    ENCLAVE_LOG(LogEnclaveCombat, Log,
-        "SSRGameplay SERVER key=%u status=measured category=%d ageMs=%.2f elapsedMs=%.2f rttMs=%.1f stampAvailable=%d elapsedAvailable=%d stampHit=%d elapsedHit=%d liveTargetHit=%d stampOccluded=%d elapsedOccluded=%d worldBlocked=%d shadowCpuMs=%.3f (NO DAMAGE AUTHORITY)",
-        Query.ShotSequence, static_cast<int32>(Claim.Classification), Age * 1000.0,
-        Elapsed * 1000.0, RTT * 1000.0, bBase ? 1 : 0, bElapsed ? 1 : 0,
-        bBase && StampResult.bHit ? 1 : 0, bElapsed && ElapsedResult.bHit ? 1 : 0,
-        bLiveOnClaimedTarget ? 1 : 0, StampResult.bOccluded ? 1 : 0,
-        ElapsedResult.bOccluded ? 1 : 0, Historical.IsWorldBlocked() ? 1 : 0, CPUms);
+	if (!AEnclavePlayerController::IsSSRGameplayGateEnabled() ||
+		!Query.bHasValidatedClientTiming || Query.SSRGameplayClaim.Classification == 0)
+	{
+		return;
+	}
+
+	const FEnclaveSSRGameplayClaim& Claim = Query.SSRGameplayClaim;
+	const AEnclaveCharacter* Target = Cast<AEnclaveCharacter>(Claim.Target.Get());
+	const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
+	UWorld* World = GetWorld();
+	const AActor* Shooter = Query.Instigator.Get();
+	const bool bLiveOnClaimedTarget = bLiveHit && LiveHit.GetActor() == Target;
+	if (!World || !IsValid(Shooter) || !IsValid(Target) || Target == Shooter ||
+		Target->GetWorld() != World || Mode != EEnclaveWeaponHitDetectionMode::Capsule ||
+		Claim.Classification < 1 || Claim.Classification > 3)
+	{
+		// An invalid target/category cannot be scored as a valid test sample.
+		// Report it explicitly: the analysis gate must NOT silently drop it.
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRGameplay SERVER key=%u status=invalid_claim category=%d unresolved=1 (shadow; NO DAMAGE AUTHORITY)",
+			Query.ShotSequence, static_cast<int32>(Claim.Classification));
+		return;
+	}
+
+	const double Stamp = static_cast<double>(Claim.EchoedMovementStamp);
+	const double Elapsed = static_cast<double>(Claim.SecondsSinceMovementUpdate);
+	const double Age = Timing.ServerReceiptTimeSeconds - Stamp;
+	const double RTT = Timing.ServerObservedRTTSeconds;
+	// Both policies use the same fallback: the existing present-time trace's
+	// outcome on the claimed target. Rejection is still scored, not excluded.
+	constexpr double BoundaryToleranceSeconds = 0.0005; // float rounding only
+	constexpr double RTTMarginSeconds = 0.050;
+	// D1.1A intentionally preserves D1's timing bounds. D1.1C will agree on
+	// the observed-cadence bound before the full acceptance test.
+	const double AdvertisedIntervalSeconds = 1.0 / FMath::Max(1.0f, Target->NetUpdateFrequency);
+	const double MaxElapsedSeconds = FMath::Min(0.100, AdvertisedIntervalSeconds + 1.0 / 30.0);
+	const bool bTimePlausible = FMath::IsFinite(Stamp) && Stamp > 0.0 &&
+		FMath::IsFinite(Elapsed) && Elapsed >= 0.0 && Elapsed <= MaxElapsedSeconds &&
+		FMath::IsFinite(RTT) && RTT >= 0.0 &&
+		Age >= -BoundaryToleranceSeconds &&
+		Age <= Timing.MaxRewindSeconds + BoundaryToleranceSeconds &&
+		Age <= RTT + RTTMarginSeconds + BoundaryToleranceSeconds &&
+		(Age - Elapsed) >= -BoundaryToleranceSeconds;
+	if (!bTimePlausible)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRGameplay SERVER key=%u status=rejected_time category=%d ageMs=%.2f elapsedMs=%.2f rttMs=%.1f liveTargetHit=%d stampAvailable=0 elapsedAvailable=0 stampFinalHit=%d elapsedFinalHit=%d stampFallback=1 elapsedFallback=1 (PRESENT fallback; SHADOW ONLY)",
+			Query.ShotSequence, static_cast<int32>(Claim.Classification), Age * 1000.0,
+			Elapsed * 1000.0, RTT * 1000.0, bLiveOnClaimedTarget ? 1 : 0,
+			bLiveOnClaimedTarget ? 1 : 0, bLiveOnClaimedTarget ? 1 : 0);
+		return;
+	}
+
+	const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
+	FEnclaveTargetCapsuleFrame BaseFrame;
+	FEnclaveTargetCapsuleFrame ElapsedFrame;
+	const bool bBase = IsValid(History) && History->TryGetCapsuleAtTime(Stamp, BaseFrame);
+	const bool bElapsed = IsValid(History) && History->TryGetCapsuleAtTime(Stamp + Elapsed, ElapsedFrame);
+	if (!bBase && !bElapsed)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRGameplay SERVER key=%u status=missing_history category=%d ageMs=%.2f elapsedMs=%.2f liveTargetHit=%d stampAvailable=0 elapsedAvailable=0 stampFinalHit=%d elapsedFinalHit=%d stampFallback=1 elapsedFallback=1 (PRESENT fallback; SHADOW ONLY)",
+			Query.ShotSequence, static_cast<int32>(Claim.Classification), Age * 1000.0,
+			Elapsed * 1000.0, bLiveOnClaimedTarget ? 1 : 0,
+			bLiveOnClaimedTarget ? 1 : 0, bLiveOnClaimedTarget ? 1 : 0);
+		return;
+	}
+
+	const double QueryStartSeconds = FPlatformTime::Seconds();
+	FEnclaveHistoricalHitQuery Historical(World, Query.Start, Query.End, Query.Instigator.Get());
+	if (!Historical.IsPrepared())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRGameplay SERVER key=%u status=query_unavailable category=%d liveTargetHit=%d stampAvailable=0 elapsedAvailable=0 stampFinalHit=%d elapsedFinalHit=%d stampFallback=1 elapsedFallback=1 (PRESENT fallback; SHADOW ONLY)",
+			Query.ShotSequence, static_cast<int32>(Claim.Classification), bLiveOnClaimedTarget ? 1 : 0,
+			bLiveOnClaimedTarget ? 1 : 0, bLiveOnClaimedTarget ? 1 : 0);
+		return;
+	}
+	const FEnclaveHistoricalHitQueryResult StampResult = bBase ? Historical.Trace(Stamp, Target) : FEnclaveHistoricalHitQueryResult();
+	const FEnclaveHistoricalHitQueryResult ElapsedResult = bElapsed ? Historical.Trace(Stamp + Elapsed, Target) : FEnclaveHistoricalHitQueryResult();
+	const double CPUms = (FPlatformTime::Seconds() - QueryStartSeconds) * 1000.0;
+	const bool bStampFinalHit = bBase ? StampResult.bHit : bLiveOnClaimedTarget;
+	const bool bElapsedFinalHit = bElapsed ? ElapsedResult.bHit : bLiveOnClaimedTarget;
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRGameplay SERVER key=%u status=measured category=%d ageMs=%.2f elapsedMs=%.2f rttMs=%.1f stampAvailable=%d elapsedAvailable=%d stampHit=%d elapsedHit=%d liveTargetHit=%d stampFinalHit=%d elapsedFinalHit=%d stampFallback=%d elapsedFallback=%d stampOccluded=%d elapsedOccluded=%d worldBlocked=%d shadowCpuMs=%.3f (NO DAMAGE AUTHORITY)",
+		Query.ShotSequence, static_cast<int32>(Claim.Classification), Age * 1000.0,
+		Elapsed * 1000.0, RTT * 1000.0, bBase ? 1 : 0, bElapsed ? 1 : 0,
+		bBase && StampResult.bHit ? 1 : 0, bElapsed && ElapsedResult.bHit ? 1 : 0,
+		bLiveOnClaimedTarget ? 1 : 0, bStampFinalHit ? 1 : 0,
+		bElapsedFinalHit ? 1 : 0, bBase ? 0 : 1, bElapsed ? 0 : 1,
+		StampResult.bOccluded ? 1 : 0, ElapsedResult.bOccluded ? 1 : 0,
+		Historical.IsWorldBlocked() ? 1 : 0, CPUms);
 }
 #endif
 

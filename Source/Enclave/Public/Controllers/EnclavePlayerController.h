@@ -61,12 +61,13 @@ public:
 	/** Opt-in, non-gameplay per-shot camera-vs-authoritative-ray diagnostic. */
 	static bool IsShotAlignmentDebugEnabled();
 
-    /** Optional, no additional RPC: classify an approximately visible proxy capsule and pair its stamp.
-     * Strictly DEVELOPMENT diagnostics, never a server gameplay input.
-     */
-    static bool IsSSRGameplayGateEnabled();
-    bool DebugBuildSSRGameplayClaim(int32 PredictionKey, const FVector& ShotOrigin, const FVector& ShotDirection,
-        FEnclaveSSRGameplayClaim& OutClaim) const;
+	/** Optional, no additional RPC: classify a mesh-anchored proxy capsule.
+	 * Clear misses are restricted to 10–40 cm outside the reference capsule.
+	 * Strictly DEVELOPMENT diagnostics; never hit authority.
+	 */
+	static bool IsSSRGameplayGateEnabled();
+	bool DebugBuildSSRGameplayClaim(int32 PredictionKey, const FVector& ShotOrigin,
+		const FVector& ShotDirection, FEnclaveSSRGameplayClaim& OutClaim) const;
 
 
 	/** Called only by a locally controlled GA_Fire activation (after CommitAbility). */
