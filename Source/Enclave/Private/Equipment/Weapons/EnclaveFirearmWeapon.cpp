@@ -364,6 +364,7 @@ TArray<FEnclaveHitResult> AEnclaveFirearmWeapon::PerformFireHitDetection(AActor*
 		Query.bHasValidatedClientTiming = true;
 		Query.ValidatedClientTiming = ValidatedShotRay->Timing;
 		Query.ShotSequence = ValidatedShotRay->ShotSequence;
+		Query.SSRGameplayClaim = ValidatedShotRay->SSRGameplayClaim; // shadow only
 	}
 
 	FHitResult HitResult;

@@ -5,6 +5,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Combat/EnclaveShotTiming.h"
+#include "Combat/EnclaveSSRGameplayClaim.h"
 #include "Debug/EnclaveDebug.h"
 #include "EnclaveHitRegistrationSubsystem.generated.h"
 
@@ -34,6 +35,7 @@ struct ENCLAVE_API FEnclaveHitscanQuery
 	bool bHasValidatedClientTiming = false;
 	FEnclaveShotTimingContext ValidatedClientTiming;
 	uint16 ShotSequence = 0;
+	FEnclaveSSRGameplayClaim SSRGameplayClaim; // Diagnostic ONLY
 };
 
 /**
@@ -72,6 +74,7 @@ public:
 
 private:
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+	void DebugCompareSSRGameplay(const FEnclaveHitscanQuery& Query, bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugCompareHistoricalCapsules(const FEnclaveHitscanQuery& Query,
 		bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const;
 #endif

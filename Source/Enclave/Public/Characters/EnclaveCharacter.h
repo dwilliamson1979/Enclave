@@ -11,6 +11,7 @@
 #include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Collision/EnclaveCollisionChannels.h"
+#include "Debug/EnclaveDebug.h"
 #include "GameplayTagContainer.h"
 #include "EnclaveCharacter.generated.h"
 
@@ -42,6 +43,19 @@ struct FEnclaveStartingSlottedItem
 	FGameplayTag SlotTag;
 };
 
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+/** Cached movement replication notification for a simulated proxy; NOT a rendered frame or trusted hit state. */
+struct FEnclaveSSRReceivedProxyUpdate
+{
+	float ServerStamp = 0.0f;
+	FVector ReplicatedLocation = FVector::ZeroVector;
+	FVector ReplicatedVelocity = FVector::ZeroVector;
+	FVector CapsuleAtReceive = FVector::ZeroVector;
+	double ClientReceiveWorldSeconds = -1.0;
+	uint32 ReceiveCount = 0;
+};
+#endif
+
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
 {
@@ -51,6 +65,10 @@ public:
 	AEnclaveCharacter(const FObjectInitializer& ObjectInitializer);
 
 	virtual void Tick(float DeltaTime) override;
+	virtual void OnRep_ReplicatedMovement() override;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	const FEnclaveSSRReceivedProxyUpdate& DebugGetLastReceivedProxyUpdate() const { return DebugLastReceivedProxyUpdate; }
+#endif
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
@@ -99,6 +117,10 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// Updated by OnRep_ReplicatedMovement on simulated proxies only, never replicated.
+	FEnclaveSSRReceivedProxyUpdate DebugLastReceivedProxyUpdate;
+#endif
 	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
 	void InitializeAbilityActorInfo();
 	/** Server-owned lifetime for an optional external/intrinsic item; Equipment never spawns it. */

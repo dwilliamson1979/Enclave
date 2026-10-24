@@ -566,6 +566,31 @@ void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy(EEnclaveWeaponHit
 }
 
 // Called every frame
+void AEnclaveCharacter::OnRep_ReplicatedMovement()
+{
+	Super::OnRep_ReplicatedMovement();
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// The world clock here is only used for LOCAL time since a movement update.
+	// No client/server clock conversion and no changes to Unreal's movement simulation.
+	if (GetLocalRole() != ROLE_SimulatedProxy || !GetWorld() || !GetCapsuleComponent())
+	{
+		return;
+	}
+	const float Stamp = GetReplicatedServerLastTransformUpdateTimeStamp();
+	if (!FMath::IsFinite(Stamp) || Stamp <= 0.0f)
+	{
+		return;
+	}
+	const FRepMovement& Received = GetReplicatedMovement();
+	DebugLastReceivedProxyUpdate.ServerStamp = Stamp;
+	DebugLastReceivedProxyUpdate.ReplicatedLocation = Received.Location;
+	DebugLastReceivedProxyUpdate.ReplicatedVelocity = Received.LinearVelocity;
+	DebugLastReceivedProxyUpdate.CapsuleAtReceive = GetCapsuleComponent()->GetComponentLocation();
+	DebugLastReceivedProxyUpdate.ClientReceiveWorldSeconds = GetWorld()->GetTimeSeconds();
+	++DebugLastReceivedProxyUpdate.ReceiveCount;
+#endif
+}
+
 void AEnclaveCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);

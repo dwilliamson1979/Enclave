@@ -114,6 +114,12 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		ShotData->Shot.Origin = Origin;
 		ShotData->Shot.Direction = ViewRotation.Vector();
 		ShotData->Shot.ShotSequence = static_cast<uint16>(ActivationInfo.GetActivationPredictionKey().Current);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+        if (AEnclavePlayerController* Controller = Cast<AEnclavePlayerController>(ActorInfo->PlayerController.Get()))
+        {
+            Controller->DebugBuildSSRGameplayClaim(ActivationInfo.GetActivationPredictionKey().Current, Origin, ViewRotation.Vector(), ShotData->Shot.SSRGameplayClaim);
+        }
+#endif
 		if (const UWorld* World = AvatarActor->GetWorld())
 		{
 			if (const AGameStateBase* GameState = World->GetGameState())

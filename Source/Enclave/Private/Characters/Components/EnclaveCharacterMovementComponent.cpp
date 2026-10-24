@@ -1,6 +1,7 @@
 // Copyright Lightcarrier Studios
 
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
+#include "Debug/EnclaveDebug.h"
 
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
@@ -9,6 +10,11 @@ UEnclaveCharacterMovementComponent::UEnclaveCharacterMovementComponent()
 {
 	bWantsInitializeComponent = true;
 	GetNavAgentPropertiesRef().bCanCrouch = true;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// TEMPORARY SSR feasibility POC: echo CharacterMovement's server stamp.
+	// Explicitly restore engine defaults before any production rollout.
+	bNetworkAlwaysReplicateTransformUpdateTimestamp = true;
+#endif
 }
 
 void UEnclaveCharacterMovementComponent::InitializeComponent()

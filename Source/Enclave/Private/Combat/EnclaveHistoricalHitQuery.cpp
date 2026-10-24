@@ -48,7 +48,7 @@ bool FEnclaveHistoricalHitQuery::IsPrepared() const
 		Shooter->HasAuthority() && Shooter->GetWorld() == World.Get();
 }
 
-FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::Trace(double HistoryTimeSeconds) const
+FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::Trace(double HistoryTimeSeconds, const AEnclaveCharacter* OnlyTarget) const
 {
 	FEnclaveHistoricalHitQueryResult Result;
 	if (!IsPrepared() || !FMath::IsFinite(HistoryTimeSeconds) || HistoryTimeSeconds < 0.0)
@@ -62,7 +62,7 @@ FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::Trace(double Histor
 	for (TActorIterator<AEnclaveCharacter> It(ServerWorld); It; ++It)
 	{
 		AEnclaveCharacter* Target = *It;
-		if (!IsValid(Target) || Target == Instigator)
+		if (!IsValid(Target) || Target == Instigator || (OnlyTarget && Target != OnlyTarget))
 		{
 			continue;
 		}

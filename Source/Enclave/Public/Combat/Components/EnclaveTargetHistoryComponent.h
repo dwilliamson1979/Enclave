@@ -23,6 +23,7 @@ struct ENCLAVE_API FEnclaveTargetCapsuleFrame
 	bool bBreakBefore = false;
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	// C4B diagnostic-only process-monotonic capture; NEVER a network rewind clock.
+	FVector DebugVelocity = FVector::ZeroVector;
 	double DebugCaptureProcessSeconds = 0.0;
 	double DebugCaptureWorldSeconds = 0.0;
 	uint64 DebugCaptureFrame = 0;

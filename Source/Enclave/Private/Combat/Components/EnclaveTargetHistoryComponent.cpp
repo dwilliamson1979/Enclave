@@ -134,6 +134,7 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	// The transform and process clock are sampled together after physics. This
 	// monotonic sample is for same-process PIE diagnosis ONLY, not hit authority.
+	Next.DebugVelocity = Character->GetVelocity();
 	Next.DebugCaptureProcessSeconds = FPlatformTime::Seconds();
 	Next.DebugCaptureWorldSeconds = World->GetTimeSeconds();
 	Next.DebugCaptureFrame = GFrameCounter;
@@ -299,6 +300,9 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 			const float Alpha = static_cast<float>((ServerTimeSeconds - Older.ServerTimeSeconds) / Span);
 			OutFrame.ServerTimeSeconds = ServerTimeSeconds;
 			OutFrame.Center = FMath::Lerp(Older.Center, Newer.Center, Alpha);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+			OutFrame.DebugVelocity = FMath::Lerp(Older.DebugVelocity, Newer.DebugVelocity, Alpha);
+#endif
 			OutFrame.Rotation = FQuat::Slerp(Older.Rotation, Newer.Rotation, Alpha).GetNormalized();
 			OutFrame.RadiusCm = FMath::Lerp(Older.RadiusCm, Newer.RadiusCm, Alpha);
 			OutFrame.HalfHeightCm = FMath::Lerp(Older.HalfHeightCm, Newer.HalfHeightCm, Alpha);

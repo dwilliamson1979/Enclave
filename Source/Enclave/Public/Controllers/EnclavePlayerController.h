@@ -4,6 +4,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Engine/NetSerialization.h"
 #include "Input/Core/EnclaveInputTypes.h"
+#include "Combat/EnclaveSSRGameplayClaim.h"
 #include "EnclavePlayerController.generated.h"
 
 class UEnhancedInputComponent;
@@ -60,6 +61,14 @@ public:
 	/** Opt-in, non-gameplay per-shot camera-vs-authoritative-ray diagnostic. */
 	static bool IsShotAlignmentDebugEnabled();
 
+    /** Optional, no additional RPC: classify an approximately visible proxy capsule and pair its stamp.
+     * Strictly DEVELOPMENT diagnostics, never a server gameplay input.
+     */
+    static bool IsSSRGameplayGateEnabled();
+    bool DebugBuildSSRGameplayClaim(int32 PredictionKey, const FVector& ShotOrigin, const FVector& ShotDirection,
+        FEnclaveSSRGameplayClaim& OutClaim) const;
+
+
 	/** Called only by a locally controlled GA_Fire activation (after CommitAbility). */
 	void DebugCaptureLocalShot(int32 PredictionKey);
 
@@ -69,6 +78,13 @@ public:
 	void DebugProbeSSRShotClock(int32 PredictionKey, double ClientShotServerTimeSeconds);
 
 	static bool IsSSRClockDebugEnabled();
+
+	/** Bounded echo feasibility probe: client samples a simulated proxy near its view ray. */
+	void DebugProbeSSREchoedSnapshot(int32 PredictionKey);
+
+
+	/** Observe GameState time-estimate corrections and PIE frame phases without changing the sync algorithm. */
+	void DebugTickSSRClockSync();
 
 	/** Stage C1: sample a locally simulated patrol's visual proxy anchor at shot capture.
 	 * Debug-only, no effect on hit registration. Sends an unreliable telemetry RPC.
@@ -116,6 +132,14 @@ private:
 		FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds,
 		uint32 ClientProcessId, double ClientVisualCaptureProcessSeconds,
 		double ClientVisualSampleWorldSeconds, double ClientVisualSampleServerEstimateSeconds);
+
+	/** Untrusted opt-in telemetry, NEVER gameplay hit authority. */
+	UFUNCTION(Server, Unreliable)
+	void ServerEnclaveDebugEchoedSnapshot(int32 PredictionKey, AEnclaveCharacter* Target,
+		float EchoedMovementStamp, float ElapsedSinceUpdateSeconds,
+		FVector_NetQuantize10 ReplicatedLocation, FVector_NetQuantize10 ReplicatedVelocity,
+		FVector_NetQuantize10 CapsuleAtReceive, FVector_NetQuantize10 ClientCapsuleAtShot,
+		FVector_NetQuantize10 ClientMeshAnchor);
 
 	UFUNCTION(Server, Reliable)
 	void ServerEnclaveDebugRespawn();
@@ -173,6 +197,19 @@ private:
 	float DebugSSRStrafeNextStatusSeconds = 0.0f;
 	int32 DebugSSRStrafeDirectionSign = 1;
 	bool bDebugSSRStrafeEnabled = false;
+
+	// C4F.1: private, nonreplicated, opt-in clock-observation state.
+	// Compare adjacent frames to identify server-time estimate offset steps;
+	// compare adjacent process/world deltas to expose PIE frame stalls.
+	bool bDebugSSRClockSyncHasSample = false;
+	double DebugSSRClockSyncLastProcessSeconds = 0.0;
+	double DebugSSRClockSyncLastWorldSeconds = 0.0;
+	double DebugSSRClockSyncLastEstimatedSeconds = 0.0;
+	double DebugSSRClockSyncLastOffsetSeconds = 0.0;
+	double DebugSSRClockSyncLastReportProcessSeconds = 0.0;
+	double DebugSSRClockSyncLastReportWorldSeconds = 0.0;
+	double DebugSSRClockSyncLastReportEstimatedSeconds = 0.0;
+	double DebugSSRClockSyncLastReportOffsetSeconds = 0.0;
 #endif
 
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents);

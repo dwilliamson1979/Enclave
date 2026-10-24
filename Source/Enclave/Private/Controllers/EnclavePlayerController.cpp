@@ -3,6 +3,7 @@
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
+#include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Debug/EnclaveSSRPatrolComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -22,6 +23,7 @@
 #include "Engine/Engine.h"
 #include "Math/RotationMatrix.h"
 #include "HAL/IConsoleManager.h"
+#include "CoreGlobals.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #if ENCLAVE_INCLUDE_DEBUG_CODE
@@ -46,6 +48,14 @@ static TAutoConsoleVariable<bool> CVarDebugShotAlignment(
 	ECVF_Cheat);
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+static TAutoConsoleVariable<bool> CVarDebugSSRGameplayGate(
+    TEXT("Enclave.Debug.SSRGameplayGate"), false,
+    TEXT("Shadow-only capsule hit/miss gameplay classifier; use on remote client and listen server. NO damage authority."), ECVF_Cheat);
+
+static TAutoConsoleVariable<bool> CVarDebugSSREcho(
+	TEXT("Enclave.Debug.SSREcho"), false,
+	TEXT("Bounded diagnostic: echo the simulated target CharacterMovement update stamp and compare server history. No gameplay authority."), ECVF_Cheat);
+
 static TAutoConsoleVariable<bool> CVarDebugSSRClock(
 	TEXT("Enclave.Debug.SSRClock"),
 	false,
@@ -59,6 +69,91 @@ bool AEnclavePlayerController::IsSSRClockDebugEnabled()
 	return CVarDebugSSRClock.GetValueOnGameThread();
 #else
 	return false;
+#endif
+}
+
+bool AEnclavePlayerController::IsSSRGameplayGateEnabled()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    return CVarDebugSSRGameplayGate.GetValueOnGameThread();
+#else
+    return false;
+#endif
+}
+
+bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, const FVector& ShotOrigin,
+    const FVector& ShotDirection, FEnclaveSSRGameplayClaim& OutClaim) const
+{
+    OutClaim = FEnclaveSSRGameplayClaim();
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    if (!IsSSRGameplayGateEnabled() || !IsLocalController() || !GetWorld() || !GetPawn())
+    {
+        return false;
+    }
+    // Selection is intentionally loose (up to 300cm from ray): clear MISSES must be sampled.
+    // The selected target must be a simulated proxy with a paired native movement update.
+    AEnclaveCharacter* Candidate = nullptr;
+    double BestDistSq = FMath::Square(300.0);
+    const FVector Direction = ShotDirection.GetSafeNormal();
+    for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
+    {
+        AEnclaveCharacter* Target = *It;
+        if (!IsValid(Target) || Target == GetPawn() || Target->GetLocalRole() != ROLE_SimulatedProxy ||
+            !IsValid(Target->GetCapsuleComponent())) { continue; }
+        const FVector Delta = Target->GetCapsuleComponent()->GetComponentLocation() - ShotOrigin;
+        const double Along = FVector::DotProduct(Delta, Direction);
+        if (Along <= 0.0 || Along > 10000.0) { continue; }
+        const double DistSq = (Delta - Direction * Along).SizeSquared();
+        if (DistSq < BestDistSq) { BestDistSq = DistSq; Candidate = Target; }
+    }
+    if (!IsValid(Candidate)) { return false; }
+    const FEnclaveSSRReceivedProxyUpdate& Update = Candidate->DebugGetLastReceivedProxyUpdate();
+    const double Elapsed = GetWorld()->GetTimeSeconds() - Update.ClientReceiveWorldSeconds;
+    if (Update.ReceiveCount == 0 || !FMath::IsFinite(Update.ServerStamp) || Update.ServerStamp <= 0.0f ||
+        !FMath::IsFinite(Elapsed) || Elapsed < 0.0 || Elapsed > 0.100) { return false; }
+
+    const UCapsuleComponent* Capsule = Candidate->GetCapsuleComponent();
+    if (!IsValid(Candidate->GetMesh())) { return false; }
+    // CharacterMovement smooths the third-person MESH separately from its proxy
+    // collision capsule. Translate the reference capsule by the current mesh
+    // smoothing offset: closer to a shooter-visible silhouette than the raw
+    // capsule, but still a deliberate approximation (no per-bone rewind).
+    const FVector MeshSmoothOffset = Capsule->GetComponentTransform().TransformVectorNoScale(
+        Candidate->GetMesh()->GetRelativeLocation() - Candidate->GetBaseTranslationOffset());
+    FEnclaveTargetCapsuleFrame Reference;
+    Reference.Center = Capsule->GetComponentLocation() + MeshSmoothOffset;
+    Reference.Rotation = Capsule->GetComponentQuat();
+    Reference.RadiusCm = Capsule->GetScaledCapsuleRadius();
+    Reference.HalfHeightCm = Capsule->GetScaledCapsuleHalfHeight();
+    constexpr float MarginCm = 10.0f;
+    if (Reference.RadiusCm <= MarginCm + 1.0f) { return false; }
+    FEnclaveTargetCapsuleFrame Inner = Reference;
+    Inner.RadiusCm -= MarginCm;
+    Inner.HalfHeightCm -= MarginCm;
+    FEnclaveTargetCapsuleFrame Outer = Reference;
+    Outer.RadiusCm += MarginCm;
+    Outer.HalfHeightCm += MarginCm;
+    const FVector RayEnd = ShotOrigin + Direction * 10000.0;
+    double DistCm = 0.0;
+    FVector Point;
+    const bool bClearHit = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
+        ShotOrigin, RayEnd, Inner, DistCm, Point);
+    const bool bWithinOuter = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
+        ShotOrigin, RayEnd, Outer, DistCm, Point);
+    OutClaim.Classification = bClearHit ? 1 : (bWithinOuter ? 3 : 2);
+    OutClaim.Target = Candidate;
+    OutClaim.EchoedMovementStamp = Update.ServerStamp;
+    OutClaim.SecondsSinceMovementUpdate = static_cast<float>(Elapsed);
+    ENCLAVE_LOG(LogEnclaveCombat, Log,
+        "SSRGameplay CLIENT key=%d target=%s category=%d stamp=%.6f elapsedMs=%.1f smoothingCm=%.2f (10cm mesh-anchored proxy-capsule margin; approximate view, NOT actual rendered silhouette; debug only)",
+        PredictionKey, *GetNameSafe(Candidate), static_cast<int32>(OutClaim.Classification),
+        OutClaim.EchoedMovementStamp, Elapsed * 1000.0, MeshSmoothOffset.Size());
+    return true;
+#else
+    (void)PredictionKey;
+    (void)ShotOrigin;
+    (void)ShotDirection;
+    return false;
 #endif
 }
 
@@ -188,6 +283,176 @@ void AEnclavePlayerController::ServerEnclaveDebugShotClockProbe_Implementation(i
 	(void)ClientCaptureProcessSeconds;
 	(void)ClientCaptureWorldSeconds;
 	(void)ClientEstimatedServerSeconds;
+#endif
+}
+
+void AEnclavePlayerController::DebugProbeSSREchoedSnapshot(int32 PredictionKey)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!CVarDebugSSREcho.GetValueOnGameThread() || !IsLocalController() || !GetWorld() || !GetPawn())
+	{
+		return;
+	}
+
+	FVector ViewStart;
+	FRotator ViewRotation;
+	GetPlayerViewPoint(ViewStart, ViewRotation);
+	const FVector ViewDirection = ViewRotation.Vector();
+	AEnclaveCharacter* BestTarget = nullptr;
+	double BestPerpendicularSq = FMath::Square(125.0);
+	for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
+	{
+		AEnclaveCharacter* Target = *It;
+		if (!IsValid(Target) || Target == GetPawn() ||
+			Target->GetLocalRole() != ROLE_SimulatedProxy || !Target->GetCapsuleComponent())
+		{
+			continue;
+		}
+		const FVector ToTarget = Target->GetCapsuleComponent()->GetComponentLocation() - ViewStart;
+		const double Along = FVector::DotProduct(ToTarget, ViewDirection);
+		if (Along <= 0.0 || Along > 10000.0)
+		{
+			continue;
+		}
+		const double PerpendicularSq = (ToTarget - ViewDirection * Along).SizeSquared();
+		if (PerpendicularSq < BestPerpendicularSq)
+		{
+			BestPerpendicularSq = PerpendicularSq;
+			BestTarget = Target;
+		}
+	}
+	if (!IsValid(BestTarget) || !BestTarget->GetMesh() || !BestTarget->GetCharacterMovement())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSREcho CLIENT key=%d status=no_proxy_near_ray (DEBUG ONLY)", PredictionKey);
+		return;
+	}
+
+	const FEnclaveSSRReceivedProxyUpdate& Update = BestTarget->DebugGetLastReceivedProxyUpdate();
+	if (Update.ReceiveCount == 0 || Update.ServerStamp <= 0.0f ||
+		!FMath::IsFinite(Update.ClientReceiveWorldSeconds))
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSREcho CLIENT key=%d status=no_paired_movement_update (DEBUG ONLY)", PredictionKey);
+		return;
+	}
+
+	const double Elapsed = GetWorld()->GetTimeSeconds() - Update.ClientReceiveWorldSeconds;
+	if (!FMath::IsFinite(Elapsed) || Elapsed < 0.0 || Elapsed > 0.150)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSREcho CLIENT key=%d status=invalid_update_elapsed elapsedMs=%.2f (DEBUG ONLY)", PredictionKey, Elapsed * 1000.0);
+		return;
+	}
+	const UCapsuleComponent* Capsule = BestTarget->GetCapsuleComponent();
+	const FVector CapsuleCenter = Capsule->GetComponentLocation();
+	const FVector MeshDisplacement = Capsule->GetComponentTransform().TransformVectorNoScale(
+		BestTarget->GetMesh()->GetRelativeLocation() - BestTarget->GetBaseTranslationOffset());
+	const FVector MeshAnchor = CapsuleCenter + MeshDisplacement;
+	const FVector ClientLinearPrediction = Update.ReplicatedLocation + Update.ReplicatedVelocity * Elapsed;
+	const double LocalErrorCm = FVector::Dist(ClientLinearPrediction, CapsuleCenter);
+	const double UpdateReceiveErrorCm = FVector::Dist(Update.ReplicatedLocation, Update.CapsuleAtReceive);
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSREcho CLIENT key=%d target=%s pairedStamp=%.6f currentStamp=%.6f updates=%u elapsedMs=%.2f localLinearErrorCm=%.2f receivedPosErrorCm=%.2f recvSpeedCmS=%.1f localSpeedCmS=%.1f smoothingCm=%.2f mode=%d (LOCAL GAME-THREAD sample, not rendered pixels; DEBUG ONLY)",
+		PredictionKey, *GetNameSafe(BestTarget), Update.ServerStamp,
+		BestTarget->GetReplicatedServerLastTransformUpdateTimeStamp(), Update.ReceiveCount,
+		Elapsed * 1000.0, LocalErrorCm, UpdateReceiveErrorCm,
+		Update.ReplicatedVelocity.Size(), BestTarget->GetVelocity().Size(), MeshDisplacement.Size(),
+		static_cast<int32>(BestTarget->GetCharacterMovement()->NetworkSmoothingMode));
+	ServerEnclaveDebugEchoedSnapshot(PredictionKey, BestTarget, Update.ServerStamp, static_cast<float>(Elapsed),
+		FVector_NetQuantize10(Update.ReplicatedLocation), FVector_NetQuantize10(Update.ReplicatedVelocity),
+		FVector_NetQuantize10(Update.CapsuleAtReceive), FVector_NetQuantize10(CapsuleCenter),
+		FVector_NetQuantize10(MeshAnchor));
+#else
+	(void)PredictionKey;
+#endif
+}
+
+void AEnclavePlayerController::ServerEnclaveDebugEchoedSnapshot_Implementation(int32 PredictionKey,
+	AEnclaveCharacter* Target, float EchoedMovementStamp, float ElapsedSinceUpdateSeconds,
+	FVector_NetQuantize10 ReplicatedLocation, FVector_NetQuantize10 ReplicatedVelocity,
+	FVector_NetQuantize10 CapsuleAtReceive, FVector_NetQuantize10 ClientCapsuleAtShot,
+	FVector_NetQuantize10 ClientMeshAnchor)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!HasAuthority() || !CVarDebugSSREcho.GetValueOnGameThread() || !GetWorld() ||
+		!IsValid(Target) || Target->GetWorld() != GetWorld() || Target == GetPawn() ||
+		!FMath::IsFinite(EchoedMovementStamp) || EchoedMovementStamp <= 0.0f ||
+		!FMath::IsFinite(ElapsedSinceUpdateSeconds) || ElapsedSinceUpdateSeconds < 0.0f ||
+		ElapsedSinceUpdateSeconds > 0.150f || FVector(ReplicatedLocation).ContainsNaN() ||
+		FVector(ReplicatedVelocity).ContainsNaN() || FVector(ClientCapsuleAtShot).ContainsNaN())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSREcho RECON key=%d status=invalid_claim (DEBUG ONLY)", PredictionKey);
+		return;
+	}
+
+	const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
+	const double Receipt = GetWorld()->GetTimeSeconds();
+	const double Stamp = static_cast<double>(EchoedMovementStamp);
+	const double Elapsed = static_cast<double>(ElapsedSinceUpdateSeconds);
+	const double AgeMs = (Receipt - Stamp) * 1000.0;
+	constexpr double SnapToleranceSeconds = 0.0005; // Only to an existing history endpoint; never extrapolate.
+	constexpr double MaxEchoAgeSeconds = 0.200; // Existing C4 budget; no authority changes.
+	const bool bInWindow = Stamp <= Receipt + SnapToleranceSeconds &&
+		Stamp >= Receipt - MaxEchoAgeSeconds - SnapToleranceSeconds;
+
+	FEnclaveTargetCapsuleFrame Base;
+	FEnclaveTargetCapsuleFrame ElapsedFrame;
+	double QueryStamp = Stamp;
+	bool bBaseFound = false;
+	bool bElapsedFound = false;
+	bool bSnappedToEndpoint = false;
+	if (bInWindow && IsValid(History))
+	{
+		double Oldest = 0.0;
+		double Newest = 0.0;
+		if (History->GetHistoryTimeBounds(Oldest, Newest))
+		{
+			if (Stamp < Oldest && Oldest - Stamp <= SnapToleranceSeconds)
+			{
+				QueryStamp = Oldest;
+				bSnappedToEndpoint = true;
+			}
+			else if (Stamp > Newest && Stamp - Newest <= SnapToleranceSeconds)
+			{
+				QueryStamp = Newest;
+				bSnappedToEndpoint = true;
+			}
+			bBaseFound = History->TryGetCapsuleAtTime(QueryStamp, Base);
+			// A: Actual authoritative history at later time, never extrapolated.
+			bElapsedFound = History->TryGetCapsuleAtTime(QueryStamp + Elapsed, ElapsedFrame);
+		}
+	}
+
+	const FVector ActualClientCapsule = FVector(ClientCapsuleAtShot);
+	const FVector ReconstructedFromReceived = FVector(ReplicatedLocation) + FVector(ReplicatedVelocity) * Elapsed;
+	const double ClientModelErrorCm = FVector::Dist(ReconstructedFromReceived, ActualClientCapsule);
+	const double ReceivedVsCapsuleAtReceiveCm = FVector::Dist(FVector(ReplicatedLocation), FVector(CapsuleAtReceive));
+	const double StampPairErrorCm = bBaseFound ? FVector::Dist(FVector(ReplicatedLocation), Base.Center) : -1.0;
+	const double BaseErrorCm = bBaseFound ? FVector::Dist(Base.Center, ActualClientCapsule) : -1.0;
+	const double ActualHistoryErrorCm = bElapsedFound ? FVector::Dist(ElapsedFrame.Center, ActualClientCapsule) : -1.0;
+	const FVector ServerLinearPrediction = bBaseFound ? Base.Center + Base.DebugVelocity * Elapsed : FVector::ZeroVector;
+	const double ServerModelErrorCm = bBaseFound ? FVector::Dist(ServerLinearPrediction, ActualClientCapsule) : -1.0;
+	const double MeshVsServerModelCm = bBaseFound ? FVector::Dist(ServerLinearPrediction, FVector(ClientMeshAnchor)) : -1.0;
+	const double ServerSpeedCmS = bBaseFound ? Base.DebugVelocity.Size() : -1.0;
+	const bool bDirectionFlip = bBaseFound && !Target->GetVelocity().IsNearlyZero() &&
+		!Base.DebugVelocity.IsNearlyZero() && FVector::DotProduct(Base.DebugVelocity, Target->GetVelocity()) < 0.0;
+	const bool bPossibleTurnaround = bDirectionFlip || (bBaseFound && ServerSpeedCmS < 400.0);
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSREcho RECON key=%d status=%s target=%s ageMs=%.2f elapsedMs=%.2f stamp=%.6f snapped=%d baseFound=%d elapsedFound=%d clientModelErrorCm=%.2f serverModelErrorCm=%.2f actualHistoryErrorCm=%.2f baselineErrorCm=%.2f meshServerModelErrorCm=%.2f receivedPositionDeltaCm=%.2f stampPairErrorCm=%.2f serverSpeedCmS=%.1f turnaroundSuspect=%d (UNTRUSTED CLAIM; GAME-THREAD PROXY, NOT RENDERED; SHADOW ONLY)",
+		PredictionKey, !bInWindow ? TEXT("out_of_window") : (!bBaseFound ? TEXT("missing_history") : TEXT("measured")),
+		*GetNameSafe(Target), AgeMs, Elapsed * 1000.0, Stamp, bSnappedToEndpoint ? 1 : 0,
+		bBaseFound ? 1 : 0, bElapsedFound ? 1 : 0, ClientModelErrorCm, ServerModelErrorCm,
+		ActualHistoryErrorCm, BaseErrorCm, MeshVsServerModelCm, ReceivedVsCapsuleAtReceiveCm,
+		StampPairErrorCm, ServerSpeedCmS, bPossibleTurnaround ? 1 : 0);
+#else
+	(void)PredictionKey;
+	(void)Target;
+	(void)EchoedMovementStamp;
+	(void)ElapsedSinceUpdateSeconds;
+	(void)ReplicatedLocation;
+	(void)ReplicatedVelocity;
+	(void)CapsuleAtReceive;
+	(void)ClientCapsuleAtShot;
+	(void)ClientMeshAnchor;
 #endif
 }
 
@@ -429,7 +694,7 @@ void AEnclavePlayerController::ServerEnclaveDebugPatrolVisualSample_Implementati
 			ENCLAVE_LOG(LogEnclaveCombat, Log,
 				"SSRVisual HISTORY key=%d patrolTarget=%s serverCapsuleAtClientShot=%s clientVisualDeltaAtShotCm=%.2f frames=%d (SHOT-TIME SHADOW LOOKUP ONLY; not visual-delay estimate or hit authority)",
 				PredictionKey, *GetNameSafe(PatrolTarget), *ShotTimeFrame.Center.ToCompactString(),
-				FVector::Distance(ShotTimeFrame.Center, FVector(ClientVisualProxyAnchor)),
+				FVector::Dist(ShotTimeFrame.Center, FVector(ClientVisualProxyAnchor)),
 				History->GetHistorySampleCount());
 		}
 		else
@@ -899,11 +1164,96 @@ void AEnclavePlayerController::StopDebugSSRStrafe(const TCHAR* Reason)
 }
 #endif
 
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+void AEnclavePlayerController::DebugTickSSRClockSync()
+{
+    // The client GameState derives an estimated server time from its local
+    // world clock and a synchronized offset. Watch that offset every game tick.
+    // This is an observer, NOT an OnRep hook: offset changes may have other
+    // causes. In particular, it must never change shot validation or rewind.
+    if (!IsSSRClockDebugEnabled() || !IsLocalController() || !GetWorld() ||
+        GetWorld()->GetNetMode() != NM_Client)
+    {
+        bDebugSSRClockSyncHasSample = false;
+        return;
+    }
+
+    AGameStateBase* GameState = GetWorld()->GetGameState();
+    if (!IsValid(GameState))
+    {
+        bDebugSSRClockSyncHasSample = false;
+        return;
+    }
+
+    const double ProcessSeconds = FPlatformTime::Seconds();
+    const double WorldSeconds = GetWorld()->GetTimeSeconds();
+    const double EstimatedServerSeconds = GameState->GetServerWorldTimeSeconds();
+    if (!FMath::IsFinite(ProcessSeconds) || !FMath::IsFinite(WorldSeconds) ||
+        !FMath::IsFinite(EstimatedServerSeconds))
+    {
+        bDebugSSRClockSyncHasSample = false;
+        return;
+    }
+
+    const double EstimatedOffsetSeconds = EstimatedServerSeconds - WorldSeconds;
+    if (!bDebugSSRClockSyncHasSample || ProcessSeconds < DebugSSRClockSyncLastProcessSeconds ||
+        ProcessSeconds - DebugSSRClockSyncLastProcessSeconds > 10.0)
+    {
+        ENCLAVE_LOG(LogEnclaveCombat, Log,
+            "SSRClockSync CLIENT event=init offsetMs=%+.2f world=%.6f estimate=%.6f process=%.6f frame=%llu (OBSERVED GameState offset, not direct OnRep; DEBUG ONLY)",
+            EstimatedOffsetSeconds * 1000.0, WorldSeconds, EstimatedServerSeconds,
+            ProcessSeconds, static_cast<unsigned long long>(GFrameCounter));
+        bDebugSSRClockSyncHasSample = true;
+        DebugSSRClockSyncLastReportProcessSeconds = ProcessSeconds;
+        DebugSSRClockSyncLastReportWorldSeconds = WorldSeconds;
+        DebugSSRClockSyncLastReportEstimatedSeconds = EstimatedServerSeconds;
+        DebugSSRClockSyncLastReportOffsetSeconds = EstimatedOffsetSeconds;
+    }
+    else
+    {
+        const double FrameProcessMs = (ProcessSeconds - DebugSSRClockSyncLastProcessSeconds) * 1000.0;
+        const double FrameWorldMs = (WorldSeconds - DebugSSRClockSyncLastWorldSeconds) * 1000.0;
+        const double FrameEstimateMs = (EstimatedServerSeconds - DebugSSRClockSyncLastEstimatedSeconds) * 1000.0;
+        const double OffsetStepMs = (EstimatedOffsetSeconds - DebugSSRClockSyncLastOffsetSeconds) * 1000.0;
+        const double SinceReportSeconds = ProcessSeconds - DebugSSRClockSyncLastReportProcessSeconds;
+        const bool bOffsetStep = FMath::Abs(OffsetStepMs) >= 1.0;
+        const bool bFramePhaseGap = FrameProcessMs >= 35.0 && FMath::Abs(FrameWorldMs - FrameProcessMs) >= 10.0;
+        const bool bPeriodic = SinceReportSeconds >= 1.0;
+        if (bOffsetStep || bPeriodic || (bFramePhaseGap && SinceReportSeconds >= 0.25))
+        {
+            const TCHAR* Event = bOffsetStep ? TEXT("offset_step") :
+                bFramePhaseGap ? TEXT("frame_phase_gap") : TEXT("periodic");
+            const double ReportProcessMs = SinceReportSeconds * 1000.0;
+            const double ReportWorldMs = (WorldSeconds - DebugSSRClockSyncLastReportWorldSeconds) * 1000.0;
+            const double ReportEstimateMs = (EstimatedServerSeconds - DebugSSRClockSyncLastReportEstimatedSeconds) * 1000.0;
+            ENCLAVE_LOG(LogEnclaveCombat, Log,
+                "SSRClockSync CLIENT event=%s offsetMs=%+.2f offsetStepMs=%+.2f offsetSinceReportMs=%+.2f frameProcessMs=%.2f frameWorldMs=%.2f frameEstimateMs=%.2f reportProcessMs=%.1f reportWorldMs=%.1f reportEstimateMs=%.1f frame=%llu (OBSERVED offset step, NOT proof of GameState OnRep; DEBUG ONLY)",
+                Event, EstimatedOffsetSeconds * 1000.0, OffsetStepMs,
+                (EstimatedOffsetSeconds - DebugSSRClockSyncLastReportOffsetSeconds) * 1000.0,
+                FrameProcessMs, FrameWorldMs, FrameEstimateMs,
+                ReportProcessMs, ReportWorldMs, ReportEstimateMs,
+                static_cast<unsigned long long>(GFrameCounter));
+            DebugSSRClockSyncLastReportProcessSeconds = ProcessSeconds;
+            DebugSSRClockSyncLastReportWorldSeconds = WorldSeconds;
+            DebugSSRClockSyncLastReportEstimatedSeconds = EstimatedServerSeconds;
+            DebugSSRClockSyncLastReportOffsetSeconds = EstimatedOffsetSeconds;
+        }
+    }
+
+    DebugSSRClockSyncLastProcessSeconds = ProcessSeconds;
+    DebugSSRClockSyncLastWorldSeconds = WorldSeconds;
+    DebugSSRClockSyncLastEstimatedSeconds = EstimatedServerSeconds;
+    DebugSSRClockSyncLastOffsetSeconds = EstimatedOffsetSeconds;
+}
+#endif
+
 void AEnclavePlayerController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+	DebugTickSSRClockSync();
+
 	if (!bDebugSSRStrafeEnabled)
 	{
 		return;

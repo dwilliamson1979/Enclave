@@ -51,7 +51,7 @@ public:
 	double GetWorldBlockDistanceCm() const { return WorldBlockDistanceCm; }
 
 	/** Returns a miss/empty result on invalid time or unavailable query context. */
-	FEnclaveHistoricalHitQueryResult Trace(double HistoryTimeSeconds) const;
+	FEnclaveHistoricalHitQueryResult Trace(double HistoryTimeSeconds, const AEnclaveCharacter* OnlyTarget = nullptr) const;
 
 private:
 	TWeakObjectPtr<UWorld> World;

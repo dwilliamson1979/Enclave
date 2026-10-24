@@ -5,6 +5,10 @@
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Engine/NetSerialization.h"
 #include "Combat/EnclaveShotTiming.h"
+#include "Combat/EnclaveSSRGameplayClaim.h"
+#include "Debug/EnclaveDebug.h"
+#include "GameFramework/Actor.h"
+#include "UObject/CoreNet.h"
 #include "EnclaveShotIntent.generated.h"
 
 /** UNTRUSTED shooter viewpoint captured on the owning client. The server
@@ -35,6 +39,8 @@ struct ENCLAVE_API FEnclaveShotIntent
 	/** Reserved for a future server-enforced spread policy. Always zero for now. */
 	UPROPERTY()
 	uint32 SpreadSeed = 0;
+	/** Development-only shadow test. Never hit authority. */
+	FEnclaveSSRGameplayClaim SSRGameplayClaim;
 };
 
 /** Server-accepted ray, created only after validating an untrusted shot intent.
@@ -52,6 +58,7 @@ struct ENCLAVE_API FEnclaveValidatedShotRay
 
 	/** Correlation only: the validated client shot key, never hit authority. */
 	uint16 ShotSequence = 0;
+	FEnclaveSSRGameplayClaim SSRGameplayClaim; // shadow-only
 };
 
 /** GAS Target Data envelope. Must use its concrete ScriptStruct for polymorphic network serialization. */
@@ -75,6 +82,24 @@ struct ENCLAVE_API FEnclaveGameplayAbilityTargetData_ShotIntent : public FGamepl
 		Ar << Shot.ClientServerTimeSeconds;
 		Ar << Shot.ShotSequence;
 		Ar << Shot.SpreadSeed;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+        // Same GAS TargetData RPC: no second packet stream or additional shot RPC.
+        uint8 HasSample = Shot.SSRGameplayClaim.Classification != 0 ? 1 : 0;
+        Ar.SerializeBits(&HasSample, 1);
+        if (HasSample)
+        {
+            Ar << Shot.SSRGameplayClaim.Classification;
+            UObject* TargetObject = Shot.SSRGameplayClaim.Target;
+            const bool bMapped = Map && Map->SerializeObject(Ar, AActor::StaticClass(), TargetObject);
+            if (Ar.IsLoading()) { Shot.SSRGameplayClaim.Target = Cast<AActor>(TargetObject); }
+            Ar << Shot.SSRGameplayClaim.EchoedMovementStamp;
+            Ar << Shot.SSRGameplayClaim.SecondsSinceMovementUpdate;
+            // Mapping failure disables only the optional diagnostic claim.
+            // Never reject an otherwise legal GAS shot because a test target
+            // actor was not resolved by the connection's package map.
+            if (!bMapped) { Shot.SSRGameplayClaim = FEnclaveSSRGameplayClaim(); }
+        }
+#endif
 		bOutSuccess = bOriginOk && bDirectionOk && !Ar.IsError();
 		return true;
 	}
