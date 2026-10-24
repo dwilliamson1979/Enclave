@@ -32,6 +32,20 @@ namespace EnclaveTargetHistory
 	constexpr double MaxContinuousSpeedCmPerSecond = 2000.0;
 	constexpr double MovementSlackCm = 30.0;
 	constexpr float ShapeChangeToleranceCm = 0.5f;
+
+	// Crouching changes the capsule center and half-height together. Compare
+	// the actual bottom of the capsule (along its world-space axis) so a
+	// normal crouch does not look like a teleport at high server tick rates.
+	static FVector GetCapsuleBottom(const FEnclaveTargetCapsuleFrame& Frame)
+	{
+		return Frame.Center - Frame.Rotation.GetNormalized().GetAxisZ() * static_cast<double>(Frame.HalfHeightCm);
+	}
+
+	static bool HasShapeStep(const FEnclaveTargetCapsuleFrame& Older, const FEnclaveTargetCapsuleFrame& Newer)
+	{
+		return FMath::Abs(Older.RadiusCm - Newer.RadiusCm) > ShapeChangeToleranceCm ||
+			FMath::Abs(Older.HalfHeightCm - Newer.HalfHeightCm) > ShapeChangeToleranceCm;
+	}
 }
 
 UEnclaveTargetHistoryComponent::UEnclaveTargetHistoryComponent()
@@ -164,8 +178,12 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 			const double MaxContinuousDisplacement = EnclaveTargetHistory::MaxContinuousSpeedCmPerSecond * SampleGap +
 				EnclaveTargetHistory::MovementSlackCm;
 			const bool bGap = SampleGap > EnclaveTargetHistory::MaxCaptureGapSeconds;
+			// Capsule center movement includes the height adjustment from
+			// crouch/uncrouch. The bottom remains fixed for an ordinary
+			// standing-on-ground shape change, regardless of server tick rate.
 			const bool bJump = !bGap &&
-				FVector::DistSquared(Previous.Center, Next.Center) > FMath::Square(MaxContinuousDisplacement);
+				FVector::DistSquared(EnclaveTargetHistory::GetCapsuleBottom(Previous),
+					EnclaveTargetHistory::GetCapsuleBottom(Next)) > FMath::Square(MaxContinuousDisplacement);
 			Next.bBreakBefore |= bGap || bJump;
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 			if (CVarDebugSSRHistory.GetValueOnGameThread() != 0)
@@ -177,9 +195,7 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 						*GetNameSafe(Character), bBreakBeforeNextCapture ? TEXT("explicit") : (bGap ? TEXT("gap") : TEXT("jump")),
 						SampleGap * 1000.0, Frames.Num());
 				}
-				const bool bShapeChange =
-					FMath::Abs(Previous.RadiusCm - Next.RadiusCm) > EnclaveTargetHistory::ShapeChangeToleranceCm ||
-					FMath::Abs(Previous.HalfHeightCm - Next.HalfHeightCm) > EnclaveTargetHistory::ShapeChangeToleranceCm;
+				const bool bShapeChange = EnclaveTargetHistory::HasShapeStep(Previous, Next);
 				if (bShapeChange)
 				{
 					ENCLAVE_LOG(LogEnclaveCombat, Log,
@@ -269,18 +285,23 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 			{
 				return false;
 			}
+			// A shape transition is atomic: interpolating center/orientation while
+			// retaining the older dimensions creates a capsule that never existed
+			// (and may penetrate the floor). Use the whole older geometry up to
+			// the newer sample, which is returned exactly at its own timestamp.
+			if (EnclaveTargetHistory::HasShapeStep(Older, Newer))
+			{
+				OutFrame = Older;
+				OutFrame.ServerTimeSeconds = ServerTimeSeconds;
+				return true;
+			}
+
 			const float Alpha = static_cast<float>((ServerTimeSeconds - Older.ServerTimeSeconds) / Span);
 			OutFrame.ServerTimeSeconds = ServerTimeSeconds;
 			OutFrame.Center = FMath::Lerp(Older.Center, Newer.Center, Alpha);
 			OutFrame.Rotation = FQuat::Slerp(Older.Rotation, Newer.Rotation, Alpha).GetNormalized();
-			// Avoid blending through nonexistent capsule dimensions during abrupt
-			// crouch/uncrouch changes. Shape steps at the newer recorded instant;
-			// position and orientation remain continuous when no break was marked.
-			const bool bShapeStep =
-				FMath::Abs(Older.RadiusCm - Newer.RadiusCm) > EnclaveTargetHistory::ShapeChangeToleranceCm ||
-				FMath::Abs(Older.HalfHeightCm - Newer.HalfHeightCm) > EnclaveTargetHistory::ShapeChangeToleranceCm;
-			OutFrame.RadiusCm = bShapeStep ? Older.RadiusCm : FMath::Lerp(Older.RadiusCm, Newer.RadiusCm, Alpha);
-			OutFrame.HalfHeightCm = bShapeStep ? Older.HalfHeightCm : FMath::Lerp(Older.HalfHeightCm, Newer.HalfHeightCm, Alpha);
+			OutFrame.RadiusCm = FMath::Lerp(Older.RadiusCm, Newer.RadiusCm, Alpha);
+			OutFrame.HalfHeightCm = FMath::Lerp(Older.HalfHeightCm, Newer.HalfHeightCm, Alpha);
 			return true;
 		}
 	}
@@ -328,7 +349,11 @@ bool UEnclaveTargetHistoryComponent::TryMatchVisualAnchorToHistory(const FVector
 		const FEnclaveTargetCapsuleFrame& Older = Frames[Index - 1];
 		const FEnclaveTargetCapsuleFrame& Newer = Frames[Index];
 		const double Span = Newer.ServerTimeSeconds - Older.ServerTimeSeconds;
-		if (Newer.bBreakBefore || Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds)
+		// This diagnostic fits a linear center trajectory. A shape step is
+		// atomic in the authoritative query, so it must not be fitted as a
+		// continuous visual motion segment either.
+		if (Newer.bBreakBefore || Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds ||
+			EnclaveTargetHistory::HasShapeStep(Older, Newer))
 		{
 			continue;
 		}
