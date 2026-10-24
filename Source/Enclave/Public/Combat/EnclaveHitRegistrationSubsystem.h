@@ -5,6 +5,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Combat/EnclaveShotTiming.h"
+#include "Debug/EnclaveDebug.h"
 #include "EnclaveHitRegistrationSubsystem.generated.h"
 
 class AActor;
@@ -29,7 +30,7 @@ struct ENCLAVE_API FEnclaveHitscanQuery
 	TWeakObjectPtr<AActor> Instigator;
 
 	// Supplied only for a remote shot that already passed server validation.
-	// Stage C3 reads this in the debug-only shadow query, not in live tracing.
+	// Stages C3-C4 read this in shadow diagnostics, not in live tracing.
 	bool bHasValidatedClientTiming = false;
 	FEnclaveShotTimingContext ValidatedClientTiming;
 	uint16 ShotSequence = 0;
@@ -70,7 +71,7 @@ public:
 	bool RegisterHitscan(const FEnclaveHitscanQuery& Query, FHitResult& OutHit) const;
 
 private:
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+#if ENCLAVE_INCLUDE_DEBUG_CODE
 	void DebugCompareHistoricalCapsules(const FEnclaveHitscanQuery& Query,
 		bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const;
 #endif

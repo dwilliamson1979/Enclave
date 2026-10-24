@@ -5,6 +5,7 @@
 #include "Game/EnclaveGameModeBase.h"
 #include "Combat/EnclaveShotIntent.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
+#include "Combat/EnclaveHistoricalHitQuery.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Characters/EnclaveCharacter.h"
 #include "Components/CapsuleComponent.h"
@@ -344,77 +345,25 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareHistoricalCapsules(const FEnc
 		bClientTimeValid && bServerTimeValid ? (ServerBaselineTime - ClientBaselineTime) * 1000.0 : 0.0,
 		Timing.MaxRewindSeconds * 1000.0);
 
-	// Independent present-time obstruction, identical for both proposed timing
-	// anchors. Ignore characters' CURRENT capsules, which cannot obscure past poses.
-	FCollisionQueryParams WorldParams(SCENE_QUERY_STAT(EnclaveSSRShadowWorld), true);
-	WorldParams.AddIgnoredActor(Shooter);
-	TArray<AActor*> AttachedActors;
-	Shooter->GetAttachedActors(AttachedActors);
-	WorldParams.AddIgnoredActors(AttachedActors);
-	for (TActorIterator<AEnclaveCharacter> It(World); It; ++It)
+	// This always-compiled query owns the existing present-time world obstruction
+	// and historical capsule intersection logic. Both debug timing anchors reuse
+	// the same world obstruction; C5 will invoke this identical query once its
+	// independent timing and gameplay policies have been approved.
+	FEnclaveHistoricalHitQuery HistoricalQuery(World, Query.Start, Query.End, Shooter);
+	if (!HistoricalQuery.IsPrepared())
 	{
-		if (IsValid(*It))
-		{
-			WorldParams.AddIgnoredActor(*It);
-		}
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRShadow SERVER key=%u skipped=historical_query_unavailable (SHADOW ONLY)",
+			Query.ShotSequence);
+		return;
 	}
-	FHitResult WorldHit;
-	const bool bWorldBlocked = World->LineTraceSingleByChannel(WorldHit,
-		Query.Start, Query.End, ECC_Weapon, WorldParams);
-	const double WorldBlockDistanceCm = bWorldBlocked
-		? FVector::Dist(Query.Start, WorldHit.ImpactPoint) : -1.0;
 
-	struct FShadowCapsuleResult
-	{
-		AEnclaveCharacter* Target = nullptr;
-		FVector Point = FVector::ZeroVector;
-		double EntryDistanceCm = -1.0;
-		int32 Available = 0;
-		int32 Missing = 0;
-		bool bOccluded = false;
-		bool bHit = false;
-	};
-
-	// Executed only with the opt-in debug CVar. This traces recorded geometry
-	// mathematically; no Actor/Component moves and no damage decision changes.
-	auto CheckHistoryAtTime = [&](double HistoryTime) -> FShadowCapsuleResult
-	{
-		FShadowCapsuleResult Result;
-		double NearestDistance = FVector::Dist(Query.Start, Query.End) + 1.0;
-		for (TActorIterator<AEnclaveCharacter> It(World); It; ++It)
-		{
-			AEnclaveCharacter* Target = *It;
-			if (!IsValid(Target) || Target == Shooter)
-			{
-				continue;
-			}
-			const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
-			FEnclaveTargetCapsuleFrame Capsule;
-			if (!IsValid(History) || !History->TryGetCapsuleAtTime(HistoryTime, Capsule))
-			{
-				++Result.Missing;
-				continue;
-			}
-
-			++Result.Available;
-			double HitDistanceCm = 0.0;
-			FVector HitPoint;
-			if (FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(Query.Start, Query.End,
-				Capsule, HitDistanceCm, HitPoint) && HitDistanceCm < NearestDistance)
-			{
-				NearestDistance = HitDistanceCm;
-				Result.Target = Target;
-				Result.EntryDistanceCm = HitDistanceCm;
-				Result.Point = HitPoint;
-			}
-		}
-		Result.bOccluded = Result.Target && bWorldBlocked && WorldBlockDistanceCm < Result.EntryDistanceCm;
-		Result.bHit = Result.Target && !Result.bOccluded;
-		return Result;
-	};
-
-	const FShadowCapsuleResult ClientResult = bClientTimeValid ? CheckHistoryAtTime(ClientBaselineTime) : FShadowCapsuleResult();
-	const FShadowCapsuleResult ServerResult = bServerTimeValid ? CheckHistoryAtTime(ServerBaselineTime) : FShadowCapsuleResult();
+	const FEnclaveHistoricalHitQueryResult ClientResult = bClientTimeValid
+		? HistoricalQuery.Trace(ClientBaselineTime) : FEnclaveHistoricalHitQueryResult();
+	const FEnclaveHistoricalHitQueryResult ServerResult = bServerTimeValid
+		? HistoricalQuery.Trace(ServerBaselineTime) : FEnclaveHistoricalHitQueryResult();
+	const FHitResult& WorldHit = HistoricalQuery.GetWorldHit();
+	const double WorldBlockDistanceCm = HistoricalQuery.GetWorldBlockDistanceCm();
 
 	// Keep the pre-existing analytic-vs-engine self-check for current collision.
 	if (bLiveHit)
@@ -453,12 +402,12 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareHistoricalCapsules(const FEnc
 		ENCLAVE_LOG(LogEnclaveCombat, Log,
 			"SSRShadow SERVER key=%u shotAgeMs=%.1f targetHistoryTime=%.6f presentationOffsetMs=0.0 available=%d missing=%d historicalCandidate=%s historicalEntryCm=%.1f historicalPoint=%s worldBlock=%s worldBlockCm=%.1f occluded=%d shadowHit=%d liveHit=%d liveActor=%s comparable=%d sameActor=%d (UNRECONCILED CLIENT-TIME BASELINE; SHADOW ONLY; does not authorize hits)",
 			Query.ShotSequence, Timing.GetObservedShotAgeSeconds() * 1000.0,
-			ClientBaselineTime, ClientResult.Available, ClientResult.Missing, *GetNameSafe(ClientResult.Target),
+			ClientBaselineTime, ClientResult.Available, ClientResult.Missing, *GetNameSafe(ClientResult.Target.Get()),
 			ClientResult.EntryDistanceCm, *ClientResult.Point.ToCompactString(),
 			*GetNameSafe(WorldHit.GetActor()), WorldBlockDistanceCm, ClientResult.bOccluded ? 1 : 0,
 			ClientResult.bHit ? 1 : 0, bLiveHit ? 1 : 0, *GetNameSafe(LiveHit.GetActor()),
 			bComparable ? 1 : 0,
-			(ClientResult.bHit && bLiveHit && LiveHit.GetActor() == ClientResult.Target) ? 1 : 0);
+			(ClientResult.bHit && bLiveHit && LiveHit.GetActor() == ClientResult.Target.Get()) ? 1 : 0);
 	}
 	else
 	{
@@ -492,13 +441,13 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareHistoricalCapsules(const FEnc
 	// For real remote-player testing, differentiate a PlayerController target from
 	// a patrol/AI target. The server-derived RTT anchor is NOT authoritative yet.
 	const bool bServerHasHit = bServerTimeValid && ServerResult.bHit;
-	const bool bServerMatchesLive = bServerHasHit && bLiveHit && LiveHit.GetActor() == ServerResult.Target;
+	const bool bServerMatchesLive = bServerHasHit && bLiveHit && LiveHit.GetActor() == ServerResult.Target.Get();
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
 		"SSRShadow ANCHORS key=%u clientValid=%d clientCandidate=%s clientHit=%d serverValid=%d serverCandidate=%s serverTargetIsPlayer=%d serverHit=%d serverMatchLive=%d serverAvailable=%d serverMissing=%d serverEntryCm=%.1f worldOccluded=%d liveActor=%s serverPlayerTargets=%d movingPlayerTargets=%d maxPlayerTargetSpeedCmS=%.1f (SERVER RTT ANCHOR ZERO-SMOOTHING BASELINE; SHADOW ONLY; no gameplay effect)",
-		Query.ShotSequence, bClientTimeValid ? 1 : 0, *GetNameSafe(ClientResult.Target),
+		Query.ShotSequence, bClientTimeValid ? 1 : 0, *GetNameSafe(ClientResult.Target.Get()),
 		ClientResult.bHit ? 1 : 0, bServerTimeValid ? 1 : 0,
-		*GetNameSafe(ServerResult.Target),
-		(IsValid(ServerResult.Target) && ServerResult.Target->IsPlayerControlled()) ? 1 : 0,
+		*GetNameSafe(ServerResult.Target.Get()),
+		(ServerResult.Target.IsValid() && ServerResult.Target->IsPlayerControlled()) ? 1 : 0,
 		bServerHasHit ? 1 : 0, bServerMatchesLive ? 1 : 0,
 		ServerResult.Available, ServerResult.Missing, ServerResult.EntryDistanceCm,
 		ServerResult.bOccluded ? 1 : 0, *GetNameSafe(LiveHit.GetActor()),
