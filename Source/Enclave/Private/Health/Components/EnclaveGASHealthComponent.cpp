@@ -10,6 +10,10 @@
 #include "Abilities/Effects/EnclaveGE_Damage.h"
 #include "Combat/EnclaveDamageRequest.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
+#include "Debug/EnclaveDebug.h"
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+#include "Characters/EnclaveCharacter.h"
+#endif
 
 UEnclaveGASHealthComponent::UEnclaveGASHealthComponent()
 {
@@ -97,6 +101,20 @@ bool UEnclaveGASHealthComponent::ReceiveDamage(const FEnclaveDamageRequest& Dama
 	{
 		return false;
 	}
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// D1.1B long-duration SSR sampling: the local-authority strafing character
+	// must stay alive. Suppress only this explicitly marked body's health mutation;
+	// preserve the accepted-hit result for the ordinary GA_Fire path. This never
+	// compiles into Test/Shipping and never grants SSR hit authority.
+	if (const AEnclaveCharacter* TestTarget = Cast<AEnclaveCharacter>(Owner))
+	{
+		if (TestTarget->DebugIsSSRStrafeDamageSuppressed())
+		{
+			return true;
+		}
+	}
+#endif
 
 	// Source is operation context, not a lifecycle relationship. Resolve it per
 	// damage request rather than caching an attacker that can change every hit.

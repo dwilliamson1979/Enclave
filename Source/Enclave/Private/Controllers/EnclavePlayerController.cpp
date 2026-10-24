@@ -36,8 +36,13 @@
 #include "GameFramework/PlayerState.h"
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 #include "GameplayTags/EnclaveEquipmentSlotTags.h"
+#include "GameplayTags/EnclaveInputTags.h"
+#include "Equipment/Weapons/EnclaveFirearmWeapon.h"
 #include "Equipment/Items/EnclaveItem.h"
 #include "Inventory/Components/EnclaveInventoryComponent.h"
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+#include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
+#endif
 
 // Deliberately independent of Enclave.Debug.FireTrace: one toggles the
 // remote comparison, the other the existing authoritative-world line drawing.
@@ -51,6 +56,14 @@ static TAutoConsoleVariable<bool> CVarDebugShotAlignment(
 static TAutoConsoleVariable<bool> CVarDebugSSRGameplayGate(
 	TEXT("Enclave.Debug.SSRGameplayGate"), false,
 	TEXT("Shadow-only capsule hit/miss gameplay classifier; use on remote client and listen server. NO damage authority."), ECVF_Cheat);
+
+static TAutoConsoleVariable<int32> CVarDebugSSRAutoSeed(
+	TEXT("Enclave.Debug.SSRAutoSeed"), 1729,
+	TEXT("D1.1B deterministic shot-test random seed; set before EnclaveDebugSSRAutoFire 1."), ECVF_Cheat);
+
+static TAutoConsoleVariable<float> CVarDebugSSRStrafeDuration(
+	TEXT("Enclave.Debug.SSRStrafeDuration"), 30.0f,
+	TEXT("Development-only local strafe rig duration (seconds, clamped to 10..180). Set before starting."), ECVF_Cheat);
 
 static TAutoConsoleVariable<bool> CVarDebugSSREcho(
 	TEXT("Enclave.Debug.SSREcho"), false,
@@ -1125,6 +1138,7 @@ void AEnclavePlayerController::AcknowledgePossession(APawn* P)
 void AEnclavePlayerController::OnUnPossess()
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+	StopDebugSSRAutoFire(TEXT("unpossessed"));
 	StopDebugSSRStrafe(TEXT("unpossessed"));
 #endif
 	if (ActiveAvatarInputConfig)
@@ -1161,6 +1175,8 @@ void AEnclavePlayerController::EnclaveDebugSSRStrafe(int32 bEnable)
 		return;
 	}
 
+	// Restarting the rig must always release the prior body's protection.
+	StopDebugSSRStrafe(TEXT("restart"));
 	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
 	UEnclaveCharacterMovementComponent* Movement = IsValid(Char) ? Cast<UEnclaveCharacterMovementComponent>(Char->GetCharacterMovement()) : nullptr;
 	if (!IsLocalController() || !IsValid(Char) || !Char->IsLocallyControlled() ||
@@ -1180,16 +1196,258 @@ void AEnclavePlayerController::EnclaveDebugSSRStrafe(int32 bEnable)
 	DebugSSRStrafePauseSeconds = 0.0f;
 	DebugSSRStrafeNextStatusSeconds = 2.0f;
 	bDebugSSRStrafeEnabled = !DebugSSRStrafeRight.IsNearlyZero();
+	if (bDebugSSRStrafeEnabled && Char->HasAuthority() && IsSSRGameplayGateEnabled())
+	{
+		Char->DebugSetSSRStrafeDamageSuppressed(true);
+		DebugSSRStrafeProtectedPawn = Char;
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRPlayerStrafe LOCAL PROTECT pawn=%s damageSuppressed=1 (server-only, debug only)", *GetNameSafe(Char));
+	}
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRPlayerStrafe LOCAL %s pawn=%s role=%d laneHalfWidthCm=250 durationSeconds=30 (normal CharacterMovement; debug only)",
+		"SSRPlayerStrafe LOCAL %s pawn=%s role=%d laneHalfWidthCm=250 durationSeconds=%.1f (normal CharacterMovement; debug only)",
 		bDebugSSRStrafeEnabled ? TEXT("START") : TEXT("start_rejected_zero_direction"),
-		*GetNameSafe(Char), static_cast<int32>(Char->GetLocalRole()));
+		*GetNameSafe(Char), static_cast<int32>(Char->GetLocalRole()),
+		FMath::Clamp(CVarDebugSSRStrafeDuration.GetValueOnGameThread(), 10.0f, 180.0f));
+#else
+	(void)bEnable;
+#endif
+}
+
+// D1.1B is intentionally an ordinary LOCAL input producer: the same Primary
+// and Reload tags used by the player's hands flow through the avatar router,
+// Equipment grants, and GA_Fire prediction/TargetData. Never invoke the server
+// historical query directly or bypass ammo/cooldown/readiness rules.
+void AEnclavePlayerController::EnclaveDebugSSRAutoFire(int32 bEnable)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (bEnable == 0)
+	{
+		StopDebugSSRAutoFire(TEXT("manual"));
+		return;
+	}
+
+	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
+	const UEnclaveEquipmentComponent* Equipment = IsValid(Char) ? Char->FindComponentByClass<UEnclaveEquipmentComponent>() : nullptr;
+	const AEnclaveFirearmWeapon* Firearm = IsValid(Equipment) ? Cast<AEnclaveFirearmWeapon>(Equipment->GetCurrentWieldedItem()) : nullptr;
+	if (!IsLocalController() || !GetWorld() || GetNetMode() != NM_Client || !IsValid(Char) ||
+		!Char->IsLocallyControlled() || !IsValid(Firearm) || !IsSSRGameplayGateEnabled() ||
+		CachedInputReceiver == nullptr)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRAuto START_REJECTED reason=requires_remote_local_client_firearm_and_gameplay_gate (DEBUG ONLY)");
+		return;
+	}
+
+	StopDebugSSRAutoFire(TEXT("restart"));
+	DebugSSRAutoOriginalPawn = Char;
+	DebugSSRAutoRandom.Initialize(CVarDebugSSRAutoSeed.GetValueOnGameThread());
+	DebugSSRAutoAttemptCount = 0;
+	DebugSSRAutoReloadCount = 0;
+	DebugSSRAutoConsecutiveReloadFailures = 0;
+	bDebugSSRAutoHasObservedMovingTarget = false;
+	DebugSSRAutoElapsedSeconds = 0.0f;
+	DebugSSRAutoUntilNextShotSeconds = 0.1f;
+	DebugSSRAutoReloadDelaySeconds = 0.0f;
+	DebugSSRAutoTarget.Reset();
+	if (!ChooseDebugSSRAutoTarget())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRAuto START_REJECTED reason=no_simulated_proxy_within_100m (DEBUG ONLY)");
+		return;
+	}
+	bDebugSSRAutoEnabled = true;
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRAuto START shooter=%s target=%s seed=%d intervalSeconds=0.40 maxAttempts=240 maxSeconds=180.0"
+		" mode=alternating_clear_hit_clear_miss route=Input.Item.Action.Primary via GAS (DEBUG ONLY)",
+		*GetNameSafe(Char), *GetNameSafe(DebugSSRAutoTarget.Get()),
+		CVarDebugSSRAutoSeed.GetValueOnGameThread());
 #else
 	(void)bEnable;
 #endif
 }
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+bool AEnclavePlayerController::ChooseDebugSSRAutoTarget()
+{
+	DebugSSRAutoTarget.Reset();
+	if (!GetWorld() || !IsValid(GetPawn()))
+	{
+		return false;
+	}
+	const FVector Eye = GetPawn()->GetPawnViewLocation();
+	double BestDistanceSquared = FMath::Square(10000.0);
+	for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
+	{
+		AEnclaveCharacter* Candidate = *It;
+		if (!IsValid(Candidate) || Candidate == GetPawn() || Candidate->GetLocalRole() != ROLE_SimulatedProxy ||
+			!IsValid(Candidate->GetCapsuleComponent()) || !IsValid(Candidate->GetMesh()))
+		{
+			continue;
+		}
+		const double DistanceSquared = FVector::DistSquared(Eye, Candidate->GetActorLocation());
+		if (DistanceSquared < BestDistanceSquared)
+		{
+			BestDistanceSquared = DistanceSquared;
+			DebugSSRAutoTarget = Candidate;
+		}
+	}
+	return DebugSSRAutoTarget.IsValid();
+}
+
+void AEnclavePlayerController::StopDebugSSRAutoFire(const TCHAR* Reason)
+{
+	if (bDebugSSRAutoEnabled)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRAuto STOP reason=%s attempts=%d reloads=%d elapsedSeconds=%.1f seed=%d"
+			" (attempts are not confirmed GAS activations; score SSRGameplay SERVER by key; DEBUG ONLY)",
+			Reason, DebugSSRAutoAttemptCount, DebugSSRAutoReloadCount, DebugSSRAutoElapsedSeconds,
+			CVarDebugSSRAutoSeed.GetValueOnGameThread());
+	}
+	bDebugSSRAutoEnabled = false;
+	bDebugSSRAutoHasObservedMovingTarget = false;
+	DebugSSRAutoTarget.Reset();
+	DebugSSRAutoOriginalPawn.Reset();
+}
+
+void AEnclavePlayerController::TickDebugSSRAutoFire(float DeltaSeconds)
+{
+	if (!bDebugSSRAutoEnabled)
+	{
+		return;
+	}
+	DebugSSRAutoElapsedSeconds += DeltaSeconds;
+	if (DebugSSRAutoElapsedSeconds >= 180.0f || DebugSSRAutoAttemptCount >= 240)
+	{
+		StopDebugSSRAutoFire(TEXT("bounded_limit"));
+		return;
+	}
+	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
+	const UEnclaveEquipmentComponent* Equipment = IsValid(Char) ? Char->FindComponentByClass<UEnclaveEquipmentComponent>() : nullptr;
+	AEnclaveFirearmWeapon* Firearm = IsValid(Equipment) ? Cast<AEnclaveFirearmWeapon>(Equipment->GetCurrentWieldedItem()) : nullptr;
+	if (!IsLocalController() || GetNetMode() != NM_Client || !IsSSRGameplayGateEnabled() ||
+		!IsValid(Char) || Char != DebugSSRAutoOriginalPawn.Get() || !Char->IsLocallyControlled() ||
+		!IsValid(Firearm) || CachedInputReceiver == nullptr)
+	{
+		StopDebugSSRAutoFire(TEXT("invalid_local_shooter_or_firearm"));
+		return;
+	}
+	// Never silently swap targets mid-run: it invalidates scenario identity,
+	// latency binning, and repeatability of the shot classifier.
+	if (!DebugSSRAutoTarget.IsValid())
+	{
+		StopDebugSSRAutoFire(TEXT("target_lost"));
+		return;
+	}
+	AEnclaveCharacter* Target = DebugSSRAutoTarget.Get();
+	if (!IsValid(Target) || Target->GetLocalRole() != ROLE_SimulatedProxy ||
+		!IsValid(Target->GetCapsuleComponent()) || !IsValid(Target->GetMesh()))
+	{
+		StopDebugSSRAutoFire(TEXT("target_not_simulated_proxy"));
+		return;
+	}
+	if (const UEnclaveAvatarLifecycleComponent* Lifecycle = Target->FindComponentByClass<UEnclaveAvatarLifecycleComponent>())
+	{
+		if (Lifecycle->IsDead())
+		{
+			StopDebugSSRAutoFire(TEXT("target_dead"));
+			return;
+		}
+	}
+	// Only a target that HAS been moving can be considered stalled. A deliberately
+	// stationary scenario has no promise of regular OnRep movement callbacks.
+	if (Target->GetVelocity().SizeSquared2D() > FMath::Square(100.0f))
+	{
+		bDebugSSRAutoHasObservedMovingTarget = true;
+	}
+	if (bDebugSSRAutoHasObservedMovingTarget)
+	{
+		const FEnclaveSSRReceivedProxyUpdate& Update = Target->DebugGetLastReceivedProxyUpdate();
+		const double SecondsSinceUpdate = GetWorld()->GetTimeSeconds() - Update.ClientReceiveWorldSeconds;
+		if (Update.ClientReceiveWorldSeconds < 0.0 || SecondsSinceUpdate > 1.0)
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Warning,
+				"SSRAuto TARGET_STALLED target=%s lastUpdateAgeMs=%.1f (debug only)",
+				*GetNameSafe(Target), SecondsSinceUpdate * 1000.0);
+			StopDebugSSRAutoFire(TEXT("target_replication_stalled"));
+			return;
+		}
+	}
+
+	if (DebugSSRAutoReloadDelaySeconds > 0.0f)
+	{
+		DebugSSRAutoReloadDelaySeconds -= DeltaSeconds;
+		return;
+	}
+	DebugSSRAutoUntilNextShotSeconds -= DeltaSeconds;
+	if (DebugSSRAutoUntilNextShotSeconds > 0.0f)
+	{
+		return;
+	}
+	DebugSSRAutoUntilNextShotSeconds = 0.40f;
+
+	// Never bypass Fire's ordinary ammo costs or cooldown. Reload by dispatching
+	// the same semantic Input.Item.Action.Reload that a user invokes.
+	if (!Firearm->CanConsumeAmmo())
+	{
+		if (++DebugSSRAutoConsecutiveReloadFailures > 3)
+		{
+			StopDebugSSRAutoFire(TEXT("reload_not_completing"));
+			return;
+		}
+		++DebugSSRAutoReloadCount;
+		HandleInput(FInputActionValue(true), ETriggerEvent::Started,
+			EnclaveGameplayTags::Input_Item_Action_Reload, false);
+		DebugSSRAutoReloadDelaySeconds = 3.5f;
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRAuto RELOAD attempt=%d ammo=%d waitSeconds=3.5 (normal semantic GAS input; DEBUG ONLY)",
+			DebugSSRAutoReloadCount, Firearm->GetCurrentMagazineAmmo());
+		return;
+	}
+	DebugSSRAutoConsecutiveReloadFailures = 0;
+
+	// Match D1.1A's approximate mesh-anchored reference capsule. The actual
+	// server classifier independently decides the resulting shot category.
+	const UCapsuleComponent* Capsule = Target->GetCapsuleComponent();
+	const FVector SmoothOffset = Capsule->GetComponentTransform().TransformVectorNoScale(
+		Target->GetMesh()->GetRelativeLocation() - Target->GetBaseTranslationOffset());
+	const FVector ReferenceCenter = Capsule->GetComponentLocation() + SmoothOffset;
+	const FVector Eye = Char->GetPawnViewLocation();
+	const FVector Forward = (ReferenceCenter - Eye).GetSafeNormal();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward).GetSafeNormal();
+	if (Forward.IsNearlyZero() || Right.IsNearlyZero())
+	{
+		StopDebugSSRAutoFire(TEXT("invalid_target_direction"));
+		return;
+	}
+
+	const bool bAimForClearHit = (DebugSSRAutoAttemptCount % 2) == 0;
+	const float RadiusCm = Capsule->GetScaledCapsuleRadius();
+	const float HalfHeightCm = Capsule->GetScaledCapsuleHalfHeight();
+	const float Side = DebugSSRAutoRandom.RandRange(0, 1) == 0 ? -1.0f : 1.0f;
+	const float OffsetCm = bAimForClearHit
+		? DebugSSRAutoRandom.FRandRange(0.0f, FMath::Max(0.0f, RadiusCm - 20.0f)) * Side
+		: (RadiusCm + DebugSSRAutoRandom.FRandRange(18.0f, 30.0f)) * Side;
+	const float VerticalOffsetCm = bAimForClearHit
+		? DebugSSRAutoRandom.FRandRange(-0.2f, 0.2f) * FMath::Max(0.0f, HalfHeightCm - RadiusCm)
+		: 0.0f;
+	const FVector AimPoint = ReferenceCenter + Right * OffsetCm + FVector::UpVector * VerticalOffsetCm;
+	const FRotator AimRotation = (AimPoint - Eye).Rotation();
+
+	// Set the ACTUAL control rotation used by the pawn-eye gameplay shot ray,
+	// then dispatch through PlayerController::HandleInput -> Avatar InputRouter
+	// -> Equipment -> GAS. The server still validates every real shot normally.
+	SetControlRotation(AimRotation);
+	++DebugSSRAutoAttemptCount;
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRAuto ATTEMPT number=%d intended=%s target=%s offsetCm=%.1f verticalCm=%.1f"
+		" ammoBefore=%d (actual class from SSRGameplay CLIENT/SERVER; DEBUG ONLY)",
+		DebugSSRAutoAttemptCount, bAimForClearHit ? TEXT("clear_hit") : TEXT("clear_miss"),
+		*GetNameSafe(Target), OffsetCm, VerticalOffsetCm, Firearm->GetCurrentMagazineAmmo());
+	HandleInput(FInputActionValue(true), ETriggerEvent::Started,
+		EnclaveGameplayTags::Input_Item_Action_Primary, false);
+}
+
 void AEnclavePlayerController::StopDebugSSRStrafe(const TCHAR* Reason)
 {
 	if (bDebugSSRStrafeEnabled)
@@ -1198,6 +1456,14 @@ void AEnclavePlayerController::StopDebugSSRStrafe(const TCHAR* Reason)
 			"SSRPlayerStrafe LOCAL STOP pawn=%s reason=%s elapsedSeconds=%.1f (debug only)",
 			*GetNameSafe(GetPawn()), Reason, DebugSSRStrafeElapsedSeconds);
 	}
+	// Release the original pawn's protection, even if possession changed.
+	if (AEnclaveCharacter* Protected = DebugSSRStrafeProtectedPawn.Get())
+	{
+		Protected->DebugSetSSRStrafeDamageSuppressed(false);
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRPlayerStrafe LOCAL PROTECT pawn=%s damageSuppressed=0 (debug only)", *GetNameSafe(Protected));
+	}
+	DebugSSRStrafeProtectedPawn.Reset();
 	bDebugSSRStrafeEnabled = false;
 }
 #endif
@@ -1291,6 +1557,7 @@ void AEnclavePlayerController::Tick(float DeltaSeconds)
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	DebugTickSSRClockSync();
+	TickDebugSSRAutoFire(DeltaSeconds);
 
 	if (!bDebugSSRStrafeEnabled)
 	{
@@ -1307,7 +1574,7 @@ void AEnclavePlayerController::Tick(float DeltaSeconds)
 	}
 
 	DebugSSRStrafeElapsedSeconds += DeltaSeconds;
-	if (DebugSSRStrafeElapsedSeconds >= 30.0f)
+	if (DebugSSRStrafeElapsedSeconds >= FMath::Clamp(CVarDebugSSRStrafeDuration.GetValueOnGameThread(), 10.0f, 180.0f))
 	{
 		StopDebugSSRStrafe(TEXT("timeout"));
 		return;

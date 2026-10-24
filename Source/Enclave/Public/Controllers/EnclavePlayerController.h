@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/NetSerialization.h"
+#include "Math/RandomStream.h"
 #include "Input/Core/EnclaveInputTypes.h"
 #include "Combat/EnclaveSSRGameplayClaim.h"
 #include "EnclavePlayerController.generated.h"
@@ -52,11 +53,21 @@ public:
 	 * C4E development rig: drive THIS locally owned Enclave pawn with normal
 	 * CharacterMovement input, reversing across a short lateral lane.
 	 * Enter `EnclaveDebugSSRStrafe 1` in the target player's PIE console.
-	 * Enter `EnclaveDebugSSRStrafe 0` to stop; also stops after 30 seconds.
+	 * Enter `EnclaveDebugSSRStrafe 0` to stop; default duration is 30 seconds.
+	 * Set `Enclave.Debug.SSRStrafeDuration 180` before starting for longer automated runs.
 	 * This is not an AI/server-authoritative movement override or an SSR input.
 	 */
 	UFUNCTION(Exec)
 	void EnclaveDebugSSRStrafe(int32 bEnable);
+
+	/** D1.1B: reproducible local-client shooting through normal semantic Primary/Reload
+	 * input and GAS, with no separate shot RPC or server-side fire shortcut.
+	 * Requires Enclave.Debug.SSRGameplayGate 1 on the client and server.
+	 * Start/stop: EnclaveDebugSSRAutoFire 1 / EnclaveDebugSSRAutoFire 0.
+	 * Optional seed CVar: Enclave.Debug.SSRAutoSeed (set BEFORE starting).
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugSSRAutoFire(int32 bEnable);
 
 	/** Opt-in, non-gameplay per-shot camera-vs-authoritative-ray diagnostic. */
 	static bool IsShotAlignmentDebugEnabled();
@@ -198,6 +209,23 @@ private:
 	float DebugSSRStrafeNextStatusSeconds = 0.0f;
 	int32 DebugSSRStrafeDirectionSign = 1;
 	bool bDebugSSRStrafeEnabled = false;
+	TWeakObjectPtr<AEnclaveCharacter> DebugSSRStrafeProtectedPawn;
+
+	// D1.1B automated shot sampling; never replicated or compiled for Test/Shipping.
+	void StopDebugSSRAutoFire(const TCHAR* Reason);
+	void TickDebugSSRAutoFire(float DeltaSeconds);
+	bool ChooseDebugSSRAutoTarget();
+	TWeakObjectPtr<AEnclaveCharacter> DebugSSRAutoTarget;
+	FRandomStream DebugSSRAutoRandom;
+	TWeakObjectPtr<APawn> DebugSSRAutoOriginalPawn;
+	float DebugSSRAutoElapsedSeconds = 0.0f;
+	float DebugSSRAutoUntilNextShotSeconds = 0.0f;
+	float DebugSSRAutoReloadDelaySeconds = 0.0f;
+	int32 DebugSSRAutoAttemptCount = 0;
+	int32 DebugSSRAutoReloadCount = 0;
+	int32 DebugSSRAutoConsecutiveReloadFailures = 0;
+	bool bDebugSSRAutoHasObservedMovingTarget = false;
+	bool bDebugSSRAutoEnabled = false;
 
 	// C4F.1: private, nonreplicated, opt-in clock-observation state.
 	// Compare adjacent frames to identify server-time estimate offset steps;

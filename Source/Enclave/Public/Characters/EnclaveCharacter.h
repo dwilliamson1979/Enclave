@@ -68,6 +68,11 @@ public:
 	virtual void OnRep_ReplicatedMovement() override;
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	const FEnclaveSSRReceivedProxyUpdate& DebugGetLastReceivedProxyUpdate() const { return DebugLastReceivedProxyUpdate; }
+
+	// Server-only, transient D1.1B test protection. This is never replicated and
+	// is enabled only while the local-authority debug strafe rig is active.
+	void DebugSetSSRStrafeDamageSuppressed(bool bSuppress) { if (HasAuthority()) { bDebugSSRStrafeDamageSuppressed = bSuppress; } }
+	bool DebugIsSSRStrafeDamageSuppressed() const { return HasAuthority() && bDebugSSRStrafeDamageSuppressed; }
 #endif
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
@@ -120,6 +125,7 @@ private:
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	// Updated by OnRep_ReplicatedMovement on simulated proxies only, never replicated.
 	FEnclaveSSRReceivedProxyUpdate DebugLastReceivedProxyUpdate;
+	bool bDebugSSRStrafeDamageSuppressed = false;
 #endif
 	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
 	void InitializeAbilityActorInfo();
