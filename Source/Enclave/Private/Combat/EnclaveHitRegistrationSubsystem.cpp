@@ -467,19 +467,42 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareHistoricalCapsules(const FEnc
 			Query.ShotSequence);
 	}
 
+	// C4E telemetry: a miss must not hide the presence of a moving player
+	// target. Count player-owned targets in this authoritative world, separately
+	// from the historical intersection (which remains entirely unchanged).
+	int32 ServerPlayerTargets = 0;
+	int32 MovingPlayerTargets = 0;
+	double MaxPlayerTargetSpeedCmS = 0.0;
+	for (TActorIterator<AEnclaveCharacter> It(World); It; ++It)
+	{
+		const AEnclaveCharacter* Target = *It;
+		if (!IsValid(Target) || Target == Shooter || !Target->IsPlayerControlled())
+		{
+			continue;
+		}
+		++ServerPlayerTargets;
+		const double SpeedCmS = Target->GetVelocity().Size2D();
+		MaxPlayerTargetSpeedCmS = FMath::Max(MaxPlayerTargetSpeedCmS, SpeedCmS);
+		if (SpeedCmS >= 25.0)
+		{
+			++MovingPlayerTargets;
+		}
+	}
+
 	// For real remote-player testing, differentiate a PlayerController target from
 	// a patrol/AI target. The server-derived RTT anchor is NOT authoritative yet.
 	const bool bServerHasHit = bServerTimeValid && ServerResult.bHit;
 	const bool bServerMatchesLive = bServerHasHit && bLiveHit && LiveHit.GetActor() == ServerResult.Target;
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRShadow ANCHORS key=%u clientValid=%d clientCandidate=%s clientHit=%d serverValid=%d serverCandidate=%s serverTargetIsPlayer=%d serverHit=%d serverMatchLive=%d serverAvailable=%d serverMissing=%d serverEntryCm=%.1f worldOccluded=%d liveActor=%s (SERVER RTT ANCHOR ZERO-SMOOTHING BASELINE; SHADOW ONLY; no gameplay effect)",
+		"SSRShadow ANCHORS key=%u clientValid=%d clientCandidate=%s clientHit=%d serverValid=%d serverCandidate=%s serverTargetIsPlayer=%d serverHit=%d serverMatchLive=%d serverAvailable=%d serverMissing=%d serverEntryCm=%.1f worldOccluded=%d liveActor=%s serverPlayerTargets=%d movingPlayerTargets=%d maxPlayerTargetSpeedCmS=%.1f (SERVER RTT ANCHOR ZERO-SMOOTHING BASELINE; SHADOW ONLY; no gameplay effect)",
 		Query.ShotSequence, bClientTimeValid ? 1 : 0, *GetNameSafe(ClientResult.Target),
 		ClientResult.bHit ? 1 : 0, bServerTimeValid ? 1 : 0,
 		*GetNameSafe(ServerResult.Target),
 		(IsValid(ServerResult.Target) && ServerResult.Target->IsPlayerControlled()) ? 1 : 0,
 		bServerHasHit ? 1 : 0, bServerMatchesLive ? 1 : 0,
 		ServerResult.Available, ServerResult.Missing, ServerResult.EntryDistanceCm,
-		ServerResult.bOccluded ? 1 : 0, *GetNameSafe(LiveHit.GetActor()));
+		ServerResult.bOccluded ? 1 : 0, *GetNameSafe(LiveHit.GetActor()),
+		ServerPlayerTargets, MovingPlayerTargets, MaxPlayerTargetSpeedCmS);
 }
 
 #endif

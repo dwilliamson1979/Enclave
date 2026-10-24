@@ -25,6 +25,12 @@ public:
 	// UActorComponent
 	virtual void InitializeComponent() override;
 
+	/** Returns whether the current movement mode matches the specified mode. */
+	bool IsInMovementMode(EMovementMode InMovementMode) const;
+
+	/** Returns whether locomotion is operational (active and not MOVE_None). */
+	bool IsLocomotionEnabled() const;
+
 	// IEnclaveInputHandlerInterface
 	virtual const FGameplayTagContainer& GetInputFilters() const override;
 	virtual bool HandleInput(const FEnclaveInputEvent& InputEvent) override;

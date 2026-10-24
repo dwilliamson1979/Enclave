@@ -1,5 +1,6 @@
 #include "Controllers/EnclavePlayerController.h"
 #include "Characters/EnclaveCharacter.h"
+#include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Debug/EnclaveSSRPatrolComponent.h"
@@ -472,6 +473,7 @@ void AEnclavePlayerController::DebugPruneShotHistory()
 
 AEnclavePlayerController::AEnclavePlayerController()
 {
+	PrimaryActorTick.bCanEverTick = true;
 	bShowMouseCursor = false;
 	DefaultMouseCursor = EMouseCursor::Default;
 
@@ -724,6 +726,9 @@ void AEnclavePlayerController::AcknowledgePossession(APawn* P)
 
 void AEnclavePlayerController::OnUnPossess()
 {
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	StopDebugSSRStrafe(TEXT("unpossessed"));
+#endif
 	if (ActiveAvatarInputConfig)
 	{
 		DeactivateInputConfig(ActiveAvatarInputConfig);
@@ -744,6 +749,115 @@ void AEnclavePlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	RefreshPossessedPawnInputState();
+}
+
+// A local PlayerController feeds the exact same AddMovementInput path that the
+// regular locomotion handler uses. Remote owners therefore still send UE's
+// predicted CharacterMovement moves through their normal ServerMove pathway.
+void AEnclavePlayerController::EnclaveDebugSSRStrafe(int32 bEnable)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (bEnable == 0)
+	{
+		StopDebugSSRStrafe(TEXT("manual"));
+		return;
+	}
+
+	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
+	UEnclaveCharacterMovementComponent* Movement = IsValid(Char) ? Cast<UEnclaveCharacterMovementComponent>(Char->GetCharacterMovement()) : nullptr;
+	if (!IsLocalController() || !IsValid(Char) || !Char->IsLocallyControlled() ||
+		!IsValid(Movement) || !Movement->IsLocomotionEnabled())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRPlayerStrafe LOCAL start_rejected controller=%s reason=requires_locally_controlled_movable_enclave_character",
+			*GetNameSafe(this));
+		return;
+	}
+
+	const FRotator Yaw(0.0f, GetControlRotation().Yaw, 0.0f);
+	DebugSSRStrafeRight = FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y).GetSafeNormal2D();
+	DebugSSRStrafeOrigin = Char->GetActorLocation();
+	DebugSSRStrafeDirectionSign = 1;
+	DebugSSRStrafeElapsedSeconds = 0.0f;
+	DebugSSRStrafePauseSeconds = 0.0f;
+	DebugSSRStrafeNextStatusSeconds = 2.0f;
+	bDebugSSRStrafeEnabled = !DebugSSRStrafeRight.IsNearlyZero();
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRPlayerStrafe LOCAL %s pawn=%s role=%d laneHalfWidthCm=250 durationSeconds=30 (normal CharacterMovement; debug only)",
+		bDebugSSRStrafeEnabled ? TEXT("START") : TEXT("start_rejected_zero_direction"),
+		*GetNameSafe(Char), static_cast<int32>(Char->GetLocalRole()));
+#else
+	(void)bEnable;
+#endif
+}
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+void AEnclavePlayerController::StopDebugSSRStrafe(const TCHAR* Reason)
+{
+	if (bDebugSSRStrafeEnabled)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRPlayerStrafe LOCAL STOP pawn=%s reason=%s elapsedSeconds=%.1f (debug only)",
+			*GetNameSafe(GetPawn()), Reason, DebugSSRStrafeElapsedSeconds);
+	}
+	bDebugSSRStrafeEnabled = false;
+}
+#endif
+
+void AEnclavePlayerController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!bDebugSSRStrafeEnabled)
+	{
+		return;
+	}
+
+	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
+	UEnclaveCharacterMovementComponent* Movement = IsValid(Char) ? Cast<UEnclaveCharacterMovementComponent>(Char->GetCharacterMovement()) : nullptr;
+	if (!IsLocalController() || !IsValid(Char) || !Char->IsLocallyControlled() ||
+		!IsValid(Movement) || !Movement->IsLocomotionEnabled())
+	{
+		StopDebugSSRStrafe(TEXT("pawn_or_movement_unavailable"));
+		return;
+	}
+
+	DebugSSRStrafeElapsedSeconds += DeltaSeconds;
+	if (DebugSSRStrafeElapsedSeconds >= 30.0f)
+	{
+		StopDebugSSRStrafe(TEXT("timeout"));
+		return;
+	}
+
+	if (DebugSSRStrafePauseSeconds > 0.0f)
+	{
+		DebugSSRStrafePauseSeconds = FMath::Max(0.0f, DebugSSRStrafePauseSeconds - DeltaSeconds);
+		return;
+	}
+
+	const float OffsetCm = FVector::DotProduct(Char->GetActorLocation() - DebugSSRStrafeOrigin, DebugSSRStrafeRight);
+	if ((DebugSSRStrafeDirectionSign > 0 && OffsetCm >= 250.0f) ||
+		(DebugSSRStrafeDirectionSign < 0 && OffsetCm <= -250.0f))
+	{
+		DebugSSRStrafeDirectionSign *= -1;
+		DebugSSRStrafePauseSeconds = 0.15f;
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRPlayerStrafe LOCAL TURN pawn=%s offsetCm=%.1f newSign=%d (debug only)",
+			*GetNameSafe(Char), OffsetCm, DebugSSRStrafeDirectionSign);
+		return;
+	}
+
+	Char->AddMovementInput(DebugSSRStrafeRight, static_cast<float>(DebugSSRStrafeDirectionSign));
+	if (DebugSSRStrafeElapsedSeconds >= DebugSSRStrafeNextStatusSeconds)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRPlayerStrafe LOCAL MOTION pawn=%s role=%d speedCmS=%.1f offsetCm=%.1f (debug only)",
+			*GetNameSafe(Char), static_cast<int32>(Char->GetLocalRole()),
+			Char->GetVelocity().Size2D(), OffsetCm);
+		DebugSSRStrafeNextStatusSeconds += 2.0f;
+	}
+#endif
 }
 
 void AEnclavePlayerController::SetupInputComponent()

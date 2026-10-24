@@ -18,6 +18,16 @@ void UEnclaveCharacterMovementComponent::InitializeComponent()
 	RebuildInputFilters();
 }
 
+bool UEnclaveCharacterMovementComponent::IsInMovementMode(EMovementMode InMovementMode) const
+{
+	return MovementMode == InMovementMode;
+}
+
+bool UEnclaveCharacterMovementComponent::IsLocomotionEnabled() const
+{
+	return IsActive() && !IsInMovementMode(MOVE_None);
+}
+
 const FGameplayTagContainer& UEnclaveCharacterMovementComponent::GetInputFilters() const
 {
 	return InputFilters;

@@ -47,6 +47,16 @@ public:
 	UFUNCTION(Exec)
 	void EnclaveDebugClearSlot(const FString& SlotTagName);
 
+	/**
+	 * C4E development rig: drive THIS locally owned Enclave pawn with normal
+	 * CharacterMovement input, reversing across a short lateral lane.
+	 * Enter `EnclaveDebugSSRStrafe 1` in the target player's PIE console.
+	 * Enter `EnclaveDebugSSRStrafe 0` to stop; also stops after 30 seconds.
+	 * This is not an AI/server-authoritative movement override or an SSR input.
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugSSRStrafe(int32 bEnable);
+
 	/** Opt-in, non-gameplay per-shot camera-vs-authoritative-ray diagnostic. */
 	static bool IsShotAlignmentDebugEnabled();
 
@@ -72,6 +82,7 @@ protected:
 	virtual void OnUnPossess() override;
 
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupInputComponent() override;
 
 	/**
@@ -138,6 +149,18 @@ private:
 
 	// C4 diagnostic RPCs must not queue unbounded delayed history comparisons.
 	int32 PendingSSRVisualTimingMatches = 0;
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	// C4E test rig state is local to the owning PlayerController; never replicated.
+	void StopDebugSSRStrafe(const TCHAR* Reason);
+	FVector DebugSSRStrafeOrigin = FVector::ZeroVector;
+	FVector DebugSSRStrafeRight = FVector::ZeroVector;
+	float DebugSSRStrafeElapsedSeconds = 0.0f;
+	float DebugSSRStrafePauseSeconds = 0.0f;
+	float DebugSSRStrafeNextStatusSeconds = 0.0f;
+	int32 DebugSSRStrafeDirectionSign = 1;
+	bool bDebugSSRStrafeEnabled = false;
+#endif
 
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents);
 
