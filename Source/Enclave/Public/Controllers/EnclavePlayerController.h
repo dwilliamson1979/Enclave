@@ -63,6 +63,13 @@ public:
 	/** Called only by a locally controlled GA_Fire activation (after CommitAbility). */
 	void DebugCaptureLocalShot(int32 PredictionKey);
 
+	/** Opt-in Stage C4F clock-only probe. Not part of validated shot intent.
+	 * The server compares process times only in same-process PIE.
+	 */
+	void DebugProbeSSRShotClock(int32 PredictionKey, double ClientShotServerTimeSeconds);
+
+	static bool IsSSRClockDebugEnabled();
+
 	/** Stage C1: sample a locally simulated patrol's visual proxy anchor at shot capture.
 	 * Debug-only, no effect on hit registration. Sends an unreliable telemetry RPC.
 	 */
@@ -98,6 +105,12 @@ private:
 	/** Optional debug-only telemetry; no gameplay decision may consume this RPC.
 	 * Its independent arrival time must not be confused with Fire target-data receipt.
 	 */
+	/** Untrusted diagnostics only: independent from the GAS shot-intent RPC. */
+	UFUNCTION(Server, Unreliable)
+	void ServerEnclaveDebugShotClockProbe(int32 PredictionKey, uint32 ClientProcessId,
+		double ClientCaptureProcessSeconds, double ClientCaptureWorldSeconds,
+		double ClientEstimatedServerSeconds);
+
 	UFUNCTION(Server, Unreliable)
 	void ServerEnclaveDebugPatrolVisualSample(int32 PredictionKey, AEnclaveCharacter* PatrolTarget,
 		FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds,

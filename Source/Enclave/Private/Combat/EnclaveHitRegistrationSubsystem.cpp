@@ -19,6 +19,9 @@
 #include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
 #include "Debug/EnclaveDebug.h"
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+#include "HAL/PlatformTime.h"
+#endif
 
 static TAutoConsoleVariable<bool> CVarDebugSSRPreflight(
 	TEXT("Enclave.Debug.SSRPreflight"),
@@ -99,6 +102,18 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 	}
 	const double ServerReceiptTimeSeconds = GameState->GetServerWorldTimeSeconds();
 	const double DeltaSeconds = ServerReceiptTimeSeconds - Intent.ClientServerTimeSeconds;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (AEnclavePlayerController::IsSSRClockDebugEnabled())
+	{
+		const APawn* ShooterPawn = Cast<APawn>(Shooter);
+		const APlayerState* ShooterPS = ShooterPawn ? ShooterPawn->GetPlayerState() : nullptr;
+		const double RTTMs = IsValid(ShooterPS) ? ShooterPS->GetPingInMilliseconds() : -1.0;
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRClockIntent SERVER key=%u intentShotTime=%.6f serverReceiptWorld=%.6f serverReceiptProcess=%.6f observedShotAgeMs=%+.1f playerStateRTTMs=%.1f (REAL GAS INTENT; timestamp UNTRUSTED; no authority change)",
+			ExpectedShotSequence, Intent.ClientServerTimeSeconds, ServerReceiptTimeSeconds,
+			FPlatformTime::Seconds(), DeltaSeconds * 1000.0, RTTMs);
+	}
+#endif
 	if (DeltaSeconds > EnclaveShotValidation::MaxShotAgeSeconds ||
 		DeltaSeconds < -EnclaveShotValidation::MaxFutureLeadSeconds)
 	{

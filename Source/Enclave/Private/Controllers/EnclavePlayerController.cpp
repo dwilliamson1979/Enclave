@@ -45,6 +45,23 @@ static TAutoConsoleVariable<bool> CVarDebugShotAlignment(
 	TEXT("Compare the predicted owning-client camera ray to the exact authoritative hitscan ray for each GAS Fire activation. Enable on BOTH server and owning client in multi-process PIE."),
 	ECVF_Cheat);
 
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+static TAutoConsoleVariable<bool> CVarDebugSSRClock(
+	TEXT("Enclave.Debug.SSRClock"),
+	false,
+	TEXT("Stage C4F: correlate client GameState shot clock with server clock via a same-process monotonic clock probe. Enable on both PIE client and server. Diagnostic-only; no effect on shots."),
+	ECVF_Cheat);
+#endif
+
+bool AEnclavePlayerController::IsSSRClockDebugEnabled()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	return CVarDebugSSRClock.GetValueOnGameThread();
+#else
+	return false;
+#endif
+}
+
 bool AEnclavePlayerController::IsShotAlignmentDebugEnabled()
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
@@ -93,6 +110,84 @@ void AEnclavePlayerController::DebugCaptureLocalShot(int32 PredictionKey)
 		"ShotAlign CLIENT key=%d origin=%s dir=%s", PredictionKey,
 		*Ray.Start.ToCompactString(), *(Ray.End - Ray.Start).GetSafeNormal().ToCompactString());
 	DebugCompareShotIfReady(PredictionKey);
+#endif
+}
+
+void AEnclavePlayerController::DebugProbeSSRShotClock(int32 PredictionKey, double ClientShotServerTimeSeconds)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!IsSSRClockDebugEnabled() || !IsLocalController() || !GetWorld() ||
+		!FMath::IsFinite(ClientShotServerTimeSeconds) || ClientShotServerTimeSeconds < 0.0)
+	{
+		return;
+	}
+
+	// Called immediately after GA_Fire reads the client GameState clock.
+	// Capture the monotonic timestamp adjacent to that clock read. Neither
+	// this RPC nor its payload participates in shot validation or hit authority.
+	const double ClientProcessSeconds = FPlatformTime::Seconds();
+	const double ClientWorldSeconds = GetWorld()->GetTimeSeconds();
+	const uint32 ClientPid = FPlatformProcess::GetCurrentProcessId();
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRClockProbe CLIENT key=%d pid=%u shotEstimate=%.6f localWorld=%.6f clientEstimateMinusLocalWorldMs=%+.1f processCapture=%.6f (DEBUG ONLY; independent of GAS target data)",
+		PredictionKey, ClientPid, ClientShotServerTimeSeconds, ClientWorldSeconds,
+		(ClientShotServerTimeSeconds - ClientWorldSeconds) * 1000.0, ClientProcessSeconds);
+	ServerEnclaveDebugShotClockProbe(PredictionKey, ClientPid, ClientProcessSeconds,
+		ClientWorldSeconds, ClientShotServerTimeSeconds);
+#else
+	(void)PredictionKey;
+	(void)ClientShotServerTimeSeconds;
+#endif
+}
+
+void AEnclavePlayerController::ServerEnclaveDebugShotClockProbe_Implementation(int32 PredictionKey,
+	uint32 ClientProcessId, double ClientCaptureProcessSeconds, double ClientCaptureWorldSeconds,
+	double ClientEstimatedServerSeconds)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (!IsSSRClockDebugEnabled() || !HasAuthority() || !GetWorld() ||
+		!FMath::IsFinite(ClientCaptureProcessSeconds) || ClientCaptureProcessSeconds < 0.0 ||
+		!FMath::IsFinite(ClientCaptureWorldSeconds) || ClientCaptureWorldSeconds < 0.0 ||
+		!FMath::IsFinite(ClientEstimatedServerSeconds) || ClientEstimatedServerSeconds < 0.0)
+	{
+		return;
+	}
+
+	const AGameStateBase* GameState = GetWorld()->GetGameState();
+	if (!IsValid(GameState))
+	{
+		return;
+	}
+	const double ServerReceiptProcessSeconds = FPlatformTime::Seconds();
+	const double ServerWorldSeconds = GameState->GetServerWorldTimeSeconds();
+	const uint32 ServerPid = FPlatformProcess::GetCurrentProcessId();
+	const double ElapsedProcessSeconds = ServerReceiptProcessSeconds - ClientCaptureProcessSeconds;
+	const bool bComparable = ClientProcessId == ServerPid &&
+		ElapsedProcessSeconds >= 0.0 && ElapsedProcessSeconds <= 0.500;
+
+	// This projection is a DEBUG approximation: assumes unpaused world time
+	// advances at the same rate as real monotonic time over the RPC's flight.
+	// It is NOT valid across processes, time dilation, or large frame stalls.
+	const double EstimatedServerAtClientCapture = bComparable
+		? ServerWorldSeconds - ElapsedProcessSeconds : -1.0;
+	const double ClockEstimateLeadMs = bComparable
+		? (ClientEstimatedServerSeconds - EstimatedServerAtClientCapture) * 1000.0 : 0.0;
+	const APlayerState* ShooterPS = GetPlayerState<APlayerState>();
+	const double RTTMs = IsValid(ShooterPS) ? ShooterPS->GetPingInMilliseconds() : -1.0;
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRClockProbe SERVER key=%d clientPid=%u serverPid=%u mode=%s clockLeadValid=%d estimatedClockLeadMs=%+.1f captureToProbeMs=%.1f apparentShotAgeAtProbeMs=%+.1f clientEstimate=%.6f serverAtProbe=%.6f serverAtCaptureProjected=%.6f clientWorld=%.6f serverWorld=%.6f playerStateRTTMs=%.1f (UNTRUSTED DEBUG RPC; process projection is not render timing or gameplay authority)",
+		PredictionKey, ClientProcessId, ServerPid,
+		bComparable ? TEXT("shared_process") : TEXT("not_comparable"), bComparable ? 1 : 0, ClockEstimateLeadMs,
+		bComparable ? ElapsedProcessSeconds * 1000.0 : -1.0,
+		(ServerWorldSeconds - ClientEstimatedServerSeconds) * 1000.0,
+		ClientEstimatedServerSeconds, ServerWorldSeconds, EstimatedServerAtClientCapture,
+		ClientCaptureWorldSeconds, GetWorld()->GetTimeSeconds(), RTTMs);
+#else
+	(void)PredictionKey;
+	(void)ClientProcessId;
+	(void)ClientCaptureProcessSeconds;
+	(void)ClientCaptureWorldSeconds;
+	(void)ClientEstimatedServerSeconds;
 #endif
 }
 
