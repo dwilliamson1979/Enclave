@@ -57,9 +57,13 @@ static TAutoConsoleVariable<bool> CVarDebugSSRGameplayGate(
 	TEXT("Enclave.Debug.SSRGameplayGate"), false,
 	TEXT("Shadow-only capsule hit/miss gameplay classifier; use on remote client and listen server. NO damage authority."), ECVF_Cheat);
 
+static TAutoConsoleVariable<int32> CVarDebugSSRScenario(
+	TEXT("Enclave.Debug.SSRScenario"), 0,
+	TEXT("D1.1C scenario label on SHOOTER: 0=unassigned, 1=stationary, 2=strafe, 3=reverse, 4=crouch, 5=cover. Debug-only metadata."), ECVF_Cheat);
+
 static TAutoConsoleVariable<int32> CVarDebugSSRAutoSeed(
 	TEXT("Enclave.Debug.SSRAutoSeed"), 1729,
-	TEXT("D1.1B deterministic shot-test random seed; set before EnclaveDebugSSRAutoFire 1."), ECVF_Cheat);
+	TEXT("D1.1B deterministic shot-test random seed; set before Enclave.Debug.SSRAutoFire 1."), ECVF_Cheat);
 
 static TAutoConsoleVariable<float> CVarDebugSSRStrafeDuration(
 	TEXT("Enclave.Debug.SSRStrafeDuration"), 30.0f,
@@ -74,6 +78,95 @@ static TAutoConsoleVariable<bool> CVarDebugSSRClock(
 	false,
 	TEXT("Stage C4F: correlate client GameState shot clock with server clock via a same-process monotonic clock probe. Enable on both PIE client and server. Diagnostic-only; no effect on shots."),
 	ECVF_Cheat);
+#endif
+
+// D1.1C.2: Dotted aliases let all SSR test controls use Enclave.Debug.*.
+// Existing UFUNCTION(Exec) names remain available for older test scripts.
+// A world-aware delegate is necessary in two-player PIE: never route a local
+// shooter command to the listen-server pawn (or vice versa).
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+namespace
+{
+	enum class EEnclaveSSRConsoleAction : uint8
+	{
+		Crouch,
+		Strafe,
+		Protect,
+		AutoFire
+	};
+
+	void ExecuteEnclaveSSRConsoleAction(const TArray<FString>& Args, UWorld* World, EEnclaveSSRConsoleAction Action)
+	{
+		if (Args.Num() != 1 || (Args[0] != TEXT("0") && Args[0] != TEXT("1")))
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Warning,
+				"SSRConsole rejected=expected_single_0_or_1_arg (DEBUG ONLY)");
+			return;
+		}
+
+		if (!IsValid(World) || !World->IsGameWorld())
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Warning,
+				"SSRConsole rejected=no_game_world (DEBUG ONLY)");
+			return;
+		}
+
+		AEnclavePlayerController* LocalController = nullptr;
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		{
+			AEnclavePlayerController* Candidate = Cast<AEnclavePlayerController>(It->Get());
+			if (IsValid(Candidate) && Candidate->IsLocalController())
+			{
+				if (LocalController)
+				{
+					ENCLAVE_LOG(LogEnclaveCombat, Warning,
+						"SSRConsole rejected=ambiguous_local_controller (DEBUG ONLY)");
+					return;
+				}
+				LocalController = Candidate;
+			}
+		}
+		if (!LocalController)
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Warning,
+				"SSRConsole rejected=no_local_enclave_controller (DEBUG ONLY)");
+			return;
+		}
+
+		const int32 bEnable = Args[0] == TEXT("1") ? 1 : 0;
+		switch (Action)
+		{
+		case EEnclaveSSRConsoleAction::Crouch:
+			LocalController->EnclaveDebugSSRCrouch(bEnable);
+			break;
+		case EEnclaveSSRConsoleAction::Strafe:
+			LocalController->EnclaveDebugSSRStrafe(bEnable);
+			break;
+		case EEnclaveSSRConsoleAction::Protect:
+			LocalController->EnclaveDebugSSRProtect(bEnable);
+			break;
+		case EEnclaveSSRConsoleAction::AutoFire:
+			LocalController->EnclaveDebugSSRAutoFire(bEnable);
+			break;
+		}
+	}
+
+	static FAutoConsoleCommandWithWorldAndArgs CCmdDebugSSRCrouch(
+		TEXT("Enclave.Debug.SSRCrouch"), TEXT("Request/release debug crouch on the local authoritative target (0/1)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&ExecuteEnclaveSSRConsoleAction, EEnclaveSSRConsoleAction::Crouch), ECVF_Cheat);
+
+	static FAutoConsoleCommandWithWorldAndArgs CCmdDebugSSRStrafe(
+		TEXT("Enclave.Debug.SSRStrafe"), TEXT("Start/stop the local SSR lateral strafe rig (0/1)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&ExecuteEnclaveSSRConsoleAction, EEnclaveSSRConsoleAction::Strafe), ECVF_Cheat);
+
+	static FAutoConsoleCommandWithWorldAndArgs CCmdDebugSSRProtect(
+		TEXT("Enclave.Debug.SSRProtect"), TEXT("Enable/disable debug-only server-local target damage protection (0/1)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&ExecuteEnclaveSSRConsoleAction, EEnclaveSSRConsoleAction::Protect), ECVF_Cheat);
+
+	static FAutoConsoleCommandWithWorldAndArgs CCmdDebugSSRAutoFire(
+		TEXT("Enclave.Debug.SSRAutoFire"), TEXT("Start/stop remote-client seeded GAS-fire sampling (0/1)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&ExecuteEnclaveSSRConsoleAction, EEnclaveSSRConsoleAction::AutoFire), ECVF_Cheat);
+}
 #endif
 
 bool AEnclavePlayerController::IsSSRClockDebugEnabled()
@@ -167,14 +260,16 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
 
 	const FEnclaveSSRReceivedProxyUpdate& Update = Candidate->DebugGetLastReceivedProxyUpdate();
 	const double Elapsed = GetWorld()->GetTimeSeconds() - Update.ClientReceiveWorldSeconds;
-	if (Update.ReceiveCount == 0 || !FMath::IsFinite(Update.ServerStamp) || Update.ServerStamp <= 0.0f ||
-		!FMath::IsFinite(Elapsed) || Elapsed < 0.0 || Elapsed > 0.100)
-	{
-		ENCLAVE_LOG(LogEnclaveCombat, Log,
-			"SSRGameplay CLIENT key=%d status=proxy_update_unavailable elapsedMs=%.2f (DEBUG ONLY)",
-			PredictionKey, Elapsed * 1000.0);
-		return false;
-	}
+	const int32 Scenario = FMath::Clamp(CVarDebugSSRScenario.GetValueOnGameThread(), 0, 5);
+	const bool bFreshUpdate = Update.ReceiveCount != 0 && FMath::IsFinite(Update.ServerStamp) &&
+		Update.ServerStamp > 0.0f && FMath::IsFinite(Elapsed) && Elapsed >= 0.0 && Elapsed <= 0.080;
+	// A truly stationary proxy may not replicate fresh movement at all. Preserve
+	// its diagnostic classification and explicitly request PRESENT fallback;
+	// the server must independently verify stationarity over historical frames.
+	// Even without a fresh update, classify the shot and send an INVALID
+	// timing claim (stamp=0). The server scores its real present-time fallback
+	// instead of quietly dropping difficult shots from the denominator.
+	// Scenario 1 can use the explicit server-verified stationary policy.
 
 	// Mesh-anchored collision proxy is a test approximation, NOT the rendered
 	// skeletal silhouette. The 10 cm inner/outer margins remain unchanged.
@@ -192,13 +287,14 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
 		ShotOrigin, RayEnd, Outer10, DistanceCm, Point);
 	// A clear miss intersects Outer40 (candidate selection) but NOT Outer10.
 	OutClaim.Classification = bClearHit ? 1 : (bWithin10Cm ? 3 : 2);
+	OutClaim.Scenario = static_cast<uint8>(Scenario);
 	OutClaim.Target = Candidate;
-	OutClaim.EchoedMovementStamp = Update.ServerStamp;
-	OutClaim.SecondsSinceMovementUpdate = static_cast<float>(Elapsed);
+	OutClaim.EchoedMovementStamp = bFreshUpdate ? Update.ServerStamp : 0.0f;
+	OutClaim.SecondsSinceMovementUpdate = bFreshUpdate ? static_cast<float>(Elapsed) : 0.0f;
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRGameplay CLIENT key=%d target=%s category=%d stamp=%.6f elapsedMs=%.1f smoothingCm=%.2f (10cm hit/miss margin; clear misses 10-40cm outside capsule; approximate mesh anchor; DEBUG ONLY)",
-		PredictionKey, *GetNameSafe(Candidate), static_cast<int32>(OutClaim.Classification),
-		OutClaim.EchoedMovementStamp, Elapsed * 1000.0, SelectedSmoothingCm);
+		"SSRGameplay CLIENT key=%d target=%s category=%d scenario=%d stamp=%.6f elapsedMs=%.1f smoothingCm=%.2f stationaryFallback=%d (10cm hit/miss margin; clear misses 10-40cm outside capsule; approximate mesh anchor; DEBUG ONLY)",
+		PredictionKey, *GetNameSafe(Candidate), static_cast<int32>(OutClaim.Classification), Scenario,
+		OutClaim.EchoedMovementStamp, Elapsed * 1000.0, SelectedSmoothingCm, bFreshUpdate ? 0 : 1);
 	return true;
 #else
 	(void)PredictionKey;
@@ -1140,6 +1236,8 @@ void AEnclavePlayerController::OnUnPossess()
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	StopDebugSSRAutoFire(TEXT("unpossessed"));
 	StopDebugSSRStrafe(TEXT("unpossessed"));
+	StopDebugSSRCrouch(TEXT("unpossessed"));
+	EnclaveDebugSSRProtect(0);
 #endif
 	if (ActiveAvatarInputConfig)
 	{
@@ -1163,6 +1261,233 @@ void AEnclavePlayerController::BeginPlay()
 	RefreshPossessedPawnInputState();
 }
 
+// D1.1C stationary/crouch test health protection is explicit and local to
+// an authoritative listen-server pawn. It does not replicate or bypass GAS.
+void AEnclavePlayerController::EnclaveDebugSSRProtect(int32 bEnable)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (bEnable == 0)
+	{
+		if (AEnclaveCharacter* Protected = DebugSSRManualProtectedPawn.Get())
+		{
+			const bool bStrafeStillOwnsProtection = DebugSSRStrafeProtectedPawn.Get() == Protected;
+			if (!bStrafeStillOwnsProtection)
+			{
+				Protected->DebugSetSSRStrafeDamageSuppressed(false);
+			}
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRGameplay PROTECT pawn=%s manual=0 strafeActive=%d (DEBUG ONLY)",
+				*GetNameSafe(Protected), bStrafeStillOwnsProtection ? 1 : 0);
+		}
+		DebugSSRManualProtectedPawn.Reset();
+		return;
+	}
+	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
+	if (!IsLocalController() || !IsValid(Char) || !Char->HasAuthority() || !IsSSRGameplayGateEnabled())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRGameplay PROTECT rejected=requires_authoritative_local_target_and_gameplay_gate (DEBUG ONLY)");
+		return;
+	}
+	if (DebugSSRManualProtectedPawn.IsValid() && DebugSSRManualProtectedPawn.Get() != Char)
+	{
+		EnclaveDebugSSRProtect(0);
+	}
+	Char->DebugSetSSRStrafeDamageSuppressed(true);
+	DebugSSRManualProtectedPawn = Char;
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRGameplay PROTECT pawn=%s manual=1 (server-local, DEBUG ONLY)", *GetNameSafe(Char));
+#else
+	(void)bEnable;
+#endif
+}
+
+// D1.1C.1: isolate true crouch geometry without keyboard-focus ambiguity.
+// This runs only on the listen-server target; normal ACharacter movement
+// replicates the resulting crouch state/capsule, not an SSR-specific payload.
+void AEnclavePlayerController::EnclaveDebugSSRCrouch(int32 bEnable)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (bEnable != 0 && bEnable != 1)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRPlayerCrouch rejected=expected_0_or_1 (DEBUG ONLY)");
+		return;
+	}
+
+	// Don't introduce a crouch/stand transition in the middle of a strafe run.
+	if (bEnable == 0 && bDebugSSRStrafeEnabled)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRPlayerCrouch rejected=stop_strafe_before_standing (DEBUG ONLY)");
+		return;
+	}
+
+	// A stop must still be possible after disabling the gameplay gate.
+	if (bEnable == 0)
+	{
+		// Cancels an earlier strafe request queued during the crouch transition.
+		bDebugSSRStrafeQueuedForCrouch = false;
+		if (AEnclaveCharacter* Original = DebugSSRCrouchPawn.Get())
+		{
+			if (Original->HasAuthority())
+			{
+				Original->UnCrouch();
+			}
+			bDebugSSRCrouchDesired = false;
+			bDebugSSRCrouchPending = true;
+			DebugSSRCrouchWaitSeconds = 0.0f;
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRPlayerCrouch REQUEST pawn=%s crouch=0 (normal ACharacter::UnCrouch; DEBUG ONLY)",
+				*GetNameSafe(Original));
+		}
+		return;
+	}
+
+	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
+	UCharacterMovementComponent* Movement = IsValid(Char) ? Char->GetCharacterMovement() : nullptr;
+	if (!IsLocalController() || !IsValid(Char) || !Char->HasAuthority() ||
+		!Char->IsLocallyControlled() || !IsValid(Movement) || !IsSSRGameplayGateEnabled())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRPlayerCrouch rejected=requires_authoritative_local_character_and_gameplay_gate (DEBUG ONLY)");
+		return;
+	}
+	if (bDebugSSRStrafeEnabled)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRPlayerCrouch rejected=strafe_active stop_with_Enclave.Debug.SSRStrafe_0 (DEBUG ONLY)");
+		return;
+	}
+	if (!Movement->CanCrouchInCurrentState())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRPlayerCrouch rejected=cannot_crouch_in_current_state movementMode=%d (DEBUG ONLY)",
+			static_cast<int32>(Movement->MovementMode));
+		return;
+	}
+	if (DebugSSRCrouchPawn.IsValid() && DebugSSRCrouchPawn.Get() != Char)
+	{
+		StopDebugSSRCrouch(TEXT("target_changed"));
+	}
+
+	bDebugSSRStrafeQueuedForCrouch = false;
+	DebugSSRCrouchPawn = Char;
+	bDebugSSRCrouchDesired = true;
+	bDebugSSRCrouchPending = true;
+	DebugSSRCrouchWaitSeconds = 0.0f;
+	Char->Crouch();
+	ENCLAVE_LOG(LogEnclaveCombat, Log,
+		"SSRPlayerCrouch REQUEST pawn=%s crouch=1 verification=pending_next_movement_tick (normal ACharacter::Crouch; DEBUG ONLY)",
+		*GetNameSafe(Char));
+#else
+	(void)bEnable;
+#endif
+}
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+void AEnclavePlayerController::StopDebugSSRCrouch(const TCHAR* Reason)
+{
+	if (AEnclaveCharacter* Original = DebugSSRCrouchPawn.Get())
+	{
+		if (Original->HasAuthority())
+		{
+			Original->UnCrouch();
+		}
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRPlayerCrouch STOP pawn=%s reason=%s restoreStanding=1 (DEBUG ONLY)",
+			*GetNameSafe(Original), Reason);
+	}
+	if (bDebugSSRStrafeQueuedForCrouch)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRPlayerStrafe LOCAL QUEUE_CANCELLED reason=%s (DEBUG ONLY)", Reason);
+	}
+	bDebugSSRStrafeQueuedForCrouch = false;
+	DebugSSRCrouchPawn.Reset();
+	bDebugSSRCrouchDesired = false;
+	bDebugSSRCrouchPending = false;
+	DebugSSRCrouchWaitSeconds = 0.0f;
+}
+
+void AEnclavePlayerController::TickDebugSSRCrouch(float DeltaSeconds)
+{
+	AEnclaveCharacter* Char = DebugSSRCrouchPawn.Get();
+	if (!IsValid(Char))
+	{
+		if (bDebugSSRStrafeQueuedForCrouch)
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Warning,
+				"SSRPlayerStrafe LOCAL QUEUE_CANCELLED reason=target_invalid (DEBUG ONLY)");
+		}
+		bDebugSSRStrafeQueuedForCrouch = false;
+		DebugSSRCrouchPawn.Reset();
+		bDebugSSRCrouchPending = false;
+		bDebugSSRCrouchDesired = false;
+		return;
+	}
+	if (!Char->HasAuthority() || Char != GetPawn())
+	{
+		StopDebugSSRCrouch(TEXT("authority_or_possession_changed"));
+		return;
+	}
+
+	const UCharacterMovementComponent* Movement = Char->GetCharacterMovement();
+	const UCapsuleComponent* Capsule = Char->GetCapsuleComponent();
+	if (!IsValid(Movement) || !IsValid(Capsule))
+	{
+		StopDebugSSRCrouch(TEXT("movement_or_capsule_missing"));
+		return;
+	}
+
+	const bool bActualCrouched = Movement->IsCrouching();
+	if (bDebugSSRCrouchPending)
+	{
+		if (bActualCrouched == bDebugSSRCrouchDesired)
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRPlayerCrouch VERIFIED pawn=%s crouched=%d halfHeightCm=%.2f radiusCm=%.2f (authoritative capsule; DEBUG ONLY)",
+				*GetNameSafe(Char), bActualCrouched ? 1 : 0,
+				Capsule->GetUnscaledCapsuleHalfHeight(), Capsule->GetUnscaledCapsuleRadius());
+			bDebugSSRCrouchPending = false;
+			if (bDebugSSRCrouchDesired && bDebugSSRStrafeQueuedForCrouch)
+			{
+				bDebugSSRStrafeQueuedForCrouch = false;
+				ENCLAVE_LOG(LogEnclaveCombat, Log,
+					"SSRPlayerStrafe LOCAL QUEUE_RELEASED reason=crouch_verified (DEBUG ONLY)");
+				EnclaveDebugSSRStrafe(1);
+			}
+			if (!bDebugSSRCrouchDesired)
+			{
+				DebugSSRCrouchPawn.Reset();
+			}
+			return;
+		}
+		DebugSSRCrouchWaitSeconds += DeltaSeconds;
+		if (DebugSSRCrouchWaitSeconds >= 2.0f)
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Warning,
+				"SSRPlayerCrouch VERIFY_FAILED pawn=%s requested=%d actual=%d halfHeightCm=%.2f canCrouch=%d movementMode=%d (do not score crouch samples; DEBUG ONLY)",
+				*GetNameSafe(Char), bDebugSSRCrouchDesired ? 1 : 0,
+				bActualCrouched ? 1 : 0, Capsule->GetUnscaledCapsuleHalfHeight(),
+				Movement->CanCrouchInCurrentState() ? 1 : 0,
+				static_cast<int32>(Movement->MovementMode));
+			StopDebugSSRCrouch(TEXT("state_verification_failed"));
+		}
+		return;
+	}
+
+	if (bDebugSSRCrouchDesired && !bActualCrouched)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRPlayerCrouch STATE_LOST pawn=%s (crouch input or gameplay changed state; scenario no longer valid; DEBUG ONLY)",
+			*GetNameSafe(Char));
+		StopDebugSSRStrafe(TEXT("crouch_state_lost"));
+		StopDebugSSRCrouch(TEXT("crouch_state_lost"));
+	}
+}
+#endif
+
 // A local PlayerController feeds the exact same AddMovementInput path that the
 // regular locomotion handler uses. Remote owners therefore still send UE's
 // predicted CharacterMovement moves through their normal ServerMove pathway.
@@ -1171,8 +1496,32 @@ void AEnclavePlayerController::EnclaveDebugSSRStrafe(int32 bEnable)
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (bEnable == 0)
 	{
+		bDebugSSRStrafeQueuedForCrouch = false;
 		StopDebugSSRStrafe(TEXT("manual"));
 		return;
+	}
+
+	if (DebugSSRCrouchPawn.IsValid())
+	{
+		// A VERIFIED, stable crouch may be strafed deliberately. Transitioning
+		// capsules must not be mixed into the stable-crouch acceptance samples.
+		const AEnclaveCharacter* CrouchPawn = DebugSSRCrouchPawn.Get();
+		const UCharacterMovementComponent* CrouchMovement = CrouchPawn ? CrouchPawn->GetCharacterMovement() : nullptr;
+		if (bDebugSSRCrouchPending && bDebugSSRCrouchDesired && CrouchPawn == GetPawn() &&
+			IsValid(CrouchMovement))
+		{
+			bDebugSSRStrafeQueuedForCrouch = true;
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRPlayerStrafe LOCAL QUEUED reason=awaiting_authoritative_crouch_verification (DEBUG ONLY)");
+			return;
+		}
+		if (bDebugSSRCrouchPending || !bDebugSSRCrouchDesired || CrouchPawn != GetPawn() ||
+			!IsValid(CrouchMovement) || !CrouchMovement->IsCrouching())
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Warning,
+				"SSRPlayerStrafe LOCAL start_rejected=crouch_state_not_verified (DEBUG ONLY)");
+			return;
+		}
 	}
 
 	// Restarting the rig must always release the prior body's protection.
@@ -1204,10 +1553,11 @@ void AEnclavePlayerController::EnclaveDebugSSRStrafe(int32 bEnable)
 			"SSRPlayerStrafe LOCAL PROTECT pawn=%s damageSuppressed=1 (server-only, debug only)", *GetNameSafe(Char));
 	}
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRPlayerStrafe LOCAL %s pawn=%s role=%d laneHalfWidthCm=250 durationSeconds=%.1f (normal CharacterMovement; debug only)",
+		"SSRPlayerStrafe LOCAL %s pawn=%s role=%d laneHalfWidthCm=250 durationSeconds=%.1f crouched=%d (normal CharacterMovement; debug only)",
 		bDebugSSRStrafeEnabled ? TEXT("START") : TEXT("start_rejected_zero_direction"),
 		*GetNameSafe(Char), static_cast<int32>(Char->GetLocalRole()),
-		FMath::Clamp(CVarDebugSSRStrafeDuration.GetValueOnGameThread(), 10.0f, 180.0f));
+		FMath::Clamp(CVarDebugSSRStrafeDuration.GetValueOnGameThread(), 10.0f, 180.0f),
+		Movement->IsCrouching() ? 1 : 0);
 #else
 	(void)bEnable;
 #endif
@@ -1459,9 +1809,14 @@ void AEnclavePlayerController::StopDebugSSRStrafe(const TCHAR* Reason)
 	// Release the original pawn's protection, even if possession changed.
 	if (AEnclaveCharacter* Protected = DebugSSRStrafeProtectedPawn.Get())
 	{
-		Protected->DebugSetSSRStrafeDamageSuppressed(false);
+		const bool bManuallyProtected = DebugSSRManualProtectedPawn.Get() == Protected;
+		if (!bManuallyProtected)
+		{
+			Protected->DebugSetSSRStrafeDamageSuppressed(false);
+		}
 		ENCLAVE_LOG(LogEnclaveCombat, Log,
-			"SSRPlayerStrafe LOCAL PROTECT pawn=%s damageSuppressed=0 (debug only)", *GetNameSafe(Protected));
+			"SSRPlayerStrafe LOCAL PROTECT pawn=%s damageSuppressed=%d manualProtection=%d (debug only)",
+			*GetNameSafe(Protected), bManuallyProtected ? 1 : 0, bManuallyProtected ? 1 : 0);
 	}
 	DebugSSRStrafeProtectedPawn.Reset();
 	bDebugSSRStrafeEnabled = false;
@@ -1557,6 +1912,7 @@ void AEnclavePlayerController::Tick(float DeltaSeconds)
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	DebugTickSSRClockSync();
+	TickDebugSSRCrouch(DeltaSeconds);
 	TickDebugSSRAutoFire(DeltaSeconds);
 
 	if (!bDebugSSRStrafeEnabled)

@@ -89,6 +89,7 @@ struct ENCLAVE_API FEnclaveGameplayAbilityTargetData_ShotIntent : public FGamepl
 		if (HasSample)
 		{
 			Ar << Shot.SSRGameplayClaim.Classification;
+			Ar << Shot.SSRGameplayClaim.Scenario;
 			UObject* TargetObject = Shot.SSRGameplayClaim.Target.Get();
 			const bool bMapped = Map && Map->SerializeObject(Ar, AActor::StaticClass(), TargetObject);
 			if (Ar.IsLoading())

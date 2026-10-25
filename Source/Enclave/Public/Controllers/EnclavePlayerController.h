@@ -52,8 +52,8 @@ public:
 	/**
 	 * C4E development rig: drive THIS locally owned Enclave pawn with normal
 	 * CharacterMovement input, reversing across a short lateral lane.
-	 * Enter `EnclaveDebugSSRStrafe 1` in the target player's PIE console.
-	 * Enter `EnclaveDebugSSRStrafe 0` to stop; default duration is 30 seconds.
+	 * Enter `Enclave.Debug.SSRStrafe 1` in the target player's PIE console.
+	 * Enter `Enclave.Debug.SSRStrafe 0` to stop; default duration is 30 seconds.
 	 * Set `Enclave.Debug.SSRStrafeDuration 180` before starting for longer automated runs.
 	 * This is not an AI/server-authoritative movement override or an SSR input.
 	 */
@@ -63,11 +63,29 @@ public:
 	/** D1.1B: reproducible local-client shooting through normal semantic Primary/Reload
 	 * input and GAS, with no separate shot RPC or server-side fire shortcut.
 	 * Requires Enclave.Debug.SSRGameplayGate 1 on the client and server.
-	 * Start/stop: EnclaveDebugSSRAutoFire 1 / EnclaveDebugSSRAutoFire 0.
+	 * Start/stop: Enclave.Debug.SSRAutoFire 1 / Enclave.Debug.SSRAutoFire 0.
 	 * Optional seed CVar: Enclave.Debug.SSRAutoSeed (set BEFORE starting).
 	 */
 	UFUNCTION(Exec)
 	void EnclaveDebugSSRAutoFire(int32 bEnable);
+
+	/** D1.1C server-local test protection for stationary and crouching scenarios.
+	 * Requires SSRGameplayGate. Explicitly disable after the test; never replicated.
+	 * Use Enclave.Debug.SSRProtect 1 / 0.
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugSSRProtect(int32 bEnable);
+
+	/** Development-only, listen-server target crouch control. Calls normal
+	 * ACharacter::Crouch/UnCrouch and verifies the applied capsule height.
+	 * Stable verified crouch may be combined with the strafe rig; transitions
+	 * while strafing are blocked to preserve scenario identity.
+	 * Run Enclave.Debug.SSRCrouch 1 / 0 in the target's listen-server console.
+	 * If strafe is requested during the pending crouch transition, it waits for verification.
+	 * Requires Enclave.Debug.SSRGameplayGate 1; protection is separate.
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugSSRCrouch(int32 bEnable);
 
 	/** Opt-in, non-gameplay per-shot camera-vs-authoritative-ray diagnostic. */
 	static bool IsShotAlignmentDebugEnabled();
@@ -210,6 +228,16 @@ private:
 	int32 DebugSSRStrafeDirectionSign = 1;
 	bool bDebugSSRStrafeEnabled = false;
 	TWeakObjectPtr<AEnclaveCharacter> DebugSSRStrafeProtectedPawn;
+	TWeakObjectPtr<AEnclaveCharacter> DebugSSRManualProtectedPawn;
+
+	// D1.1C.1: authority-local crouch rig; never replicated.
+	void StopDebugSSRCrouch(const TCHAR* Reason);
+	void TickDebugSSRCrouch(float DeltaSeconds);
+	TWeakObjectPtr<AEnclaveCharacter> DebugSSRCrouchPawn;
+	float DebugSSRCrouchWaitSeconds = 0.0f;
+	bool bDebugSSRCrouchDesired = false;
+	bool bDebugSSRCrouchPending = false;
+	bool bDebugSSRStrafeQueuedForCrouch = false;
 
 	// D1.1B automated shot sampling; never replicated or compiled for Test/Shipping.
 	void StopDebugSSRAutoFire(const TCHAR* Reason);
