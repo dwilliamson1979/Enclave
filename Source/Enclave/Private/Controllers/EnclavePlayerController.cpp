@@ -291,13 +291,27 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
 	OutClaim.Target = Candidate;
     const FEnclaveSSRReceivedProxyUpdate& Authoritative = Candidate->GetLastReceivedSSRObservation();
     const double ObservationAgeMs = (GetWorld()->GetTimeSeconds() - Authoritative.ClientReceiveWorldSeconds) * 1000.0;
-    if (Authoritative.ReceiveCount > 0)
-    {
-        ENCLAVE_LOG(LogEnclaveCombat, Log,
-            "SSRPairedObservation CLIENT target=%s authStamp=%.6f engineStamp=%.6f receiveAgeMs=%.2f locationDeltaCm=%.2f pairedCount=%u (STAGE A SHADOW; not used by shot claim)",
-            *GetNameSafe(Candidate), Authoritative.ServerStamp, Update.ServerStamp, ObservationAgeMs,
-            FVector::Dist(Authoritative.ReplicatedLocation, Update.ReplicatedLocation), Authoritative.ReceiveCount);
-    }
+	if (Authoritative.ReceiveCount > 0)
+	{
+		// Movement and the server-authored frame may initialize in different updates.
+		// Never interpret an uninitialized engine location as a geometry mismatch.
+		const bool bMovementComparisonReady = Update.ServerStamp > 0.0f &&
+			FMath::IsFinite(Update.ServerStamp) && FMath::IsFinite(Update.ReplicatedLocation.X) &&
+			FMath::IsFinite(Update.ReplicatedLocation.Y) && FMath::IsFinite(Update.ReplicatedLocation.Z);
+		if (bMovementComparisonReady)
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRPairedObservation CLIENT target=%s authStamp=%.6f engineStamp=%.6f receiveAgeMs=%.2f locationDeltaCm=%.2f pairedCount=%u (stamp used by shadow claim; geometry comparison initialized)",
+				*GetNameSafe(Candidate), Authoritative.ServerStamp, Update.ServerStamp, ObservationAgeMs,
+				FVector::Dist(Authoritative.ReplicatedLocation, Update.ReplicatedLocation), Authoritative.ReceiveCount);
+		}
+		else
+		{
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRPairedObservation CLIENT target=%s authStamp=%.6f engineStamp=%.6f receiveAgeMs=%.2f locationDeltaCm=NA pairedCount=%u geometryStatus=movement_uninitialized (stamp used by shadow claim)",
+				*GetNameSafe(Candidate), Authoritative.ServerStamp, Update.ServerStamp, ObservationAgeMs, Authoritative.ReceiveCount);
+		}
+	}
     // D11C Stage B shadow-only: use the authoritative history-linked capsule
     // observation clock instead of the engine's movement timestamp. The paired
     // capsule is NOT yet proven to match the client's rendered target geometry.
@@ -1267,11 +1281,28 @@ void AEnclavePlayerController::BeginPlay()
 	RefreshPossessedPawnInputState();
 }
 
-// D1.1C stationary/crouch test health protection is explicit and local to
-// an authoritative listen-server pawn. It does not replicate or bypass GAS.
+// D1.1C test-only damage protection. A remote client's controller forwards
+// the request to its own authoritative PlayerController, never to an arbitrary pawn.
 void AEnclavePlayerController::EnclaveDebugSSRProtect(int32 bEnable)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (bEnable != 0 && bEnable != 1)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning,
+			"SSRGameplay PROTECT rejected=expected_0_or_1 (DEBUG ONLY)");
+		return;
+	}
+	if (!HasAuthority())
+	{
+		if (!IsLocalController())
+		{
+			return;
+		}
+		ServerEnclaveDebugSSRProtect(bEnable != 0);
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRGameplay PROTECT requested=%d remote=1 (DEBUG ONLY)", bEnable);
+		return;
+	}
 	if (bEnable == 0)
 	{
 		if (AEnclaveCharacter* Protected = DebugSSRManualProtectedPawn.Get())
@@ -1289,10 +1320,10 @@ void AEnclavePlayerController::EnclaveDebugSSRProtect(int32 bEnable)
 		return;
 	}
 	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
-	if (!IsLocalController() || !IsValid(Char) || !Char->HasAuthority() || !IsSSRGameplayGateEnabled())
+	if (!IsValid(Char) || !Char->HasAuthority() || !IsSSRGameplayGateEnabled())
 	{
 		ENCLAVE_LOG(LogEnclaveCombat, Warning,
-			"SSRGameplay PROTECT rejected=requires_authoritative_local_target_and_gameplay_gate (DEBUG ONLY)");
+			"SSRGameplay PROTECT rejected=requires_authoritative_possessed_target_and_gameplay_gate (DEBUG ONLY)");
 		return;
 	}
 	if (DebugSSRManualProtectedPawn.IsValid() && DebugSSRManualProtectedPawn.Get() != Char)
@@ -1302,7 +1333,16 @@ void AEnclavePlayerController::EnclaveDebugSSRProtect(int32 bEnable)
 	Char->DebugSetSSRStrafeDamageSuppressed(true);
 	DebugSSRManualProtectedPawn = Char;
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRGameplay PROTECT pawn=%s manual=1 (server-local, DEBUG ONLY)", *GetNameSafe(Char));
+		"SSRGameplay PROTECT pawn=%s manual=1 (server-authoritative, DEBUG ONLY)", *GetNameSafe(Char));
+#else
+	(void)bEnable;
+#endif
+}
+
+void AEnclavePlayerController::ServerEnclaveDebugSSRProtect_Implementation(bool bEnable)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	EnclaveDebugSSRProtect(bEnable ? 1 : 0);
 #else
 	(void)bEnable;
 #endif

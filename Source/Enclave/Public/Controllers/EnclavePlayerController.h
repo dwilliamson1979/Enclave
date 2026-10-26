@@ -69,8 +69,9 @@ public:
 	UFUNCTION(Exec)
 	void EnclaveDebugSSRAutoFire(int32 bEnable);
 
-	/** D1.1C server-local test protection for stationary and crouching scenarios.
-	 * Requires SSRGameplayGate. Explicitly disable after the test; never replicated.
+	/** D1.1C test protection for locally or remotely owned stationary/crouching targets.
+	 * Requires SSRGameplayGate on the server. Remote client requests use an owner-only server RPC.
+	 * Explicitly disable after the test; never replicated.
 	 * Use Enclave.Debug.SSRProtect 1 / 0.
 	 */
 	UFUNCTION(Exec)
@@ -170,6 +171,10 @@ private:
 		FVector_NetQuantize10 ReplicatedLocation, FVector_NetQuantize10 ReplicatedVelocity,
 		FVector_NetQuantize10 CapsuleAtReceive, FVector_NetQuantize10 ClientCapsuleAtShot,
 		FVector_NetQuantize10 ClientMeshAnchor);
+
+	/** Debug-only request from a remotely owned target; validates possession and gate on authority. */
+	UFUNCTION(Server, Reliable)
+	void ServerEnclaveDebugSSRProtect(bool bEnable);
 
 	UFUNCTION(Server, Reliable)
 	void ServerEnclaveDebugRespawn();
