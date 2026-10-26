@@ -76,6 +76,10 @@ class ENCLAVE_API UEnclaveTargetHistoryComponent : public UActorComponent
 public:
 	UEnclaveTargetHistoryComponent();
 
+	/** Authority-only capture notification. Consumers own their own replication. */
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnCapsuleFrameRecorded, const FEnclaveTargetCapsuleFrame&);
+	FOnCapsuleFrameRecorded& OnCapsuleFrameRecorded() { return CapsuleFrameRecorded; }
+
 	/** Authority only; yields a capsule at a recorded server time or fails.
 	 * Historical availability does NOT grant permission to rewind: the C1
 	 * timing context must independently enforce the match rewind allowance.
@@ -108,6 +112,8 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+	FOnCapsuleFrameRecorded CapsuleFrameRecorded;
+
 	// The small bounded array is never replicated and contains no UObject references.
 	TArray<FEnclaveTargetCapsuleFrame> Frames;
 	bool bBreakBeforeNextCapture = false;

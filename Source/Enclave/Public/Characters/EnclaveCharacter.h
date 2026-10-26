@@ -43,21 +43,20 @@ struct FEnclaveStartingSlottedItem
 	FGameplayTag SlotTag;
 };
 
-/** D11C Stage A: a server-authored time and capsule from the SAME history capture.
- * Diagnostic transport only; not a replacement for Unreal movement replication. */
+/** Server-authored time and capsule geometry from a single authoritative history frame.
+ * Replication supplies a server-clock anchor; it does not replace FRepMovement. */
 USTRUCT()
 struct FEnclaveSSRServerCapsuleObservation
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
-    UPROPERTY() double ServerTimeSeconds = 0.0;
-    UPROPERTY() FVector_NetQuantize10 Center = FVector::ZeroVector;
-    UPROPERTY() float RadiusCm = 0.0f;
-    UPROPERTY() float HalfHeightCm = 0.0f;
+	UPROPERTY() double ServerTimeSeconds = 0.0;
+	UPROPERTY() FVector_NetQuantize10 Center = FVector::ZeroVector;
+	UPROPERTY() float RadiusCm = 0.0f;
+	UPROPERTY() float HalfHeightCm = 0.0f;
 };
 
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-/** Cached movement replication notification for a simulated proxy; NOT a rendered frame or trusted hit state. */
+/** Last received authoritative observation; local arrival time is not a network clock. */
 struct FEnclaveSSRReceivedProxyUpdate
 {
 	double ServerStamp = 0.0;
@@ -67,7 +66,6 @@ struct FEnclaveSSRReceivedProxyUpdate
 	double ClientReceiveWorldSeconds = -1.0;
 	uint32 ReceiveCount = 0;
 };
-#endif
 
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
@@ -79,13 +77,14 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnRep_ReplicatedMovement() override;
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-    /** Called by the authority-only history component immediately after adding a frame. */
-    void RecordSSRServerCapsuleObservation(double ServerTimeSeconds, const FVector& Center, float RadiusCm, float HalfHeightCm);
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	/** Called when the history component publishes an authoritative sample. */
+	void HandleSSRHistoryFrameRecorded(const struct FEnclaveTargetCapsuleFrame& Frame);
+	const FEnclaveSSRReceivedProxyUpdate& GetLastReceivedSSRObservation() const { return LastReceivedSSRObservation; }
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	const FEnclaveSSRReceivedProxyUpdate& DebugGetLastReceivedProxyUpdate() const { return DebugLastReceivedProxyUpdate; }
-    const FEnclaveSSRReceivedProxyUpdate& DebugGetLastReceivedSSRObservation() const { return DebugLastReceivedSSRObservation; }
+
 
 
 	// Server-only, transient D1.1B test protection. This is never replicated and
@@ -141,19 +140,17 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-    // A single atomic struct replication carries the authoritative capsule and its sample time.
-    UPROPERTY(ReplicatedUsing=OnRep_SSRServerCapsuleObservation, Transient)
-    FEnclaveSSRServerCapsuleObservation SSRServerCapsuleObservation;
+	// A single replicated struct carries one coherent authoritative history sample.
+	UPROPERTY(ReplicatedUsing=OnRep_SSRServerCapsuleObservation, Transient)
+	FEnclaveSSRServerCapsuleObservation SSRServerCapsuleObservation;
 
-    UFUNCTION()
-    void OnRep_SSRServerCapsuleObservation();
+	UFUNCTION()
+	void OnRep_SSRServerCapsuleObservation();
 
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-    FEnclaveSSRReceivedProxyUpdate DebugLastReceivedSSRObservation;
-#endif
+	FEnclaveSSRReceivedProxyUpdate LastReceivedSSRObservation;
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	// Updated by OnRep_ReplicatedMovement on simulated proxies only, never replicated.
+	// Updated by OnRep_ReplicatedMovement on simulated proxies only.
 	FEnclaveSSRReceivedProxyUpdate DebugLastReceivedProxyUpdate;
 	bool bDebugSSRStrafeDamageSuppressed = false;
 #endif

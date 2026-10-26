@@ -289,7 +289,7 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
 	OutClaim.Classification = bClearHit ? 1 : (bWithin10Cm ? 3 : 2);
 	OutClaim.Scenario = static_cast<uint8>(Scenario);
 	OutClaim.Target = Candidate;
-    const FEnclaveSSRReceivedProxyUpdate& Authoritative = Candidate->DebugGetLastReceivedSSRObservation();
+    const FEnclaveSSRReceivedProxyUpdate& Authoritative = Candidate->GetLastReceivedSSRObservation();
     const double ObservationAgeMs = (GetWorld()->GetTimeSeconds() - Authoritative.ClientReceiveWorldSeconds) * 1000.0;
     if (Authoritative.ReceiveCount > 0)
     {

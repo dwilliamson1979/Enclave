@@ -449,6 +449,11 @@ void AEnclaveCharacter::BeginPlay()
 		EquipmentComp->SetItemSource(InventoryComp);
 	}
 
+	if (HasAuthority() && IsValid(TargetHistoryComp))
+	{
+		TargetHistoryComp->OnCapsuleFrameRecorded().AddUObject(this, &AEnclaveCharacter::HandleSSRHistoryFrameRecorded);
+	}
+
 	if (HasAuthority())
 	{
 		AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
@@ -472,6 +477,11 @@ void AEnclaveCharacter::BeginPlay()
 
 void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (IsValid(TargetHistoryComp))
+	{
+		TargetHistoryComp->OnCapsuleFrameRecorded().RemoveAll(this);
+	}
+
 	if (HasAuthority())
 	{
 		// Revoke GAS item grants before destroying the externally owned item.
@@ -573,33 +583,31 @@ void AEnclaveCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
     DOREPLIFETIME_CONDITION(AEnclaveCharacter, SSRServerCapsuleObservation, COND_SimulatedOnly);
 }
 
-void AEnclaveCharacter::RecordSSRServerCapsuleObservation(double ServerTimeSeconds, const FVector& Center, float RadiusCm, float HalfHeightCm)
+void AEnclaveCharacter::HandleSSRHistoryFrameRecorded(const FEnclaveTargetCapsuleFrame& Frame)
 {
-    if (!HasAuthority() || !FMath::IsFinite(ServerTimeSeconds))
-    {
-        return;
-    }
-    SSRServerCapsuleObservation.ServerTimeSeconds = ServerTimeSeconds;
-    SSRServerCapsuleObservation.Center = Center;
-    SSRServerCapsuleObservation.RadiusCm = RadiusCm;
-    SSRServerCapsuleObservation.HalfHeightCm = HalfHeightCm;
+	if (!HasAuthority() || !FMath::IsFinite(Frame.ServerTimeSeconds))
+	{
+		return;
+	}
+	SSRServerCapsuleObservation.ServerTimeSeconds = Frame.ServerTimeSeconds;
+	SSRServerCapsuleObservation.Center = Frame.Center;
+	SSRServerCapsuleObservation.RadiusCm = Frame.RadiusCm;
+	SSRServerCapsuleObservation.HalfHeightCm = Frame.HalfHeightCm;
 }
 
 void AEnclaveCharacter::OnRep_SSRServerCapsuleObservation()
 {
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-    if (GetLocalRole() != ROLE_SimulatedProxy || !GetWorld())
-    {
-        return;
-    }
-    FEnclaveSSRReceivedProxyUpdate& Update = DebugLastReceivedSSRObservation;
-    Update.ServerStamp = SSRServerCapsuleObservation.ServerTimeSeconds;
-    Update.ReplicatedLocation = SSRServerCapsuleObservation.Center;
-    Update.ReplicatedVelocity = FVector::ZeroVector;
-    Update.CapsuleAtReceive = SSRServerCapsuleObservation.Center;
-    Update.ClientReceiveWorldSeconds = GetWorld()->GetTimeSeconds();
-    ++Update.ReceiveCount;
-#endif
+	if (GetLocalRole() != ROLE_SimulatedProxy || !GetWorld())
+	{
+		return;
+	}
+	FEnclaveSSRReceivedProxyUpdate& Update = LastReceivedSSRObservation;
+	Update.ServerStamp = SSRServerCapsuleObservation.ServerTimeSeconds;
+	Update.ReplicatedLocation = SSRServerCapsuleObservation.Center;
+	Update.ReplicatedVelocity = FVector::ZeroVector;
+	Update.CapsuleAtReceive = SSRServerCapsuleObservation.Center;
+	Update.ClientReceiveWorldSeconds = GetWorld()->GetTimeSeconds();
+	++Update.ReceiveCount;
 }
 
 void AEnclaveCharacter::OnRep_ReplicatedMovement()

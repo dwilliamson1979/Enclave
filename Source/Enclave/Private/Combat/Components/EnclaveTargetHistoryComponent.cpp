@@ -215,10 +215,8 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 		Next.bBreakBefore = false;
 	}
 	Frames.Add(Next);
-    // Stage A: the replicated observation is derived from the exact recorded sample.
-    // Normal actor property replication may deliver it later; it does not change movement.
-    const_cast<AEnclaveCharacter*>(Character)->RecordSSRServerCapsuleObservation(
-        Next.ServerTimeSeconds, Next.Center, Next.RadiusCm, Next.HalfHeightCm);
+	// Subscribers receive the exact authoritative frame that was appended.
+	CapsuleFrameRecorded.Broadcast(Frames.Last());
 	bBreakBeforeNextCapture = false;
 
 	const double MaxRewindSeconds = GameMode->GetMaxRewindSeconds();
