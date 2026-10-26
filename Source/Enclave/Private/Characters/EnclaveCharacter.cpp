@@ -34,6 +34,7 @@
 
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Net/UnrealNetwork.h"
 #include "Debug/EnclaveDebug.h"
 
 // Input tag tracing. Previously printed unconditionally on every input
@@ -566,6 +567,41 @@ void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy(EEnclaveWeaponHit
 }
 
 // Called every frame
+void AEnclaveCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    DOREPLIFETIME_CONDITION(AEnclaveCharacter, SSRServerCapsuleObservation, COND_SimulatedOnly);
+}
+
+void AEnclaveCharacter::RecordSSRServerCapsuleObservation(double ServerTimeSeconds, const FVector& Center, float RadiusCm, float HalfHeightCm)
+{
+    if (!HasAuthority() || !FMath::IsFinite(ServerTimeSeconds))
+    {
+        return;
+    }
+    SSRServerCapsuleObservation.ServerTimeSeconds = ServerTimeSeconds;
+    SSRServerCapsuleObservation.Center = Center;
+    SSRServerCapsuleObservation.RadiusCm = RadiusCm;
+    SSRServerCapsuleObservation.HalfHeightCm = HalfHeightCm;
+}
+
+void AEnclaveCharacter::OnRep_SSRServerCapsuleObservation()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    if (GetLocalRole() != ROLE_SimulatedProxy || !GetWorld())
+    {
+        return;
+    }
+    FEnclaveSSRReceivedProxyUpdate& Update = DebugLastReceivedSSRObservation;
+    Update.ServerStamp = static_cast<float>(SSRServerCapsuleObservation.ServerTimeSeconds);
+    Update.ReplicatedLocation = SSRServerCapsuleObservation.Center;
+    Update.ReplicatedVelocity = FVector::ZeroVector;
+    Update.CapsuleAtReceive = SSRServerCapsuleObservation.Center;
+    Update.ClientReceiveWorldSeconds = GetWorld()->GetTimeSeconds();
+    ++Update.ReceiveCount;
+#endif
+}
+
 void AEnclaveCharacter::OnRep_ReplicatedMovement()
 {
 	Super::OnRep_ReplicatedMovement();

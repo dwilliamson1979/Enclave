@@ -289,6 +289,15 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
 	OutClaim.Classification = bClearHit ? 1 : (bWithin10Cm ? 3 : 2);
 	OutClaim.Scenario = static_cast<uint8>(Scenario);
 	OutClaim.Target = Candidate;
+    const FEnclaveSSRReceivedProxyUpdate& Authoritative = Candidate->DebugGetLastReceivedSSRObservation();
+    const double ObservationAgeMs = (GetWorld()->GetTimeSeconds() - Authoritative.ClientReceiveWorldSeconds) * 1000.0;
+    if (Authoritative.ReceiveCount > 0)
+    {
+        ENCLAVE_LOG(LogEnclaveCombat, Log,
+            "SSRPairedObservation CLIENT target=%s authStamp=%.6f engineStamp=%.6f receiveAgeMs=%.2f locationDeltaCm=%.2f pairedCount=%u (STAGE A SHADOW; not used by shot claim)",
+            *GetNameSafe(Candidate), Authoritative.ServerStamp, Update.ServerStamp, ObservationAgeMs,
+            FVector::Dist(Authoritative.ReplicatedLocation, Update.ReplicatedLocation), Authoritative.ReceiveCount);
+    }
 	OutClaim.EchoedMovementStamp = bFreshUpdate ? Update.ServerStamp : 0.0f;
 	OutClaim.SecondsSinceMovementUpdate = bFreshUpdate ? static_cast<float>(Elapsed) : 0.0f;
 	ENCLAVE_LOG(LogEnclaveCombat, Log,

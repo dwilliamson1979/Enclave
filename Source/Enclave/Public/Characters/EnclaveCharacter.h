@@ -43,6 +43,19 @@ struct FEnclaveStartingSlottedItem
 	FGameplayTag SlotTag;
 };
 
+/** D11C Stage A: a server-authored time and capsule from the SAME history capture.
+ * Diagnostic transport only; not a replacement for Unreal movement replication. */
+USTRUCT()
+struct FEnclaveSSRServerCapsuleObservation
+{
+    GENERATED_BODY()
+
+    UPROPERTY() double ServerTimeSeconds = 0.0;
+    UPROPERTY() FVector_NetQuantize10 Center = FVector::ZeroVector;
+    UPROPERTY() float RadiusCm = 0.0f;
+    UPROPERTY() float HalfHeightCm = 0.0f;
+};
+
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 /** Cached movement replication notification for a simulated proxy; NOT a rendered frame or trusted hit state. */
 struct FEnclaveSSRReceivedProxyUpdate
@@ -66,8 +79,14 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnRep_ReplicatedMovement() override;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    /** Called by the authority-only history component immediately after adding a frame. */
+    void RecordSSRServerCapsuleObservation(double ServerTimeSeconds, const FVector& Center, float RadiusCm, float HalfHeightCm);
+
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	const FEnclaveSSRReceivedProxyUpdate& DebugGetLastReceivedProxyUpdate() const { return DebugLastReceivedProxyUpdate; }
+    const FEnclaveSSRReceivedProxyUpdate& DebugGetLastReceivedSSRObservation() const { return DebugLastReceivedSSRObservation; }
+
 
 	// Server-only, transient D1.1B test protection. This is never replicated and
 	// is enabled only while the local-authority debug strafe rig is active.
@@ -122,6 +141,17 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+    // A single atomic struct replication carries the authoritative capsule and its sample time.
+    UPROPERTY(ReplicatedUsing=OnRep_SSRServerCapsuleObservation, Transient)
+    FEnclaveSSRServerCapsuleObservation SSRServerCapsuleObservation;
+
+    UFUNCTION()
+    void OnRep_SSRServerCapsuleObservation();
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    FEnclaveSSRReceivedProxyUpdate DebugLastReceivedSSRObservation;
+#endif
+
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	// Updated by OnRep_ReplicatedMovement on simulated proxies only, never replicated.
 	FEnclaveSSRReceivedProxyUpdate DebugLastReceivedProxyUpdate;
