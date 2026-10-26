@@ -17,5 +17,4 @@ struct FEnclaveSSRGameplayClaim
 	uint8 Scenario = 0;
 	TWeakObjectPtr<AActor> Target;
 	double EchoedMovementStamp = 0.0;
-	float SecondsSinceMovementUpdate = 0.0f;
 };

@@ -323,36 +323,21 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 	}
 
 	const double Stamp = Claim.EchoedMovementStamp;
-	const double Elapsed = static_cast<double>(Claim.SecondsSinceMovementUpdate);
 	const double Age = Timing.ServerReceiptTimeSeconds - Stamp;
 	const double RTT = Timing.ServerObservedRTTSeconds;
-	// Both policies use the same fallback: the existing present-time trace's
-	// outcome on the claimed target. Rejection is still scored, not excluded.
+	// Only the authoritative-history stamp is evaluated. The previously tested
+	// client-elapsed challenger has been retired from the D11C shadow contract.
 	constexpr double RTTMarginSeconds = 0.050;
-	// D1.1C LOCKED feasibility bound (see ACCEPTANCE_D11C.md): observed
-	// update-age clusters were ~17/34/50ms despite NetUpdateFrequency=100.
-	// 80ms includes these without client-controlled adaptation; never infer
-	// client update cadence from the advertised property. Hard cap is 100ms.
-	constexpr double MaxElapsedSeconds = 0.080;
-	// D1.1C: evaluate the primary stamp-only policy independently of the
-	// challenger. Elapsed cannot disqualify a plausible primary stamp.
 	const bool bStampPlausible = FMath::IsFinite(Stamp) && Stamp > 0.0 &&
 		FMath::IsFinite(RTT) && RTT >= 0.0 &&
-		Age >= 0.0 &&
-		Age <= Timing.MaxRewindSeconds &&
+		Age >= 0.0 && Age <= Timing.MaxRewindSeconds &&
 		Age <= RTT + RTTMarginSeconds;
-	const bool bElapsedPlausible = bStampPlausible &&
-		FMath::IsFinite(Elapsed) && Elapsed >= 0.0 && Elapsed <= MaxElapsedSeconds &&
-		(Age - Elapsed) >= 0.0;
 	if (!bStampPlausible)
 	{
-		// Explicit diagnostic stationary policy: a quiet simulated proxy often
-		// has no recent movement RPC. Only score present-time fallback as an
-		// intentional stationary case when SERVER history independently shows
-		// the capsule unchanged for at least 100ms. No client-supplied
-		// scenario label is allowed to authorize this server-only exception.
+		// Server-only stationary fallback remains conservative. No client scenario
+		// classification is sufficient to authorize this exception.
 		bool bVerifiedStationary = false;
-		if (Stamp == 0.0 && Elapsed == 0.0)
+		if (Stamp == 0.0)
 		{
 			if (const UEnclaveTargetHistoryComponent* StationaryHistory = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>())
 			{
@@ -376,26 +361,20 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 			}
 		}
 		ENCLAVE_LOG(LogEnclaveCombat, Log,
-			"SSRGameplay SERVER key=%u status=%s stampStatus=%s elapsedStatus=%s category=%d scenario=%d ageMs=%.2f elapsedMs=%.2f rttMs=%.1f elapsedLimitMs=%.1f liveTargetHit=%d stampAvailable=0 elapsedAvailable=0 stampFinalHit=%d elapsedFinalHit=%d stampFallback=1 elapsedFallback=1 stationaryVerified=%d (PRESENT fallback; SHADOW ONLY)",
+			"SSRGameplay SERVER key=%u status=%s stampStatus=%s category=%d scenario=%d ageMs=%.2f rttMs=%.1f liveTargetHit=%d stampAvailable=0 stampFinalHit=%d stampFallback=1 stationaryVerified=%d (PRESENT fallback; SHADOW ONLY)",
 			Query.ShotSequence, bVerifiedStationary ? TEXT("stationary_present") : TEXT("rejected_time"),
 			bVerifiedStationary ? TEXT("stationary_present") : TEXT("rejected_time"),
-			bVerifiedStationary ? TEXT("stationary_present") : TEXT("rejected_stamp"),
-			static_cast<int32>(Claim.Classification), static_cast<int32>(Claim.Scenario), Age * 1000.0,
-			Elapsed * 1000.0, RTT * 1000.0, MaxElapsedSeconds * 1000.0,
-			bLiveOnClaimedTarget ? 1 : 0, bLiveOnClaimedTarget ? 1 : 0,
+			static_cast<int32>(Claim.Classification), static_cast<int32>(Claim.Scenario),
+			Age * 1000.0, RTT * 1000.0, bLiveOnClaimedTarget ? 1 : 0,
 			bLiveOnClaimedTarget ? 1 : 0, bVerifiedStationary ? 1 : 0);
 		return;
 	}
 
 	const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
 	FEnclaveTargetCapsuleFrame BaseFrame;
-	FEnclaveTargetCapsuleFrame ElapsedFrame;
 	const bool bBase = IsValid(History) && History->TryGetCapsuleAtTime(Stamp, BaseFrame);
-	const bool bElapsed = bElapsedPlausible && IsValid(History) && History->TryGetCapsuleAtTime(Stamp + Elapsed, ElapsedFrame);
-	if (!bBase && !bElapsed)
+	if (!bBase)
 	{
-		// D11C preflight only: expose exact history boundaries before choosing a
-		// timestamp/replication redesign. This never changes hit authority.
 		double HistoryOldest = 0.0;
 		double HistoryNewest = 0.0;
 		const bool bHasHistoryBounds = IsValid(History) &&
@@ -410,11 +389,9 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 			HistoryOldest, HistoryNewest, NewestDeltaMs, Timing.ServerReceiptTimeSeconds,
 			Age * 1000.0, IsValid(History) ? History->GetHistorySampleCount() : 0);
 		ENCLAVE_LOG(LogEnclaveCombat, Log,
-			"SSRGameplay SERVER key=%u status=missing_history stampStatus=missing_history elapsedStatus=%s category=%d scenario=%d ageMs=%.2f elapsedMs=%.2f liveTargetHit=%d stampAvailable=0 elapsedAvailable=0 stampFinalHit=%d elapsedFinalHit=%d stampFallback=1 elapsedFallback=1 (PRESENT fallback; SHADOW ONLY)",
-			Query.ShotSequence, bElapsedPlausible ? TEXT("missing_history") : TEXT("rejected_elapsed"),
-			static_cast<int32>(Claim.Classification), static_cast<int32>(Claim.Scenario), Age * 1000.0,
-			Elapsed * 1000.0, bLiveOnClaimedTarget ? 1 : 0,
-			bLiveOnClaimedTarget ? 1 : 0, bLiveOnClaimedTarget ? 1 : 0);
+			"SSRGameplay SERVER key=%u status=missing_history stampStatus=missing_history category=%d scenario=%d ageMs=%.2f liveTargetHit=%d stampAvailable=0 stampFinalHit=%d stampFallback=1 (PRESENT fallback; SHADOW ONLY)",
+			Query.ShotSequence, static_cast<int32>(Claim.Classification), static_cast<int32>(Claim.Scenario),
+			Age * 1000.0, bLiveOnClaimedTarget ? 1 : 0, bLiveOnClaimedTarget ? 1 : 0);
 		return;
 	}
 
@@ -423,28 +400,19 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 	if (!Historical.IsPrepared())
 	{
 		ENCLAVE_LOG(LogEnclaveCombat, Log,
-			"SSRGameplay SERVER key=%u status=query_unavailable stampStatus=query_unavailable elapsedStatus=%s category=%d scenario=%d liveTargetHit=%d stampAvailable=0 elapsedAvailable=0 stampFinalHit=%d elapsedFinalHit=%d stampFallback=1 elapsedFallback=1 (PRESENT fallback; SHADOW ONLY)",
-			Query.ShotSequence, bElapsedPlausible ? TEXT("query_unavailable") : TEXT("rejected_elapsed"),
-			static_cast<int32>(Claim.Classification), static_cast<int32>(Claim.Scenario), bLiveOnClaimedTarget ? 1 : 0,
+			"SSRGameplay SERVER key=%u status=query_unavailable stampStatus=query_unavailable category=%d scenario=%d liveTargetHit=%d stampAvailable=0 stampFinalHit=%d stampFallback=1 (PRESENT fallback; SHADOW ONLY)",
+			Query.ShotSequence, static_cast<int32>(Claim.Classification), static_cast<int32>(Claim.Scenario),
 			bLiveOnClaimedTarget ? 1 : 0, bLiveOnClaimedTarget ? 1 : 0);
 		return;
 	}
-	const FEnclaveHistoricalHitQueryResult StampResult = bBase ? Historical.Trace(Stamp, Target) : FEnclaveHistoricalHitQueryResult();
-	const FEnclaveHistoricalHitQueryResult ElapsedResult = bElapsed ? Historical.Trace(Stamp + Elapsed, Target) : FEnclaveHistoricalHitQueryResult();
+	const FEnclaveHistoricalHitQueryResult StampResult = Historical.Trace(Stamp, Target);
 	const double CPUms = (FPlatformTime::Seconds() - QueryStartSeconds) * 1000.0;
-	const bool bStampFinalHit = bBase ? StampResult.bHit : bLiveOnClaimedTarget;
-	const bool bElapsedFinalHit = bElapsed ? ElapsedResult.bHit : bLiveOnClaimedTarget;
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRGameplay SERVER key=%u status=measured stampStatus=%s elapsedStatus=%s category=%d scenario=%d ageMs=%.2f elapsedMs=%.2f rttMs=%.1f stampAvailable=%d elapsedAvailable=%d stampHit=%d elapsedHit=%d liveTargetHit=%d stampFinalHit=%d elapsedFinalHit=%d stampFallback=%d elapsedFallback=%d stampOccluded=%d elapsedOccluded=%d worldBlocked=%d shadowCpuMs=%.3f (NO DAMAGE AUTHORITY)",
-		Query.ShotSequence, bBase ? TEXT("measured") : TEXT("missing_history"),
-		bElapsed ? TEXT("measured") : (bElapsedPlausible ? TEXT("missing_history") : TEXT("rejected_elapsed")),
-		static_cast<int32>(Claim.Classification), static_cast<int32>(Claim.Scenario), Age * 1000.0,
-		Elapsed * 1000.0, RTT * 1000.0, bBase ? 1 : 0, bElapsed ? 1 : 0,
-		bBase && StampResult.bHit ? 1 : 0, bElapsed && ElapsedResult.bHit ? 1 : 0,
-		bLiveOnClaimedTarget ? 1 : 0, bStampFinalHit ? 1 : 0,
-		bElapsedFinalHit ? 1 : 0, bBase ? 0 : 1, bElapsed ? 0 : 1,
-		StampResult.bOccluded ? 1 : 0, ElapsedResult.bOccluded ? 1 : 0,
-		Historical.IsWorldBlocked() ? 1 : 0, CPUms);
+		"SSRGameplay SERVER key=%u status=measured stampStatus=measured category=%d scenario=%d ageMs=%.2f rttMs=%.1f stampAvailable=1 stampHit=%d liveTargetHit=%d stampFinalHit=%d stampFallback=0 stampOccluded=%d worldBlocked=%d shadowCpuMs=%.3f (NO DAMAGE AUTHORITY)",
+		Query.ShotSequence, static_cast<int32>(Claim.Classification), static_cast<int32>(Claim.Scenario),
+		Age * 1000.0, RTT * 1000.0, StampResult.bHit ? 1 : 0,
+		bLiveOnClaimedTarget ? 1 : 0, StampResult.bHit ? 1 : 0,
+		StampResult.bOccluded ? 1 : 0, Historical.IsWorldBlocked() ? 1 : 0, CPUms);
 }
 #endif
 

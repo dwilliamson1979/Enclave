@@ -307,16 +307,15 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
         FMath::IsFinite(Authoritative.ServerStamp) && Authoritative.ServerStamp > 0.0f &&
         FMath::IsFinite(PairedElapsed) && PairedElapsed >= 0.0 && PairedElapsed <= 0.080;
     OutClaim.EchoedMovementStamp = bFreshPairedObservation ? Authoritative.ServerStamp : 0.0;
-    OutClaim.SecondsSinceMovementUpdate = bFreshPairedObservation ? static_cast<float>(PairedElapsed) : 0.0f;
     ENCLAVE_LOG(LogEnclaveCombat, Log,
         "SSRStageB CLIENT key=%d target=%s authStamp=%.6f engineStamp=%.6f pairedAgeMs=%.2f engineAgeMs=%.2f pairedFresh=%d engineFresh=%d deltaCm=%.2f (SHADOW ONLY; capsule/render association unverified)",
         PredictionKey, *GetNameSafe(Candidate), Authoritative.ServerStamp, Update.ServerStamp,
         PairedElapsed * 1000.0, Elapsed * 1000.0, bFreshPairedObservation ? 1 : 0,
         bFreshUpdate ? 1 : 0, FVector::Dist(Authoritative.ReplicatedLocation, SelectedReference.Center));
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRGameplay CLIENT key=%d target=%s category=%d scenario=%d stamp=%.6f elapsedMs=%.1f pairedAgeMs=%.1f engineAgeMs=%.1f smoothingCm=%.2f stationaryFallback=%d (elapsedMs=claim payload; 10cm hit/miss margin; clear misses 10-40cm outside capsule; approximate mesh anchor; DEBUG ONLY)",
+		"SSRGameplay CLIENT key=%d target=%s category=%d scenario=%d stamp=%.6f pairedAgeMs=%.1f engineAgeMs=%.1f smoothingCm=%.2f stationaryFallback=%d (stamp-only claim; 10cm hit/miss margin; clear misses 10-40cm outside capsule; approximate mesh anchor; DEBUG ONLY)",
 		PredictionKey, *GetNameSafe(Candidate), static_cast<int32>(OutClaim.Classification), Scenario,
-		OutClaim.EchoedMovementStamp, static_cast<double>(OutClaim.SecondsSinceMovementUpdate) * 1000.0,
+		OutClaim.EchoedMovementStamp,
 		PairedElapsed * 1000.0, Elapsed * 1000.0, SelectedSmoothingCm, bFreshPairedObservation ? 0 : 1);
 	return true;
 #else

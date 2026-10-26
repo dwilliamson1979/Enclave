@@ -97,7 +97,6 @@ struct ENCLAVE_API FEnclaveGameplayAbilityTargetData_ShotIntent : public FGamepl
 				Shot.SSRGameplayClaim.Target = Cast<AActor>(TargetObject);
 			}
 			Ar << Shot.SSRGameplayClaim.EchoedMovementStamp;
-			Ar << Shot.SSRGameplayClaim.SecondsSinceMovementUpdate;
 			// Mapping failure disables only the optional diagnostic claim.
 			// Never reject an otherwise legal GAS shot because a test target
 			// actor was not resolved by the connection's package map.
