@@ -166,7 +166,7 @@ private:
 	/** Untrusted opt-in telemetry, NEVER gameplay hit authority. */
 	UFUNCTION(Server, Unreliable)
 	void ServerEnclaveDebugEchoedSnapshot(int32 PredictionKey, AEnclaveCharacter* Target,
-		float EchoedMovementStamp, float ElapsedSinceUpdateSeconds,
+		double EchoedMovementStamp, float ElapsedSinceUpdateSeconds,
 		FVector_NetQuantize10 ReplicatedLocation, FVector_NetQuantize10 ReplicatedVelocity,
 		FVector_NetQuantize10 CapsuleAtReceive, FVector_NetQuantize10 ClientCapsuleAtShot,
 		FVector_NetQuantize10 ClientMeshAnchor);

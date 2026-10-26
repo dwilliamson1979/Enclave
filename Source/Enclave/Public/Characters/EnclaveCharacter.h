@@ -60,7 +60,7 @@ struct FEnclaveSSRServerCapsuleObservation
 /** Cached movement replication notification for a simulated proxy; NOT a rendered frame or trusted hit state. */
 struct FEnclaveSSRReceivedProxyUpdate
 {
-	float ServerStamp = 0.0f;
+	double ServerStamp = 0.0;
 	FVector ReplicatedLocation = FVector::ZeroVector;
 	FVector ReplicatedVelocity = FVector::ZeroVector;
 	FVector CapsuleAtReceive = FVector::ZeroVector;

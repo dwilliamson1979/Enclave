@@ -306,7 +306,7 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
     const bool bFreshPairedObservation = Authoritative.ReceiveCount != 0 &&
         FMath::IsFinite(Authoritative.ServerStamp) && Authoritative.ServerStamp > 0.0f &&
         FMath::IsFinite(PairedElapsed) && PairedElapsed >= 0.0 && PairedElapsed <= 0.080;
-    OutClaim.EchoedMovementStamp = bFreshPairedObservation ? Authoritative.ServerStamp : 0.0f;
+    OutClaim.EchoedMovementStamp = bFreshPairedObservation ? Authoritative.ServerStamp : 0.0;
     OutClaim.SecondsSinceMovementUpdate = bFreshPairedObservation ? static_cast<float>(PairedElapsed) : 0.0f;
     ENCLAVE_LOG(LogEnclaveCombat, Log,
         "SSRStageB CLIENT key=%d target=%s authStamp=%.6f engineStamp=%.6f pairedAgeMs=%.2f engineAgeMs=%.2f pairedFresh=%d engineFresh=%d deltaCm=%.2f (SHADOW ONLY; capsule/render association unverified)",
@@ -537,7 +537,7 @@ void AEnclavePlayerController::DebugProbeSSREchoedSnapshot(int32 PredictionKey)
 }
 
 void AEnclavePlayerController::ServerEnclaveDebugEchoedSnapshot_Implementation(int32 PredictionKey,
-	AEnclaveCharacter* Target, float EchoedMovementStamp, float ElapsedSinceUpdateSeconds,
+	AEnclaveCharacter* Target, double EchoedMovementStamp, float ElapsedSinceUpdateSeconds,
 	FVector_NetQuantize10 ReplicatedLocation, FVector_NetQuantize10 ReplicatedVelocity,
 	FVector_NetQuantize10 CapsuleAtReceive, FVector_NetQuantize10 ClientCapsuleAtShot,
 	FVector_NetQuantize10 ClientMeshAnchor)
@@ -556,40 +556,24 @@ void AEnclavePlayerController::ServerEnclaveDebugEchoedSnapshot_Implementation(i
 
 	const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
 	const double Receipt = GetWorld()->GetTimeSeconds();
-	const double Stamp = static_cast<double>(EchoedMovementStamp);
+	const double Stamp = EchoedMovementStamp;
 	const double Elapsed = static_cast<double>(ElapsedSinceUpdateSeconds);
 	const double AgeMs = (Receipt - Stamp) * 1000.0;
-	constexpr double SnapToleranceSeconds = 0.0005; // Only to an existing history endpoint; never extrapolate.
 	constexpr double MaxEchoAgeSeconds = 0.200; // Existing C4 budget; no authority changes.
-	const bool bInWindow = Stamp <= Receipt + SnapToleranceSeconds &&
-		Stamp >= Receipt - MaxEchoAgeSeconds - SnapToleranceSeconds;
+	const bool bInWindow = Stamp <= Receipt &&
+		Stamp >= Receipt - MaxEchoAgeSeconds;
 
 	FEnclaveTargetCapsuleFrame Base;
 	FEnclaveTargetCapsuleFrame ElapsedFrame;
-	double QueryStamp = Stamp;
+	const double QueryStamp = Stamp;
 	bool bBaseFound = false;
 	bool bElapsedFound = false;
-	bool bSnappedToEndpoint = false;
+	const bool bSnappedToEndpoint = false; // Strict double timestamp: never snap.
 	if (bInWindow && IsValid(History))
 	{
-		double Oldest = 0.0;
-		double Newest = 0.0;
-		if (History->GetHistoryTimeBounds(Oldest, Newest))
-		{
-			if (Stamp < Oldest && Oldest - Stamp <= SnapToleranceSeconds)
-			{
-				QueryStamp = Oldest;
-				bSnappedToEndpoint = true;
-			}
-			else if (Stamp > Newest && Stamp - Newest <= SnapToleranceSeconds)
-			{
-				QueryStamp = Newest;
-				bSnappedToEndpoint = true;
-			}
-			bBaseFound = History->TryGetCapsuleAtTime(QueryStamp, Base);
-			// A: Actual authoritative history at later time, never extrapolated.
-			bElapsedFound = History->TryGetCapsuleAtTime(QueryStamp + Elapsed, ElapsedFrame);
-		}
+		bBaseFound = History->TryGetCapsuleAtTime(QueryStamp, Base);
+		// A: Actual authoritative history at later time, never extrapolated.
+		bElapsedFound = History->TryGetCapsuleAtTime(QueryStamp + Elapsed, ElapsedFrame);
 	}
 
 	const FVector ActualClientCapsule = FVector(ClientCapsuleAtShot);

@@ -16,6 +16,6 @@ struct FEnclaveSSRGameplayClaim
 	// Diagnostic-only untrusted label, never gameplay authority.
 	uint8 Scenario = 0;
 	TWeakObjectPtr<AActor> Target;
-	float EchoedMovementStamp = 0.0f;
+	double EchoedMovementStamp = 0.0;
 	float SecondsSinceMovementUpdate = 0.0f;
 };

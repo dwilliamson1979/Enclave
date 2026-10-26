@@ -267,21 +267,11 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 		return false;
 	}
 
-	// The claim transports the authoritative sample time as a float, while
-	// history retains the original double. Float rounding can place a claim
-	// a few microseconds beyond the latest frame. Return that EXACT recorded
-	// frame only within the fixed 0.5 ms precision bound; never extrapolate.
-	// The server's independent timing/rewind plausibility checks still apply.
-	constexpr double NewestFramePrecisionToleranceSeconds = 0.0005;
-	const double NewestTime = Frames.Last().ServerTimeSeconds;
-	if (ServerTimeSeconds > NewestTime)
+	// Authoritative timestamps are transported losslessly as double.
+	// Never snap future times onto a recorded frame.
+	if (ServerTimeSeconds > Frames.Last().ServerTimeSeconds)
 	{
-		if (ServerTimeSeconds - NewestTime > NewestFramePrecisionToleranceSeconds)
-		{
-			return false;
-		}
-		OutFrame = Frames.Last();
-		return true;
+		return false;
 	}
 
 	// The history is short and strictly ordered. Never extrapolate before

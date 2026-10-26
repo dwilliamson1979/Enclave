@@ -322,13 +322,12 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 		return;
 	}
 
-	const double Stamp = static_cast<double>(Claim.EchoedMovementStamp);
+	const double Stamp = Claim.EchoedMovementStamp;
 	const double Elapsed = static_cast<double>(Claim.SecondsSinceMovementUpdate);
 	const double Age = Timing.ServerReceiptTimeSeconds - Stamp;
 	const double RTT = Timing.ServerObservedRTTSeconds;
 	// Both policies use the same fallback: the existing present-time trace's
 	// outcome on the claimed target. Rejection is still scored, not excluded.
-	constexpr double BoundaryToleranceSeconds = 0.0005; // float rounding only
 	constexpr double RTTMarginSeconds = 0.050;
 	// D1.1C LOCKED feasibility bound (see ACCEPTANCE_D11C.md): observed
 	// update-age clusters were ~17/34/50ms despite NetUpdateFrequency=100.
@@ -339,12 +338,12 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 	// challenger. Elapsed cannot disqualify a plausible primary stamp.
 	const bool bStampPlausible = FMath::IsFinite(Stamp) && Stamp > 0.0 &&
 		FMath::IsFinite(RTT) && RTT >= 0.0 &&
-		Age >= -BoundaryToleranceSeconds &&
-		Age <= Timing.MaxRewindSeconds + BoundaryToleranceSeconds &&
-		Age <= RTT + RTTMarginSeconds + BoundaryToleranceSeconds;
+		Age >= 0.0 &&
+		Age <= Timing.MaxRewindSeconds &&
+		Age <= RTT + RTTMarginSeconds;
 	const bool bElapsedPlausible = bStampPlausible &&
 		FMath::IsFinite(Elapsed) && Elapsed >= 0.0 && Elapsed <= MaxElapsedSeconds &&
-		(Age - Elapsed) >= -BoundaryToleranceSeconds;
+		(Age - Elapsed) >= 0.0;
 	if (!bStampPlausible)
 	{
 		// Explicit diagnostic stationary policy: a quiet simulated proxy often

@@ -593,7 +593,7 @@ void AEnclaveCharacter::OnRep_SSRServerCapsuleObservation()
         return;
     }
     FEnclaveSSRReceivedProxyUpdate& Update = DebugLastReceivedSSRObservation;
-    Update.ServerStamp = static_cast<float>(SSRServerCapsuleObservation.ServerTimeSeconds);
+    Update.ServerStamp = SSRServerCapsuleObservation.ServerTimeSeconds;
     Update.ReplicatedLocation = SSRServerCapsuleObservation.Center;
     Update.ReplicatedVelocity = FVector::ZeroVector;
     Update.CapsuleAtReceive = SSRServerCapsuleObservation.Center;
