@@ -77,13 +77,13 @@ public:
 	UFUNCTION(Exec)
 	void EnclaveDebugSSRProtect(int32 bEnable);
 
-	/** Development-only, listen-server target crouch control. Calls normal
-	 * ACharacter::Crouch/UnCrouch and verifies the applied capsule height.
-	 * Stable verified crouch may be combined with the strafe rig; transitions
+	/** Development-only crouch input on the locally possessed test target.
+	 * Uses normal CharacterMovement crouch prediction/replication, including
+	 * autonomous clients. Local capsule verification is NOT server verification.
+	 * Stable crouch may be combined with the local strafe/reversal rig; transitions
 	 * while strafing are blocked to preserve scenario identity.
-	 * Run Enclave.Debug.SSRCrouch 1 / 0 in the target's listen-server console.
-	 * If strafe is requested during the pending crouch transition, it waits for verification.
-	 * Requires Enclave.Debug.SSRGameplayGate 1; protection is separate.
+	 * Run Enclave.Debug.SSRCrouch 1 / 0 on the TARGET's own PIE console.
+	 * Requires Enclave.Debug.SSRGameplayGate 1 to start; protection is separate.
 	 */
 	UFUNCTION(Exec)
 	void EnclaveDebugSSRCrouch(int32 bEnable);

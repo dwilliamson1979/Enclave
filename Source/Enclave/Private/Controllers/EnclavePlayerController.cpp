@@ -152,7 +152,7 @@ namespace
 	}
 
 	static FAutoConsoleCommandWithWorldAndArgs CCmdDebugSSRCrouch(
-		TEXT("Enclave.Debug.SSRCrouch"), TEXT("Request/release debug crouch on the local authoritative target (0/1)."),
+		TEXT("Enclave.Debug.SSRCrouch"), TEXT("Request/release crouch on the locally controlled SSR test target (0/1)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&ExecuteEnclaveSSRConsoleAction, EEnclaveSSRConsoleAction::Crouch), ECVF_Cheat);
 
 	static FAutoConsoleCommandWithWorldAndArgs CCmdDebugSSRStrafe(
@@ -1348,9 +1348,9 @@ void AEnclavePlayerController::ServerEnclaveDebugSSRProtect_Implementation(bool 
 #endif
 }
 
-// D1.1C.1: isolate true crouch geometry without keyboard-focus ambiguity.
-// This runs only on the listen-server target; normal ACharacter movement
-// replicates the resulting crouch state/capsule, not an SSR-specific payload.
+// C3B2: drive the locally possessed pawn through ordinary CharacterMovement
+// crouch, including the remote autonomous proxy. Client capsule verification
+// is local/predicted; the server must still validate the historical capsule.
 void AEnclavePlayerController::EnclaveDebugSSRCrouch(int32 bEnable)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
@@ -1376,7 +1376,7 @@ void AEnclavePlayerController::EnclaveDebugSSRCrouch(int32 bEnable)
 		bDebugSSRStrafeQueuedForCrouch = false;
 		if (AEnclaveCharacter* Original = DebugSSRCrouchPawn.Get())
 		{
-			if (Original->HasAuthority())
+			if (Original->IsLocallyControlled())
 			{
 				Original->UnCrouch();
 			}
@@ -1392,11 +1392,11 @@ void AEnclavePlayerController::EnclaveDebugSSRCrouch(int32 bEnable)
 
 	AEnclaveCharacter* Char = Cast<AEnclaveCharacter>(GetPawn());
 	UCharacterMovementComponent* Movement = IsValid(Char) ? Char->GetCharacterMovement() : nullptr;
-	if (!IsLocalController() || !IsValid(Char) || !Char->HasAuthority() ||
-		!Char->IsLocallyControlled() || !IsValid(Movement) || !IsSSRGameplayGateEnabled())
+	if (!IsLocalController() || !IsValid(Char) || !Char->IsLocallyControlled() ||
+		!IsValid(Movement) || !IsSSRGameplayGateEnabled())
 	{
 		ENCLAVE_LOG(LogEnclaveCombat, Warning,
-			"SSRPlayerCrouch rejected=requires_authoritative_local_character_and_gameplay_gate (DEBUG ONLY)");
+			"SSRPlayerCrouch rejected=requires_locally_controlled_character_and_gameplay_gate (DEBUG ONLY)");
 		return;
 	}
 	if (bDebugSSRStrafeEnabled)
@@ -1436,7 +1436,7 @@ void AEnclavePlayerController::StopDebugSSRCrouch(const TCHAR* Reason)
 {
 	if (AEnclaveCharacter* Original = DebugSSRCrouchPawn.Get())
 	{
-		if (Original->HasAuthority())
+		if (Original->IsLocallyControlled())
 		{
 			Original->UnCrouch();
 		}
@@ -1472,9 +1472,9 @@ void AEnclavePlayerController::TickDebugSSRCrouch(float DeltaSeconds)
 		bDebugSSRCrouchDesired = false;
 		return;
 	}
-	if (!Char->HasAuthority() || Char != GetPawn())
+	if (!IsLocalController() || !Char->IsLocallyControlled() || Char != GetPawn())
 	{
-		StopDebugSSRCrouch(TEXT("authority_or_possession_changed"));
+		StopDebugSSRCrouch(TEXT("local_ownership_or_possession_changed"));
 		return;
 	}
 
@@ -1492,9 +1492,9 @@ void AEnclavePlayerController::TickDebugSSRCrouch(float DeltaSeconds)
 		if (bActualCrouched == bDebugSSRCrouchDesired)
 		{
 			ENCLAVE_LOG(LogEnclaveCombat, Log,
-				"SSRPlayerCrouch VERIFIED pawn=%s crouched=%d halfHeightCm=%.2f radiusCm=%.2f (authoritative capsule; DEBUG ONLY)",
+				"SSRPlayerCrouch VERIFIED pawn=%s crouched=%d halfHeightCm=%.2f radiusCm=%.2f authority=%d (local capsule; server must verify remote geometry; DEBUG ONLY)",
 				*GetNameSafe(Char), bActualCrouched ? 1 : 0,
-				Capsule->GetUnscaledCapsuleHalfHeight(), Capsule->GetUnscaledCapsuleRadius());
+				Capsule->GetUnscaledCapsuleHalfHeight(), Capsule->GetUnscaledCapsuleRadius(), Char->HasAuthority() ? 1 : 0);
 			bDebugSSRCrouchPending = false;
 			if (bDebugSSRCrouchDesired && bDebugSSRStrafeQueuedForCrouch)
 			{
