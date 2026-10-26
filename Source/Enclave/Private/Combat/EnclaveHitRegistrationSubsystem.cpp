@@ -395,6 +395,21 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 	const bool bElapsed = bElapsedPlausible && IsValid(History) && History->TryGetCapsuleAtTime(Stamp + Elapsed, ElapsedFrame);
 	if (!bBase && !bElapsed)
 	{
+		// D11C preflight only: expose exact history boundaries before choosing a
+		// timestamp/replication redesign. This never changes hit authority.
+		double HistoryOldest = 0.0;
+		double HistoryNewest = 0.0;
+		const bool bHasHistoryBounds = IsValid(History) &&
+			History->GetHistoryTimeBounds(HistoryOldest, HistoryNewest);
+		const double NewestDeltaMs = bHasHistoryBounds ? (Stamp - HistoryNewest) * 1000.0 : 0.0;
+		const TCHAR* HistoryReason = !bHasHistoryBounds ? TEXT("empty") :
+			(Stamp > HistoryNewest ? TEXT("newer_than_latest") :
+			(Stamp < HistoryOldest ? TEXT("older_than_oldest") : TEXT("inside_window_unavailable")));
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRHistoryBoundary key=%u target=%s reason=%s stamp=%.9f oldest=%.9f newest=%.9f aheadOfNewestMs=%.3f serverReceipt=%.9f ageMs=%.3f frames=%d (DIAGNOSTIC ONLY)",
+			Query.ShotSequence, *GetNameSafe(Target), HistoryReason, Stamp,
+			HistoryOldest, HistoryNewest, NewestDeltaMs, Timing.ServerReceiptTimeSeconds,
+			Age * 1000.0, IsValid(History) ? History->GetHistorySampleCount() : 0);
 		ENCLAVE_LOG(LogEnclaveCombat, Log,
 			"SSRGameplay SERVER key=%u status=missing_history stampStatus=missing_history elapsedStatus=%s category=%d scenario=%d ageMs=%.2f elapsedMs=%.2f liveTargetHit=%d stampAvailable=0 elapsedAvailable=0 stampFinalHit=%d elapsedFinalHit=%d stampFallback=1 elapsedFallback=1 (PRESENT fallback; SHADOW ONLY)",
 			Query.ShotSequence, bElapsedPlausible ? TEXT("missing_history") : TEXT("rejected_elapsed"),
