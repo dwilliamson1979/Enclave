@@ -8,6 +8,7 @@
 #include "Combat/EnclaveHistoricalHitQuery.h"
 #include "Combat/EnclaveServerHistoricalEvaluator.h"
 #include "Combat/EnclaveSSRTimingCalibration.h"
+#include "Combat/EnclaveSSRTemporalUncertainty.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Characters/EnclaveCharacter.h"
 #include "Components/CapsuleComponent.h"
@@ -478,6 +479,7 @@ void UEnclaveHitRegistrationSubsystem::DebugSweepSSRTimingSensitivity(
     }
 
     EnclaveSSRTimingCalibration::FSummary Summary;
+    EnclaveSSRTemporalUncertainty::FAssessment Uncertainty;
     FString Outcomes;
     for (int32 Index = 0; Index < EnclaveSSRTimingCalibration::SampleCount; ++Index)
     {
@@ -493,6 +495,7 @@ void UEnclaveHitRegistrationSubsystem::DebugSweepSSRTimingSensitivity(
             Outcome = Assessment.Policy.Outcome;
         }
         Summary.Add(Index, Outcome);
+        Uncertainty.Add(Outcome);
         if (!Outcomes.IsEmpty()) { Outcomes += TEXT(","); }
         Outcomes += FString::Printf(TEXT("%.0f:%d"), AdditionalMs, static_cast<int32>(Outcome));
     }
@@ -503,6 +506,15 @@ void UEnclaveHitRegistrationSubsystem::DebugSweepSSRTimingSensitivity(
         static_cast<uint32>(Query.ShotSequence), StepMs, *Outcomes,
         Summary.Hits, Summary.Misses, Summary.Unavailable, Summary.Transitions,
         Summary.FirstTransitionIndex);
+
+    ENCLAVE_LOG(LogEnclaveCombat, Log,
+        "SSRTemporalUncertainty SERVER seq=%u classification=%d samples=%d hits=%d misses=%d unavailable=%d "
+        "presentationProvenance=0 damageAuthorized=%d "
+        "(STABILITY IS NOT PRESENTATION PROOF; SHADOW ONLY; NO DAMAGE AUTHORITY)",
+        static_cast<uint32>(Query.ShotSequence),
+        static_cast<int32>(Uncertainty.Classification),
+        Uncertainty.Samples, Uncertainty.Hits, Uncertainty.Misses, Uncertainty.Unavailable,
+        Uncertainty.IsAuthorizedForDamage() ? 1 : 0);
 }
 
 void UEnclaveHitRegistrationSubsystem::DebugAuditServerHistoricalReadiness(

@@ -6,6 +6,7 @@
 #include "Combat/EnclaveSSRPolicyContracts.h"
 #include "Combat/EnclaveShotTiming.h"
 #include "Combat/EnclaveSSRTimingCalibration.h"
+#include "Combat/EnclaveSSRTemporalUncertainty.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 
@@ -121,3 +122,33 @@ bool FEnclaveSSRTimingCalibrationTest::RunTest(const FString& Parameters)
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRTemporalUncertaintyTest,
+    "Enclave.Combat.SSR.TemporalUncertainty",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveSSRTemporalUncertaintyTest::RunTest(const FString& Parameters)
+{
+    using namespace EnclaveSSRTemporalUncertainty;
+    FAssessment Stable;
+    TestEqual(TEXT("No samples"), Stable.Classification, EClassification::NoSamples);
+    Stable.Add(EEnclaveSSRQueryOutcome::HistoricalHit);
+    Stable.Add(EEnclaveSSRQueryOutcome::HistoricalHit);
+    TestEqual(TEXT("All hit samples"), Stable.Classification, EClassification::StableHit);
+    TestFalse(TEXT("Stable results are never presentation proof"), Stable.IsAuthorizedForDamage());
+    Stable.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
+    TestEqual(TEXT("Conflicting samples"), Stable.Classification, EClassification::ConflictingResults);
+    FAssessment Missing;
+    Missing.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
+    Missing.Add(EEnclaveSSRQueryOutcome::Unavailable);
+    TestEqual(TEXT("Missing history is not stable miss"), Missing.Classification, EClassification::Unavailable);
+    Missing.Add(EEnclaveSSRQueryOutcome::HistoricalHit);
+    TestEqual(TEXT("Missing history retains precedence"), Missing.Classification, EClassification::Unavailable);
+    FAssessment AllMiss;
+    AllMiss.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
+    AllMiss.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
+    TestEqual(TEXT("Stable misses"), AllMiss.Classification, EClassification::StableMiss);
+    TestFalse(TEXT("Stable miss is not authorization"), AllMiss.IsAuthorizedForDamage());
+    return true;
+}
+#endif
