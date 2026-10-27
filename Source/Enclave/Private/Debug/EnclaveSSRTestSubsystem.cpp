@@ -1,5 +1,6 @@
 #include "Debug/EnclaveSSRTestSubsystem.h"
 #include "Controllers/EnclavePlayerController.h"
+#include "Debug/EnclaveSSRTestComponent.h"
 #include "Characters/EnclaveCharacter.h"
 #include "Debug/EnclaveDebug.h"
 #include "Engine/World.h"
@@ -42,7 +43,7 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 	{
 		AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(It->Get());
 		if (IsValid(PC) && PC != HostController.Get() && PC->HasAuthority() && !PC->IsLocalController() &&
-			IsValid(PC->GetPawn()) && IsValid(PC->PlayerState))
+			IsValid(PC->GetPawn()) && IsValid(PC->PlayerState) && IsValid(PC->GetSSRTestComponent()))
 		{
 			Remotes.Add(PC);
 		}
@@ -73,8 +74,8 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 	TargetController = Remotes[1];
 	TargetPawn = SelectedTargetPawn;
 	SelectedTargetPawn->DebugSetSSRStrafeDamageSuppressed(true);
-	Remotes[1]->ClientEnclaveSSRTestConfigure(TestId, 2, Scenario, 1729, nullptr);
-	Remotes[0]->ClientEnclaveSSRTestConfigure(TestId, 1, Scenario, 1729, SelectedTargetPawn);
+	Remotes[1]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 2, Scenario, 1729, nullptr);
+	Remotes[0]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 1, Scenario, 1729, SelectedTargetPawn);
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
 		"SSRTest START id=%d scenario=%d shooterPlayerId=%d targetPlayerId=%d shooter=%s target=%s (SHADOW ONLY)",
 		TestId, Scenario, Remotes[0]->PlayerState->GetPlayerId(), Remotes[1]->PlayerState->GetPlayerId(),
@@ -89,8 +90,8 @@ void UEnclaveSSRTestSubsystem::Stop(const TCHAR* Reason)
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (!GetWorld() || GetWorld()->GetNetMode() != NM_ListenServer || Phase == 0) return;
 	const int32 OldId = TestId;
-	if (AEnclavePlayerController* Shooter = ShooterController.Get()) Shooter->ClientEnclaveSSRTestCleanup(OldId);
-	if (AEnclavePlayerController* Target = TargetController.Get()) Target->ClientEnclaveSSRTestCleanup(OldId);
+	if (AEnclavePlayerController* Shooter = ShooterController.Get()) Shooter->GetSSRTestComponent()->ClientEnclaveSSRTestCleanup(OldId);
+	if (AEnclavePlayerController* Target = TargetController.Get()) Target->GetSSRTestComponent()->ClientEnclaveSSRTestCleanup(OldId);
 	if (AEnclaveCharacter* ProtectedTargetPawn = TargetPawn.Get()) ProtectedTargetPawn->DebugSetSSRStrafeDamageSuppressed(false);
 	ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest STOP id=%d reason=%s phase=%d elapsed=%.1f (DEBUG ONLY)",
 		OldId, Reason, Phase, Elapsed);
@@ -137,7 +138,7 @@ void UEnclaveSSRTestSubsystem::TickSession(float DeltaSeconds)
 		if (TestScenario == 5 || Speed >= 30.0f)
 		{
 			Phase = 3;
-			if (AEnclavePlayerController* Shooter = ShooterController.Get()) Shooter->ClientEnclaveSSRTestBeginFire(TestId);
+			if (AEnclavePlayerController* Shooter = ShooterController.Get()) Shooter->GetSSRTestComponent()->ClientEnclaveSSRTestBeginFire(TestId);
 			ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest FIRING id=%d targetServerSpeedCmS=%.1f (DEBUG ONLY)", TestId, Speed);
 		}
 		else if (Elapsed > 12.0f)

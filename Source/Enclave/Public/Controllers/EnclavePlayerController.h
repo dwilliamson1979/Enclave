@@ -15,6 +15,7 @@ class IEnclaveInputConfigProviderInterface;
 class UEnclaveCombatFeedbackComponent;
 class AEnclaveCharacter;
 class UEnclaveSSRTestSubsystem;
+class UEnclaveSSRTestComponent;
 
 UCLASS()
 class ENCLAVE_API AEnclavePlayerController : public APlayerController
@@ -22,10 +23,12 @@ class ENCLAVE_API AEnclavePlayerController : public APlayerController
 	GENERATED_BODY()
 
 	friend class UEnclaveSSRTestSubsystem;
+	friend class UEnclaveSSRTestComponent;
 
 public:
 
 	AEnclavePlayerController();
+	UEnclaveSSRTestComponent* GetSSRTestComponent() const { return SSRTestComponent; }
 
 	/**
 	 * Development-only lifecycle test. Recreates this controller's pawn while
@@ -157,6 +160,9 @@ protected:
 
 private:
 
+	UPROPERTY(Transient)
+	TObjectPtr<UEnclaveSSRTestComponent> SSRTestComponent = nullptr;
+
 	/** Optional debug-only telemetry; no gameplay decision may consume this RPC.
 	 * Its independent arrival time must not be confused with Fire target-data receipt.
 	 */
@@ -182,17 +188,6 @@ private:
 
 	/** Debug-only request from a remotely owned target; validates possession and gate on authority. */
 	/** Fixed-parameter developer test control, never arbitrary console command execution. */
-	UFUNCTION(Client, Reliable)
-	void ClientEnclaveSSRTestConfigure(int32 TestId, int32 TestRole, int32 Scenario, int32 Seed, AEnclaveCharacter* Target);
-
-	UFUNCTION(Server, Reliable)
-	void ServerEnclaveSSRTestReady(int32 TestId, int32 TestRole, bool bReady);
-
-	UFUNCTION(Client, Reliable)
-	void ClientEnclaveSSRTestBeginFire(int32 TestId);
-
-	UFUNCTION(Client, Reliable)
-	void ClientEnclaveSSRTestCleanup(int32 TestId);
 
 	UFUNCTION(Server, Reliable)
 	void ServerEnclaveDebugSSRProtect(bool bEnable);
@@ -265,10 +260,6 @@ private:
 	bool bDebugSSRCrouchPending = false;
 	bool bDebugSSRStrafeQueuedForCrouch = false;
 
-	// Client participation state; session orchestration lives in UEnclaveSSRTestSubsystem.
-	TWeakObjectPtr<AEnclaveCharacter> DebugSSRTestForcedTarget;
-	int32 DebugSSRTestClientId = 0;
-	int32 DebugSSRTestClientRole = 0;
 
 	// D1.1B automated shot sampling; never replicated or compiled for Test/Shipping.
 	void StopDebugSSRAutoFire(const TCHAR* Reason);

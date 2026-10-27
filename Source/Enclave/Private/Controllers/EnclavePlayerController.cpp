@@ -1,5 +1,6 @@
-﻿#include "Controllers/EnclavePlayerController.h"
+#include "Controllers/EnclavePlayerController.h"
 #include "Debug/EnclaveSSRTestSubsystem.h"
+#include "Debug/EnclaveSSRTestComponent.h"
 #include "Characters/EnclaveCharacter.h"
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
@@ -1058,6 +1059,9 @@ AEnclavePlayerController::AEnclavePlayerController()
 	DefaultMouseCursor = EMouseCursor::Default;
 
 	CombatFeedbackComp = CreateDefaultSubobject<UEnclaveCombatFeedbackComponent>(TEXT("CombatFeedbackComp"));
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	SSRTestComponent = CreateDefaultSubobject<UEnclaveSSRTestComponent>(TEXT("SSRTestComponent"));
+#endif
 }
 
 void AEnclavePlayerController::EnclaveDebugRespawn()
@@ -1309,6 +1313,7 @@ void AEnclavePlayerController::OnUnPossess()
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (HasAuthority())
         if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr) Session->ParticipantUnpossessed(this);
+	if (SSRTestComponent) SSRTestComponent->ParticipantUnpossessed();
 	StopDebugSSRAutoFire(TEXT("unpossessed"));
 	StopDebugSSRStrafe(TEXT("unpossessed"));
 	StopDebugSSRCrouch(TEXT("unpossessed"));
@@ -1348,82 +1353,13 @@ void AEnclavePlayerController::EnclaveDebugSSRTestStatus()
 #endif
 }
 
-void AEnclavePlayerController::ClientEnclaveSSRTestConfigure_Implementation(int32 TestId, int32 TestRole, int32 Scenario, int32 Seed, AEnclaveCharacter* Target)
-{
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (!IsLocalController() || GetNetMode() != NM_Client || (TestRole != 1 && TestRole != 2) ||
-		Scenario < 2 || Scenario > 5 || TestId <= 0)
-	{
-		ServerEnclaveSSRTestReady(TestId, TestRole, false);
-		return;
-	}
-	EnclaveDebugSSRAutoFire(0);
-	EnclaveDebugSSRStrafe(0);
-	EnclaveDebugSSRCrouch(0);
-	DebugSSRTestClientId = TestId;
-	DebugSSRTestClientRole = TestRole;
-	DebugSSRTestForcedTarget = Target;
-	CVarDebugSSRGameplayGate.AsVariable()->Set(true, ECVF_SetByCode);
-	CVarDebugSSRScenario.AsVariable()->Set(Scenario, ECVF_SetByCode);
-	CVarDebugSSRAutoSeed.AsVariable()->Set(Seed, ECVF_SetByCode);
-	CVarDebugSSRStrafeDuration.AsVariable()->Set(180.0f, ECVF_SetByCode);
-	bool bReady = IsValid(Cast<AEnclaveCharacter>(GetPawn()));
-	if (TestRole == 1) bReady &= IsValid(Target) && Target->GetLocalRole() == ROLE_SimulatedProxy;
-	if (bReady && TestRole == 2)
-	{
-		if (Scenario == 4) EnclaveDebugSSRCrouch(1);
-		if (Scenario != 5) EnclaveDebugSSRStrafe(1);
-	}
-	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRTest CLIENT_CONFIG id=%d role=%d scenario=%d ready=%d pawn=%s target=%s (DEBUG ONLY)",
-		TestId, TestRole, Scenario, bReady ? 1 : 0, *GetNameSafe(GetPawn()), *GetNameSafe(Target));
-	ServerEnclaveSSRTestReady(TestId, TestRole, bReady);
-#else
-	(void)TestId; (void)TestRole; (void)Scenario; (void)Seed; (void)Target;
-#endif
-}
 
-void AEnclavePlayerController::ServerEnclaveSSRTestReady_Implementation(int32 TestId, int32 TestRole, bool bReady)
-{
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-    if (HasAuthority())
-        if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr)
-            Session->ParticipantReady(this, TestId, TestRole, bReady);
-#endif
-}
 
-void AEnclavePlayerController::ClientEnclaveSSRTestBeginFire_Implementation(int32 TestId)
-{
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (IsLocalController() && GetNetMode() == NM_Client && DebugSSRTestClientRole == 1 &&
-		DebugSSRTestClientId == TestId && IsValid(DebugSSRTestForcedTarget.Get()))
-	{
-		EnclaveDebugSSRAutoFire(1);
-		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest FIRE_STARTED id=%d started=%d (DEBUG ONLY)",
-			TestId, bDebugSSRAutoEnabled ? 1 : 0);
-	}
-#else
-	(void)TestId;
-#endif
-}
 
-void AEnclavePlayerController::ClientEnclaveSSRTestCleanup_Implementation(int32 TestId)
-{
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (IsLocalController() && DebugSSRTestClientId == TestId)
-	{
-		EnclaveDebugSSRAutoFire(0);
-		EnclaveDebugSSRStrafe(0);
-		EnclaveDebugSSRCrouch(0);
-		DebugSSRTestForcedTarget.Reset();
-		DebugSSRTestClientId = 0;
-		DebugSSRTestClientRole = 0;
-		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest CLIENT_CLEANUP id=%d (DEBUG ONLY)", TestId);
-	}
-#else
-	(void)TestId;
-#endif
-}
+
+
+
+
 
 void AEnclavePlayerController::BeginPlay()
 {
@@ -1817,9 +1753,9 @@ void AEnclavePlayerController::EnclaveDebugSSRAutoFire(int32 bEnable)
 bool AEnclavePlayerController::ChooseDebugSSRAutoTarget()
 {
 	DebugSSRAutoTarget.Reset();
-	if (DebugSSRTestClientRole == 1 && DebugSSRTestClientId > 0)
+	if (SSRTestComponent && SSRTestComponent->IsCoordinatedShooter())
 	{
-		AEnclaveCharacter* Forced = DebugSSRTestForcedTarget.Get();
+		AEnclaveCharacter* Forced = SSRTestComponent->GetForcedTarget();
 		if (IsValid(Forced) && Forced != GetPawn() && Forced->GetLocalRole() == ROLE_SimulatedProxy)
 		{
 			DebugSSRAutoTarget = Forced;
