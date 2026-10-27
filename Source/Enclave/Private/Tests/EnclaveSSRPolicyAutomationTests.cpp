@@ -5,6 +5,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Combat/EnclaveSSRPolicyContracts.h"
 #include "Combat/EnclaveShotTiming.h"
+#include "Combat/EnclaveSSRTimingCalibration.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 
@@ -93,4 +94,30 @@ bool FEnclaveSSRHistoricalCapsuleGeometryTest::RunTest(const FString& Parameters
             FVector::ZeroVector, FVector(200., 0., 0.), Capsule, Distance, Point));
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRTimingCalibrationTest,
+    "Enclave.Combat.SSR.TimingCalibration",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveSSRTimingCalibrationTest::RunTest(const FString& Parameters)
+{
+    using namespace EnclaveSSRTimingCalibration;
+    TestEqual(TEXT("Sweep starts at zero extra delay"), DelayMs(0, 25.0), 0.0);
+    TestEqual(TEXT("Fifth sample at 100ms"), DelayMs(4, 25.0), 100.0);
+    TestTrue(TEXT("Negative index rejected"), DelayMs(-1, 25.0) < 0.0);
+    TestTrue(TEXT("Out-of-range index rejected"), DelayMs(5, 25.0) < 0.0);
+    TestTrue(TEXT("Invalid step rejected"), DelayMs(1, -1.0) < 0.0);
+
+    FSummary Summary;
+    Summary.Add(0, EEnclaveSSRQueryOutcome::HistoricalMiss);
+    Summary.Add(1, EEnclaveSSRQueryOutcome::HistoricalHit);
+    Summary.Add(2, EEnclaveSSRQueryOutcome::Unavailable);
+    Summary.Add(3, EEnclaveSSRQueryOutcome::HistoricalMiss);
+    Summary.Add(4, EEnclaveSSRQueryOutcome::HistoricalHit);
+    TestEqual(TEXT("Two hits"), Summary.Hits, 2);
+    TestEqual(TEXT("Two misses"), Summary.Misses, 2);
+    TestEqual(TEXT("One unavailable"), Summary.Unavailable, 1);
+    TestEqual(TEXT("Unavailable interrupts transitions"), Summary.Transitions, 2);
+    TestEqual(TEXT("First transition at sample one"), Summary.FirstTransitionIndex, 1);
+    return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

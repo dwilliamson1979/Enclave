@@ -7,6 +7,7 @@
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/EnclaveHistoricalHitQuery.h"
 #include "Combat/EnclaveServerHistoricalEvaluator.h"
+#include "Combat/EnclaveSSRTimingCalibration.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Characters/EnclaveCharacter.h"
 #include "Components/CapsuleComponent.h"
@@ -61,6 +62,15 @@ static TAutoConsoleVariable<float> CVarDebugSSRTimingSmoothingMs(
     TEXT("Enclave.Debug.SSRTimingSmoothingMs"), 0.f,
     TEXT("Additional assumed target presentation delay in milliseconds for SHADOW candidate comparison only."),
     ECVF_Cheat);
+
+// D11D-3C: independent server-only timing sensitivity sweep. Deliberately
+// bounded to five samples; all results are diagnostic, not presentation proof.
+static TAutoConsoleVariable<bool> CVarDebugSSRTimingSweep(
+    TEXT("Enclave.Debug.SSRTimingSweep"), false,
+    TEXT("Evaluate 5 bounded history samples starting at server RTT anchor, shadow only; never affects damage."), ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarDebugSSRTimingSweepStepMs(
+    TEXT("Enclave.Debug.SSRTimingSweepStepMs"), 25.f,
+    TEXT("Step between timing sweep samples in ms [0,100]. Results outside the rewind window are unavailable, not clamped."), ECVF_Cheat);
 
 static TAutoConsoleVariable<bool> CVarDebugSSRProductionReadiness(
     TEXT("Enclave.Debug.SSRProductionReadiness"),
@@ -280,6 +290,7 @@ bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuer
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	DebugAuditServerHistoricalReadiness(Query, Mode);
 	DebugCompareSSRTimingCandidates(Query, Mode);
+	DebugSweepSSRTimingSensitivity(Query, Mode);
 	DebugProbeServerHistoricalEvaluator(Query, Mode);
 	DebugCompareHistoricalCapsules(Query, bCurrentHit, OutHit, Mode);
 	DebugCompareSSRGameplay(Query, bCurrentHit, OutHit, Mode);
@@ -439,6 +450,59 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRTimingCandidates(
         static_cast<int32>(ClientAssessment.Policy.UnavailableReason),
         bComparable ? 1 : 0,
         bComparable && ServerAssessment.Policy.Outcome == ClientAssessment.Policy.Outcome ? 1 : 0);
+}
+
+void UEnclaveHitRegistrationSubsystem::DebugSweepSSRTimingSensitivity(
+    const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const
+{
+    if (!CVarDebugSSRTimingSweep.GetValueOnGameThread() ||
+        !Query.bHasValidatedClientTiming)
+    {
+        return;
+    }
+    UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() == NM_Client ||
+        Mode != EEnclaveWeaponHitDetectionMode::Capsule || !Query.Instigator.IsValid())
+    {
+        return;
+    }
+
+    const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
+    const double StepMs = static_cast<double>(CVarDebugSSRTimingSweepStepMs.GetValueOnGameThread());
+    if (!FMath::IsFinite(StepMs) || StepMs <= 0.0 || StepMs > 100.0)
+    {
+        ENCLAVE_LOG(LogEnclaveCombat, Warning,
+            "SSRTimingSweep SERVER seq=%u rejected=invalid_step stepMs=%.2f (SHADOW ONLY)",
+            static_cast<uint32>(Query.ShotSequence), StepMs);
+        return;
+    }
+
+    EnclaveSSRTimingCalibration::FSummary Summary;
+    FString Outcomes;
+    for (int32 Index = 0; Index < EnclaveSSRTimingCalibration::SampleCount; ++Index)
+    {
+        const double AdditionalMs = EnclaveSSRTimingCalibration::DelayMs(Index, StepMs);
+        double CandidateTime = 0.0;
+        EEnclaveSSRQueryOutcome Outcome = EEnclaveSSRQueryOutcome::Unavailable;
+        if (AdditionalMs >= 0.0 &&
+            Timing.TryResolveServerDerivedHistoryTime(AdditionalMs / 1000.0, CandidateTime))
+        {
+            const FEnclaveServerHistoricalAssessment Assessment =
+                FEnclaveServerHistoricalEvaluator::EvaluateCapsules(
+                    World, Query.Instigator.Get(), Query.Start, Query.End, Timing, CandidateTime);
+            Outcome = Assessment.Policy.Outcome;
+        }
+        Summary.Add(Index, Outcome);
+        if (!Outcomes.IsEmpty()) { Outcomes += TEXT(","); }
+        Outcomes += FString::Printf(TEXT("%.0f:%d"), AdditionalMs, static_cast<int32>(Outcome));
+    }
+
+    ENCLAVE_LOG(LogEnclaveCombat, Log,
+        "SSRTimingSweep SERVER seq=%u stepMs=%.1f sampleOutcomes=%s hits=%d misses=%d unavailable=%d transitions=%d firstTransitionIndex=%d "
+        "(SERVER RTT ESTIMATE PLUS ADDITIONAL DELAY; NOT VERIFIED CLIENT PRESENTATION; SHADOW ONLY; NO DAMAGE AUTHORITY)",
+        static_cast<uint32>(Query.ShotSequence), StepMs, *Outcomes,
+        Summary.Hits, Summary.Misses, Summary.Unavailable, Summary.Transitions,
+        Summary.FirstTransitionIndex);
 }
 
 void UEnclaveHitRegistrationSubsystem::DebugAuditServerHistoricalReadiness(
