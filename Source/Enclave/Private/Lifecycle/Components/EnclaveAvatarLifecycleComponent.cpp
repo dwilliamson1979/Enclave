@@ -4,6 +4,8 @@
 
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Actor.h"
+#include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -116,11 +118,13 @@ void UEnclaveAvatarLifecycleComponent::EnterDeadState(const FEnclaveDamageReques
 		return;
 	}
 
-	// A new death must not allow a subsequent historical query to
-	// resurrect the old alive target through stale collision history.
+	// Retain a bounded pre-death rewind window for legitimate trade kills.
+	// Historical queries at/after this authoritative death time exclude the corpse.
 	if (UEnclaveTargetHistoryComponent* TargetHistory = Owner->FindComponentByClass<UEnclaveTargetHistoryComponent>())
 	{
-		TargetHistory->InvalidateHistory();
+		const AGameStateBase* GameState = Owner->GetWorld() ? Owner->GetWorld()->GetGameState() : nullptr;
+		if (IsValid(GameState)) TargetHistory->MarkDeath(GameState->GetServerWorldTimeSeconds());
+		else TargetHistory->InvalidateHistory();
 	}
 
 	// Body identity is avatar-owned and survives ASC unbinding.

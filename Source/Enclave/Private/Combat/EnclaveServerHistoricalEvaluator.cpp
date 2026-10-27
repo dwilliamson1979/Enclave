@@ -81,7 +81,7 @@ FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCa
     Result.Policy.bWorldOccluded = Hit.bOccluded;
     // The query reports missing history across all other character targets.
     // Treating an apparent miss as definitive would permit a phantom pass-through.
-    if (Hit.Missing > 0 || Hit.Available == 0)
+    if (Hit.Missing > 0)
     {
         Result.Policy.Outcome = EEnclaveSSRQueryOutcome::Unavailable;
         Result.Policy.UnavailableReason = EEnclaveSSRUnavailableReason::HistoryMissing;

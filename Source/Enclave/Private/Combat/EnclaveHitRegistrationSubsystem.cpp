@@ -640,6 +640,7 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 	const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
 	FEnclaveTargetCapsuleFrame BaseFrame;
 	const bool bBase = IsValid(History) && History->TryGetCapsuleAtTime(Stamp, BaseFrame);
+	const bool bCapturedServerStamp = IsValid(History) && History->HasRecordedFrameStamp(Stamp);
 	if (!bBase)
 	{
 		double HistoryOldest = 0.0;
@@ -662,6 +663,11 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 		return;
 	}
 
+	if (!bCapturedServerStamp)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRStampProvenance SERVER key=%u recorded=0 deliveryVerified=0 (ECHO NOT AUTHENTICATED; SHADOW ONLY)", Query.ShotSequence);
+	}
 	const double QueryStartSeconds = FPlatformTime::Seconds();
 	FEnclaveHistoricalHitQuery Historical(World, Query.Start, Query.End, Query.Instigator.Get());
 	if (!Historical.IsPrepared())

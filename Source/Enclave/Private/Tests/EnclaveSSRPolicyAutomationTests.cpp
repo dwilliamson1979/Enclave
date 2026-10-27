@@ -1,12 +1,14 @@
 // Copyright Lightcarrier Studios
 // Deterministic, no-PIE automation coverage for production SSR primitives.
 #include "Misc/AutomationTest.h"
+#include <limits>
 
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Combat/EnclaveSSRPolicyContracts.h"
 #include "Combat/EnclaveShotTiming.h"
 #include "Combat/EnclaveSSRTimingCalibration.h"
 #include "Combat/EnclaveSSRTemporalUncertainty.h"
+#include "Combat/EnclaveSSRHistoricalEligibility.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 
@@ -151,4 +153,28 @@ bool FEnclaveSSRTemporalUncertaintyTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Stable miss is not authorization"), AllMiss.IsAuthorizedForDamage());
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRHistoricalEligibilityTest,
+    "Enclave.Combat.SSR.HistoricalEligibility",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveSSRHistoricalEligibilityTest::RunTest(const FString& Parameters)
+{
+    using E = EEnclaveSSRHistoricalEligibility;
+    TestEqual(TEXT("Living target eligible"),
+        (int32)FEnclaveSSRHistoricalEligibility::Evaluate(100.0, false, -1.0), (int32)E::Eligible);
+    TestEqual(TEXT("Trade kill: dead now but alive at query"),
+        (int32)FEnclaveSSRHistoricalEligibility::Evaluate(99.97, true, 100.0), (int32)E::Eligible);
+    TestEqual(TEXT("Dead exactly at boundary is excluded"),
+        (int32)FEnclaveSSRHistoricalEligibility::Evaluate(100.0, true, 100.0), (int32)E::ExcludedDeadAtQuery);
+    TestEqual(TEXT("Corpse excluded after death"),
+        (int32)FEnclaveSSRHistoricalEligibility::Evaluate(100.05, true, 100.0), (int32)E::ExcludedDeadAtQuery);
+    TestEqual(TEXT("Dead now with no server death stamp fails closed"),
+        (int32)FEnclaveSSRHistoricalEligibility::Evaluate(100.05, true, -1.0), (int32)E::MissingDeathBoundary);
+    TestEqual(TEXT("Invalid non-finite query time rejected"),
+        (int32)FEnclaveSSRHistoricalEligibility::Evaluate(std::numeric_limits<double>::quiet_NaN(), true, 100.0), (int32)E::InvalidQueryTime);
+    TestEqual(TEXT("Prior-life death boundary still excludes old corpse"),
+        (int32)FEnclaveSSRHistoricalEligibility::Evaluate(100.1, false, 100.0), (int32)E::ExcludedDeadAtQuery);
+    return true;
+}
+
 #endif
+

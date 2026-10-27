@@ -6,6 +6,16 @@
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
+#include "Combat/EnclaveSSRHistoricalEligibility.h"
+#include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
+#include "Debug/EnclaveDebug.h"
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+#include "HAL/IConsoleManager.h"
+static TAutoConsoleVariable<int32> CVarDebugSSRHistoricalEligibility(
+    TEXT("Enclave.Debug.SSRHistoricalEligibility"), 0,
+    TEXT("Log each server-side historical target eligibility decision (0=off, 1=on). Shadow diagnostic only."),
+    ECVF_Cheat);
+#endif
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -67,13 +77,39 @@ FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::Trace(double Histor
 			continue;
 		}
 
-		const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
-		FEnclaveTargetCapsuleFrame Capsule;
-		if (!IsValid(History) || !History->TryGetCapsuleAtTime(HistoryTimeSeconds, Capsule))
-		{
-			++Result.Missing;
-			continue;
-		}
+        const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
+        const UEnclaveAvatarLifecycleComponent* Lifecycle = Target->FindComponentByClass<UEnclaveAvatarLifecycleComponent>();
+        const bool bDeadNow = IsValid(Lifecycle) && Lifecycle->IsDead();
+        const double DeathTime = IsValid(History) ? History->GetRecordedDeathTimeSeconds() : -1.0;
+        const EEnclaveSSRHistoricalEligibility Eligibility =
+            FEnclaveSSRHistoricalEligibility::Evaluate(HistoryTimeSeconds, bDeadNow, DeathTime);
+        const bool bExcluded = Eligibility == EEnclaveSSRHistoricalEligibility::ExcludedDeadAtQuery;
+        const bool bInvalidBoundary = Eligibility == EEnclaveSSRHistoricalEligibility::MissingDeathBoundary;
+        FEnclaveTargetCapsuleFrame Capsule;
+        const bool bHistoryAvailable = !bExcluded && !bInvalidBoundary &&
+            IsValid(History) && History->TryGetCapsuleAtTime(HistoryTimeSeconds, Capsule);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+        if (CVarDebugSSRHistoricalEligibility.GetValueOnGameThread() != 0)
+        {
+            double Oldest = 0.0;
+            double Newest = 0.0;
+            if (IsValid(History)) History->GetHistoryTimeBounds(Oldest, Newest);
+            ENCLAVE_LOG(LogEnclaveCombat, Log,
+                "SSRHistoricalEligibility SERVER shooter=%s candidate=%s lifecycleDead=%d deathStamp=%.6f queryStamp=%.6f decision=%d historyPresent=%d frames=%d oldest=%.6f newest=%.6f (0=eligible 1=excluded_dead 2=missing_death_boundary 3=invalid_time; SHADOW ONLY)",
+                *GetNameSafe(Instigator), *GetNameSafe(Target), bDeadNow ? 1 : 0,
+                DeathTime, HistoryTimeSeconds, static_cast<int32>(Eligibility),
+                bHistoryAvailable ? 1 : 0,
+                IsValid(History) ? History->GetHistorySampleCount() : 0,
+                Oldest, Newest);
+        }
+#endif
+        if (bExcluded)
+            continue;
+        if (!bHistoryAvailable)
+        {
+            ++Result.Missing;
+            continue;
+        }
 
 		++Result.Available;
 		double EntryDistanceCm = 0.0;

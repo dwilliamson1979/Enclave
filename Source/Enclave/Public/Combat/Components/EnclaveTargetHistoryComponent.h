@@ -59,7 +59,8 @@ struct ENCLAVE_API FEnclaveVisualHistoryTimeMatch
  * No live collision is moved, and no hit-registration behavior is changed.
  *
  * An independent character lifetime has an independent history. Teleports,
- * death, possession, and collision-policy changes fully invalidate it.
+ * possession and collision-policy changes fully invalidate it. Death retains
+ * the bounded pre-death window for trade kills; the corpse is ineligible afterward.
  * Teleports, suspect movement jumps, and capture gaps mark segment breaks.
  * Crouch/uncrouch preserve history: each frame records its own capsule size.
  * Interpolation is allowed only within a continuous recorded segment;
@@ -93,7 +94,15 @@ public:
 	bool TryMatchVisualAnchorToHistory(const FVector& VisualAnchor, double ClientShotTimeSeconds,
 		double LookbackSeconds, double LookaheadSeconds, FEnclaveVisualHistoryTimeMatch& OutMatch) const;
 
-	/** Clear all samples at avatar identity boundaries (death/possession/policy). */
+	/** Clear all samples at avatar identity boundaries (possession/policy/respawn). */
+	/** Record authoritative death boundary without discarding pre-death snapshots. */
+	void MarkDeath(double ServerDeathTimeSeconds);
+	/** Exclude historical corpse without treating it as missing history. */
+	bool WasDeadAtTime(double ServerTimeSeconds) const;
+	/** Authoritative death boundary; -1 when no death has been recorded. */
+	double GetRecordedDeathTimeSeconds() const { return DeathTimeSeconds; }
+	/** Exact server-captured frame stamp. This does not prove client delivery. */
+	bool HasRecordedFrameStamp(double ServerTimeSeconds) const;
 	void InvalidateHistory();
 
 	/** Preserve preceding history, but forbid interpolation into the next sample.
@@ -117,5 +126,7 @@ private:
 	// The small bounded array is never replicated and contains no UObject references.
 	TArray<FEnclaveTargetCapsuleFrame> Frames;
 	bool bBreakBeforeNextCapture = false;
+	double DeathTimeSeconds = -1.0;
+	void TrimExpiredFrames(double CurrentServerTimeSeconds, double MaxRewindSeconds);
 	double LastDebugSummaryTime = -1.0;
 };

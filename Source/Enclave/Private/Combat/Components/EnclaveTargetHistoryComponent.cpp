@@ -81,6 +81,61 @@ void UEnclaveTargetHistoryComponent::InvalidateHistory()
 {
 	Frames.Reset();
 	bBreakBeforeNextCapture = false;
+	DeathTimeSeconds = -1.0;
+}
+
+void UEnclaveTargetHistoryComponent::MarkDeath(double ServerDeathTimeSeconds)
+{
+	if (!IsValid(GetOwner()) || !GetOwner()->HasAuthority() ||
+		!FMath::IsFinite(ServerDeathTimeSeconds) || ServerDeathTimeSeconds <= 0.0)
+	{
+		// Never infer a death timestamp from untrusted client clocks.
+		InvalidateHistory();
+		return;
+	}
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    if (CVarDebugSSRHistory.GetValueOnGameThread() != 0)
+        ENCLAVE_LOG(LogEnclaveCombat, Log,
+            "SSRHistoryLifecycle SERVER actor=%s event=death deathStamp=%.6f retainedFrames=%d",
+            *GetNameSafe(GetOwner()), ServerDeathTimeSeconds, Frames.Num());
+#endif
+	DeathTimeSeconds = ServerDeathTimeSeconds;
+	bBreakBeforeNextCapture = true;
+}
+
+bool UEnclaveTargetHistoryComponent::WasDeadAtTime(double ServerTimeSeconds) const
+{
+	return FMath::IsFinite(ServerTimeSeconds) && DeathTimeSeconds > 0.0 &&
+		ServerTimeSeconds >= DeathTimeSeconds;
+}
+
+bool UEnclaveTargetHistoryComponent::HasRecordedFrameStamp(double ServerTimeSeconds) const
+{
+	if (!FMath::IsFinite(ServerTimeSeconds) || ServerTimeSeconds <= 0.0) return false;
+	for (const FEnclaveTargetCapsuleFrame& Frame : Frames)
+	{
+		if (Frame.ServerTimeSeconds == ServerTimeSeconds) return true;
+	}
+	return false;
+}
+
+void UEnclaveTargetHistoryComponent::TrimExpiredFrames(double CurrentServerTimeSeconds, double MaxRewindSeconds)
+{
+	if (!FMath::IsFinite(CurrentServerTimeSeconds) || !FMath::IsFinite(MaxRewindSeconds) ||
+		MaxRewindSeconds <= 0.0)
+	{
+		InvalidateHistory();
+		return;
+	}
+	const double EarliestAllowed = CurrentServerTimeSeconds - MaxRewindSeconds - EnclaveTargetHistory::ExtraRetentionSeconds;
+	int32 Expired = 0;
+	while (Expired < Frames.Num() && Frames[Expired].ServerTimeSeconds < EarliestAllowed)
+	{
+		++Expired;
+	}
+	if (Expired > 0) Frames.RemoveAt(0, Expired, EAllowShrinking::No);
+	if (Frames.Num() > EnclaveTargetHistory::MaxFrames)
+		Frames.RemoveAt(0, Frames.Num() - EnclaveTargetHistory::MaxFrames, EAllowShrinking::No);
 }
 
 void UEnclaveTargetHistoryComponent::MarkHistoryDiscontinuity()
@@ -118,11 +173,31 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 	const UCapsuleComponent* Capsule = IsValid(Character) ? Character->GetCapsuleComponent() : nullptr;
 	const UEnclaveAvatarLifecycleComponent* Lifecycle = IsValid(Character)
 		? Character->FindComponentByClass<UEnclaveAvatarLifecycleComponent>() : nullptr;
-	if (!IsValid(Character) || !Character->HasAuthority() || !IsValid(GameState) ||
-		!IsValid(Capsule) || (IsValid(Lifecycle) && Lifecycle->IsDead()))
+	if (!IsValid(Character) || !Character->HasAuthority() || !IsValid(GameState) || !IsValid(Capsule))
 	{
 		InvalidateHistory();
 		return;
+	}
+	if (IsValid(Lifecycle) && Lifecycle->IsDead())
+	{
+		// Keep pre-death history for the remaining rewind window, never sample corpse geometry.
+		if (DeathTimeSeconds <= 0.0) MarkDeath(GameState->GetServerWorldTimeSeconds());
+		const AEnclaveGameModeBase* DeathGameMode = World->GetAuthGameMode<AEnclaveGameModeBase>();
+		if (IsValid(DeathGameMode))
+			TrimExpiredFrames(GameState->GetServerWorldTimeSeconds(), DeathGameMode->GetMaxRewindSeconds());
+		else InvalidateHistory();
+		return;
+	}
+	if (DeathTimeSeconds > 0.0)
+	{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+        if (CVarDebugSSRHistory.GetValueOnGameThread() != 0)
+            ENCLAVE_LOG(LogEnclaveCombat, Log,
+                "SSRHistoryLifecycle SERVER actor=%s event=revived historyReset=1 priorDeathStamp=%.6f",
+                *GetNameSafe(GetOwner()), DeathTimeSeconds);
+#endif
+		// A resurrected avatar is a fresh life and cannot inherit older capsule samples.
+		InvalidateHistory();
 	}
 
 	FEnclaveTargetCapsuleFrame Next;
@@ -219,21 +294,7 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 	CapsuleFrameRecorded.Broadcast(Frames.Last());
 	bBreakBeforeNextCapture = false;
 
-	const double MaxRewindSeconds = GameMode->GetMaxRewindSeconds();
-	const double EarliestAllowedTime = Next.ServerTimeSeconds - MaxRewindSeconds - EnclaveTargetHistory::ExtraRetentionSeconds;
-	int32 NumExpired = 0;
-	while (NumExpired < Frames.Num() && Frames[NumExpired].ServerTimeSeconds < EarliestAllowedTime)
-	{
-		++NumExpired;
-	}
-	if (NumExpired > 0)
-	{
-		Frames.RemoveAt(0, NumExpired, EAllowShrinking::No);
-	}
-	if (Frames.Num() > EnclaveTargetHistory::MaxFrames)
-	{
-		Frames.RemoveAt(0, Frames.Num() - EnclaveTargetHistory::MaxFrames, EAllowShrinking::No);
-	}
+	TrimExpiredFrames(Next.ServerTimeSeconds, GameMode->GetMaxRewindSeconds());
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (CVarDebugSSRHistory.GetValueOnGameThread() != 0 &&
@@ -255,10 +316,7 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 {
 	OutFrame = FEnclaveTargetCapsuleFrame();
 	const AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
-	const UEnclaveAvatarLifecycleComponent* Lifecycle = IsValid(Character)
-		? Character->FindComponentByClass<UEnclaveAvatarLifecycleComponent>() : nullptr;
-	if (!IsValid(Character) || !Character->HasAuthority() ||
-		(IsValid(Lifecycle) && Lifecycle->IsDead()) ||
+	if (!IsValid(Character) || !Character->HasAuthority() || WasDeadAtTime(ServerTimeSeconds) ||
 		!FMath::IsFinite(ServerTimeSeconds) || Frames.IsEmpty() ||
 		ServerTimeSeconds < Frames[0].ServerTimeSeconds)
 	{
