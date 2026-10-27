@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Math/RandomStream.h"
+#include "Engine/NetSerialization.h"
 #include "EnclaveSSRTestComponent.generated.h"
 class AEnclaveCharacter;
 /** Owning-controller RPC endpoint for a three-player diagnostic SSR session.
@@ -30,6 +31,13 @@ public:
     void EnclaveDebugSSRAutoFire(int32 bEnable);
     void TickParticipant(float DeltaSeconds);
     bool IsAutoFireActive() const { return bDebugSSRAutoEnabled; }
+    // Server-driven diagnostic alignment; does not authorize gameplay shots.
+    void TickServerViewReadiness(int32 ActiveTestId);
+    UFUNCTION(Server, Reliable)
+    void ServerEnclaveSSRTestRequestViewReady(int32 TestId, FVector_NetQuantizeNormal AimDirection);
+    UFUNCTION(Client, Reliable)
+    void ClientEnclaveSSRTestViewReady(int32 TestId);
+
 
 private:
     friend class AEnclavePlayerController;
@@ -72,6 +80,10 @@ private:
     bool bDebugSSRAutoEnabled = false;
 
 
+    bool bAwaitingViewReady = false;
+    int32 ServerViewTestId = 0;
+    FVector ServerViewRequestedDirection = FVector::ZeroVector;
+    double ServerViewRequestTime = 0.0;
     int32 ClientTestId = 0;
     int32 ClientRole = 0;
     TWeakObjectPtr<AEnclaveCharacter> ForcedTarget;

@@ -51,6 +51,7 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestConfigure_Implementation(int3
         ServerEnclaveSSRTestReady(TestId, TestRole, false);
         return;
     }
+    bAwaitingViewReady = false;
     EnclaveDebugSSRAutoFire(0);
     EnclaveDebugSSRStrafe(0);
     EnclaveDebugSSRCrouch(0);
@@ -98,9 +99,18 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestBeginFire_Implementation(int3
     if (IsValid(PC) && PC->IsLocalController() && PC->GetNetMode() == NM_Client && IsCoordinatedShooter() &&
         ClientTestId == TestId && IsValid(ForcedTarget.Get()))
     {
-        EnclaveDebugSSRAutoFire(1);
-        ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest FIRE_STARTED id=%d started=%d (DEBUG ONLY)",
-            TestId, bDebugSSRAutoEnabled ? 1 : 0);
+        // Prime the server-observed controller view before any generated shot.
+        AEnclaveCharacter* Shooter = Cast<AEnclaveCharacter>(PC->GetPawn());
+        AEnclaveCharacter* Target = ForcedTarget.Get();
+        if (!IsValid(Shooter) || !IsValid(Target)) return;
+        const FVector Eye = Shooter->GetPawnViewLocation();
+        const FVector Center = Target->GetCapsuleComponent()->GetComponentLocation();
+        const FVector Direction = (Center - Eye).GetSafeNormal();
+        if (Direction.IsNearlyZero()) return;
+        PC->SetControlRotation(Direction.Rotation());
+        bAwaitingViewReady = true;
+        ServerEnclaveSSRTestRequestViewReady(TestId, Direction);
+        ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest VIEW_REQUEST id=%d (waiting_for_server_observed_rotation; DEBUG ONLY)", TestId);
     }
 #else
     (void)TestId;
@@ -113,6 +123,7 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestCleanup_Implementation(int32 
     AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
     if (IsValid(PC) && PC->IsLocalController() && ClientTestId == TestId)
     {
+        bAwaitingViewReady = false;
         EnclaveDebugSSRAutoFire(0);
         EnclaveDebugSSRStrafe(0);
         EnclaveDebugSSRCrouch(0);
@@ -126,8 +137,67 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestCleanup_Implementation(int32 
 #endif
 }
 
+void UEnclaveSSRTestComponent::ServerEnclaveSSRTestRequestViewReady_Implementation(int32 TestId, FVector_NetQuantizeNormal AimDirection)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
+    UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr;
+    if (!IsValid(PC) || !PC->HasAuthority() || !Session ||
+        !Session->IsExpectedShooter(PC, TestId) || !FVector(AimDirection).IsNormalized()) return;
+    ServerViewTestId = TestId;
+    ServerViewRequestedDirection = FVector(AimDirection);
+    ServerViewRequestTime = GetWorld()->GetTimeSeconds();
+    ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest VIEW_PENDING id=%d (DEBUG ONLY)", TestId);
+#else
+    (void)TestId; (void)AimDirection;
+#endif
+}
+
+void UEnclaveSSRTestComponent::TickServerViewReadiness(int32 ActiveTestId)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    if (ServerViewTestId != ActiveTestId || ServerViewTestId <= 0) return;
+    AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
+    if (!IsValid(PC) || !PC->HasAuthority()) return;
+    const float DeltaDegrees = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+        FVector::DotProduct(PC->GetControlRotation().Vector().GetSafeNormal(), ServerViewRequestedDirection), -1.0f, 1.0f)));
+    if (DeltaDegrees <= 5.0f)
+    {
+        ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest VIEW_CONFIRMED id=%d serverDeltaDegrees=%.2f (DEBUG ONLY)", ActiveTestId, DeltaDegrees);
+        ServerViewTestId = 0;
+        ClientEnclaveSSRTestViewReady(ActiveTestId);
+    }
+    else if (GetWorld()->GetTimeSeconds() - ServerViewRequestTime >= 4.0)
+    {
+        ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest VIEW_TIMEOUT id=%d serverDeltaDegrees=%.2f (DEBUG ONLY)", ActiveTestId, DeltaDegrees);
+        ServerViewTestId = 0;
+        if (UEnclaveSSRTestSubsystem* Session = GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>())
+            Session->Stop(TEXT("shooter_view_not_synchronized"));
+    }
+#else
+    (void)ActiveTestId;
+#endif
+}
+
+void UEnclaveSSRTestComponent::ClientEnclaveSSRTestViewReady_Implementation(int32 TestId)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
+    if (!IsValid(PC) || !PC->IsLocalController() || !bAwaitingViewReady ||
+        !IsCoordinatedShooter() || ClientTestId != TestId) return;
+    bAwaitingViewReady = false;
+    EnclaveDebugSSRAutoFire(1);
+    ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest FIRE_STARTED id=%d started=%d after_view_confirmation=1 (DEBUG ONLY)",
+        TestId, bDebugSSRAutoEnabled ? 1 : 0);
+#else
+    (void)TestId;
+#endif
+}
+
 void UEnclaveSSRTestComponent::ParticipantUnpossessed()
 {
+    bAwaitingViewReady = false;
+    ServerViewTestId = 0;
 #if ENCLAVE_INCLUDE_DEBUG_CODE
     EnclaveDebugSSRAutoFire(0);
     EnclaveDebugSSRStrafe(0);

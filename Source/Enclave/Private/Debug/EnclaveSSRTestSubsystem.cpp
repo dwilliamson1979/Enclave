@@ -131,6 +131,12 @@ void UEnclaveSSRTestSubsystem::TickSession(float DeltaSeconds)
 		Phase = 2;
 		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest CONFIGURED id=%d waiting_target_motion=1 (DEBUG ONLY)", TestId);
 	}
+    if (Phase == 3)
+    {
+        if (AEnclavePlayerController* Shooter = ShooterController.Get())
+            if (UEnclaveSSRTestComponent* Component = Shooter->GetSSRTestComponent())
+                Component->TickServerViewReadiness(TestId);
+    }
 	if (Phase == 2 && Elapsed >= 2.5f)
 	{
 		AEnclaveCharacter* Target = TargetPawn.Get();
@@ -148,6 +154,15 @@ void UEnclaveSSRTestSubsystem::TickSession(float DeltaSeconds)
 	}
 #else
 	(void)DeltaSeconds;
+#endif
+}
+
+bool UEnclaveSSRTestSubsystem::IsExpectedShooter(const AEnclavePlayerController* Participant, int32 InTestId) const
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+    return Phase == 3 && TestId == InTestId && ShooterController.Get() == Participant;
+#else
+    return false;
 #endif
 }
 

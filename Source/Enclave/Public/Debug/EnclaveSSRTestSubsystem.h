@@ -17,6 +17,7 @@ public:
     void TickSession(float DeltaSeconds);
     void ParticipantReady(AEnclavePlayerController* Participant, int32 TestId, int32 TestRole, bool bReady);
     void ParticipantUnpossessed(AEnclavePlayerController* Participant);
+    bool IsExpectedShooter(const AEnclavePlayerController* Participant, int32 InTestId) const;
 private:
     int32 TestId = 0;
     int32 TestScenario = 0;
