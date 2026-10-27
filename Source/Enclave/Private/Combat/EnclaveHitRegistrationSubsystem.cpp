@@ -6,6 +6,7 @@
 #include "Combat/EnclaveShotIntent.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/EnclaveHistoricalHitQuery.h"
+#include "Combat/EnclaveServerHistoricalEvaluator.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Characters/EnclaveCharacter.h"
 #include "Components/CapsuleComponent.h"
@@ -39,6 +40,17 @@ bool UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled()
 }
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+// D11D-3 integration exercise: server-chosen *test* age, not an assertion
+// about what a remote player rendered. Debug-only and never a damage selector.
+static TAutoConsoleVariable<bool> CVarDebugSSRHistoricalProbe(
+    TEXT("Enclave.Debug.SSRHistoricalProbe"), false,
+    TEXT("Run isolated historical evaluator alongside real remote shots using a controlled server test age. Shadow only."),
+    ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarDebugSSRHistoricalProbeAgeMs(
+    TEXT("Enclave.Debug.SSRHistoricalProbeAgeMs"), 50.0f,
+    TEXT("Server-controlled historical sample age in milliseconds for debug evaluator exercise (0..200 by default). Not target presentation time."),
+    ECVF_Cheat);
+
 static TAutoConsoleVariable<bool> CVarDebugSSRProductionReadiness(
     TEXT("Enclave.Debug.SSRProductionReadiness"),
     false,
@@ -256,6 +268,7 @@ bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuer
 	const bool bCurrentHit = TraceCurrentGeometry(Query, OutHit, Mode);
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	DebugAuditServerHistoricalReadiness(Query, Mode);
+	DebugProbeServerHistoricalEvaluator(Query, Mode);
 	DebugCompareHistoricalCapsules(Query, bCurrentHit, OutHit, Mode);
 	DebugCompareSSRGameplay(Query, bCurrentHit, OutHit, Mode);
 #endif
@@ -305,6 +318,59 @@ bool UEnclaveHitRegistrationSubsystem::TraceCurrentGeometry(const FEnclaveHitsca
 }
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+void UEnclaveHitRegistrationSubsystem::DebugProbeServerHistoricalEvaluator(
+    const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const
+{
+    if (!CVarDebugSSRHistoricalProbe.GetValueOnGameThread() ||
+        !Query.bHasValidatedClientTiming)
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!IsValid(World) || World->GetNetMode() == NM_Client ||
+        !Query.Instigator.IsValid())
+    {
+        return;
+    }
+
+    const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
+    // Debug-only fixed-age fixture controlled by the server operator.
+    // This is NOT the shooter-visible target time. Never forward the result
+    // to the authoritative FHitResult or gameplay damage pipeline.
+    const float RequestedAgeMs = CVarDebugSSRHistoricalProbeAgeMs.GetValueOnGameThread();
+    const bool bAgeValid = FMath::IsFinite(RequestedAgeMs) && RequestedAgeMs >= 0.f &&
+        FMath::IsFinite(Timing.MaxRewindSeconds) &&
+        static_cast<double>(RequestedAgeMs) <= Timing.MaxRewindSeconds * 1000.0;
+    if (!bAgeValid)
+    {
+        ENCLAVE_LOG(LogEnclaveCombat, Log,
+            "SSRHistoricalProbe SERVER seq=%u status=invalid_fixture_age requestedMs=%.2f (NO DAMAGE AUTHORITY)",
+            static_cast<uint32>(Query.ShotSequence), RequestedAgeMs);
+        return;
+    }
+
+    const double FixtureTime = Timing.ServerReceiptTimeSeconds -
+        static_cast<double>(RequestedAgeMs) / 1000.0;
+    const FEnclaveServerHistoricalAssessment Assessment =
+        FEnclaveServerHistoricalEvaluator::EvaluateCapsules(
+            World, Query.Instigator.Get(), Query.Start, Query.End,
+            Timing, FixtureTime);
+    const bool bHistoricalHit = Assessment.Policy.Outcome == EEnclaveSSRQueryOutcome::HistoricalHit;
+    const bool bHistoricalMiss = Assessment.Policy.Outcome == EEnclaveSSRQueryOutcome::HistoricalMiss;
+    ENCLAVE_LOG(LogEnclaveCombat, Log,
+        "SSRHistoricalProbe SERVER seq=%u fixtureAgeMs=%.2f hit=%d miss=%d unavailable=%d reason=%d "
+        "available=%d missing=%d occluded=%d target=%s distanceCm=%.2f "
+        "(CONTROLLED SERVER TEST TIME; NOT PRESENTATION TIME; NO DAMAGE AUTHORITY)",
+        static_cast<uint32>(Query.ShotSequence), RequestedAgeMs,
+        bHistoricalHit ? 1 : 0, bHistoricalMiss ? 1 : 0,
+        Assessment.Policy.Outcome == EEnclaveSSRQueryOutcome::Unavailable ? 1 : 0,
+        static_cast<int32>(Assessment.Policy.UnavailableReason),
+        Assessment.AvailableHistoryCount, Assessment.MissingHistoryCount,
+        Assessment.Policy.bWorldOccluded ? 1 : 0,
+        *GetNameSafe(Assessment.Target.Get()), Assessment.EntryDistanceCm);
+}
+
 void UEnclaveHitRegistrationSubsystem::DebugAuditServerHistoricalReadiness(
     const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const
 {
