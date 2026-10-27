@@ -239,44 +239,6 @@ private:
 	int32 PendingSSRVisualTimingMatches = 0;
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	// C4E test rig state is local to the owning PlayerController; never replicated.
-	void StopDebugSSRStrafe(const TCHAR* Reason);
-	FVector DebugSSRStrafeOrigin = FVector::ZeroVector;
-	FVector DebugSSRStrafeRight = FVector::ZeroVector;
-	float DebugSSRStrafeElapsedSeconds = 0.0f;
-	float DebugSSRStrafePauseSeconds = 0.0f;
-	float DebugSSRStrafeNextStatusSeconds = 0.0f;
-	int32 DebugSSRStrafeDirectionSign = 1;
-	bool bDebugSSRStrafeEnabled = false;
-	TWeakObjectPtr<AEnclaveCharacter> DebugSSRStrafeProtectedPawn;
-	TWeakObjectPtr<AEnclaveCharacter> DebugSSRManualProtectedPawn;
-
-	// D1.1C.1: authority-local crouch rig; never replicated.
-	void StopDebugSSRCrouch(const TCHAR* Reason);
-	void TickDebugSSRCrouch(float DeltaSeconds);
-	TWeakObjectPtr<AEnclaveCharacter> DebugSSRCrouchPawn;
-	float DebugSSRCrouchWaitSeconds = 0.0f;
-	bool bDebugSSRCrouchDesired = false;
-	bool bDebugSSRCrouchPending = false;
-	bool bDebugSSRStrafeQueuedForCrouch = false;
-
-
-	// D1.1B automated shot sampling; never replicated or compiled for Test/Shipping.
-	void StopDebugSSRAutoFire(const TCHAR* Reason);
-	void TickDebugSSRAutoFire(float DeltaSeconds);
-	bool ChooseDebugSSRAutoTarget();
-	TWeakObjectPtr<AEnclaveCharacter> DebugSSRAutoTarget;
-	FRandomStream DebugSSRAutoRandom;
-	TWeakObjectPtr<APawn> DebugSSRAutoOriginalPawn;
-	float DebugSSRAutoElapsedSeconds = 0.0f;
-	float DebugSSRAutoUntilNextShotSeconds = 0.0f;
-	float DebugSSRAutoReloadDelaySeconds = 0.0f;
-	int32 DebugSSRAutoAttemptCount = 0;
-	int32 DebugSSRAutoReloadCount = 0;
-	int32 DebugSSRAutoConsecutiveReloadFailures = 0;
-	bool bDebugSSRAutoHasObservedMovingTarget = false;
-	bool bDebugSSRAutoEnabled = false;
-
 	// C4F.1: private, nonreplicated, opt-in clock-observation state.
 	// Compare adjacent frames to identify server-time estimate offset steps;
 	// compare adjacent process/world deltas to expose PIE frame stalls.

@@ -1,11 +1,12 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Math/RandomStream.h"
 #include "EnclaveSSRTestComponent.generated.h"
 class AEnclaveCharacter;
 /** Owning-controller RPC endpoint for a three-player diagnostic SSR session.
  *  Never participates in production hit authority.
- *  The local strafe/GAS generators remain on PlayerController for Stage 2B.
+ *  All local strafe/crouch/GAS generators live here; they use normal movement and input.
  */
 UCLASS(ClassGroup=(EnclaveDebug), NotBlueprintable, meta=(BlueprintSpawnableComponent=false))
 class ENCLAVE_API UEnclaveSSRTestComponent : public UActorComponent
@@ -24,7 +25,53 @@ public:
     bool IsCoordinatedShooter() const { return ClientRole == 1 && ClientTestId > 0; }
     AEnclaveCharacter* GetForcedTarget() const { return ForcedTarget.Get(); }
     void ParticipantUnpossessed();
+    void EnclaveDebugSSRStrafe(int32 bEnable);
+    void EnclaveDebugSSRCrouch(int32 bEnable);
+    void EnclaveDebugSSRAutoFire(int32 bEnable);
+    void TickParticipant(float DeltaSeconds);
+    bool IsAutoFireActive() const { return bDebugSSRAutoEnabled; }
+
 private:
+    friend class AEnclavePlayerController;
+    // C4E test rig state is local to the owning component; never replicated.
+    void StopDebugSSRStrafe(const TCHAR* Reason);
+    FVector DebugSSRStrafeOrigin = FVector::ZeroVector;
+    FVector DebugSSRStrafeRight = FVector::ZeroVector;
+    float DebugSSRStrafeElapsedSeconds = 0.0f;
+    float DebugSSRStrafePauseSeconds = 0.0f;
+    float DebugSSRStrafeNextStatusSeconds = 0.0f;
+    int32 DebugSSRStrafeDirectionSign = 1;
+    bool bDebugSSRStrafeEnabled = false;
+    TWeakObjectPtr<AEnclaveCharacter> DebugSSRStrafeProtectedPawn;
+    TWeakObjectPtr<AEnclaveCharacter> DebugSSRManualProtectedPawn;
+
+    // D1.1C.1: authority-local crouch rig; never replicated.
+    void StopDebugSSRCrouch(const TCHAR* Reason);
+    void TickDebugSSRCrouch(float DeltaSeconds);
+    TWeakObjectPtr<AEnclaveCharacter> DebugSSRCrouchPawn;
+    float DebugSSRCrouchWaitSeconds = 0.0f;
+    bool bDebugSSRCrouchDesired = false;
+    bool bDebugSSRCrouchPending = false;
+    bool bDebugSSRStrafeQueuedForCrouch = false;
+
+
+    // D1.1B automated shot sampling; never replicated or compiled for Test/Shipping.
+    void StopDebugSSRAutoFire(const TCHAR* Reason);
+    void TickDebugSSRAutoFire(float DeltaSeconds);
+    bool ChooseDebugSSRAutoTarget();
+    TWeakObjectPtr<AEnclaveCharacter> DebugSSRAutoTarget;
+    FRandomStream DebugSSRAutoRandom;
+    TWeakObjectPtr<APawn> DebugSSRAutoOriginalPawn;
+    float DebugSSRAutoElapsedSeconds = 0.0f;
+    float DebugSSRAutoUntilNextShotSeconds = 0.0f;
+    float DebugSSRAutoReloadDelaySeconds = 0.0f;
+    int32 DebugSSRAutoAttemptCount = 0;
+    int32 DebugSSRAutoReloadCount = 0;
+    int32 DebugSSRAutoConsecutiveReloadFailures = 0;
+    bool bDebugSSRAutoHasObservedMovingTarget = false;
+    bool bDebugSSRAutoEnabled = false;
+
+
     int32 ClientTestId = 0;
     int32 ClientRole = 0;
     TWeakObjectPtr<AEnclaveCharacter> ForcedTarget;
