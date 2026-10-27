@@ -75,6 +75,7 @@ public:
 private:
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	void DebugProbeServerHistoricalEvaluator(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
+	void DebugCompareSSRTimingCandidates(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugAuditServerHistoricalReadiness(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugCompareSSRGameplay(const FEnclaveHitscanQuery& Query, bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugCompareHistoricalCapsules(const FEnclaveHitscanQuery& Query,

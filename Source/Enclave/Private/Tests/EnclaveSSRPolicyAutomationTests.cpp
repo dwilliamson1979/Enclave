@@ -49,6 +49,22 @@ bool FEnclaveSSRBoundedTimingTest::RunTest(const FString& Parameters)
         Timing.TryResolveServerDerivedHistoryTime(0.05, Resolved));
     TestFalse(TEXT("Diagnostic server anchor above cap rejected"),
         Timing.TryResolveServerDerivedHistoryTime(0.2, Resolved));
+    // Two candidate clocks remain independently bounded. The two are
+    // diagnostic alternatives, not evidence of actual client presentation.
+    Timing.ClientEstimatedShotTimeSeconds = 99.97;
+    Timing.ServerObservedRTTSeconds = 0.08;
+    double ShotClock = 0.0;
+    double ServerAnchor = 0.0;
+    TestTrue(TEXT("Client clock candidate bounded"),
+        Timing.TryResolveTargetHistoryTime(0.02, ShotClock));
+    TestTrue(TEXT("Server RTT anchor bounded"),
+        Timing.TryResolveServerDerivedHistoryTime(0.02, ServerAnchor));
+    TestTrue(TEXT("Distinct candidate clocks remain distinct"),
+        FMath::IsNearlyEqual(ShotClock - ServerAnchor, 0.05, 1e-6));
+    TestFalse(TEXT("Server anchor rejects negative smoothing"),
+        Timing.TryResolveServerDerivedHistoryTime(-0.01, ServerAnchor));
+    TestFalse(TEXT("Client candidate rejects beyond rewind allowance"),
+        Timing.TryResolveTargetHistoryTime(0.30, ShotClock));
     return true;
 }
 

@@ -51,6 +51,17 @@ static TAutoConsoleVariable<float> CVarDebugSSRHistoricalProbeAgeMs(
     TEXT("Server-controlled historical sample age in milliseconds for debug evaluator exercise (0..200 by default). Not target presentation time."),
     ECVF_Cheat);
 
+// D11D-3C: compare candidate clocks in SHADOW ONLY. Neither is trusted
+// presentation time, even when a historical query returns a definitive hit.
+static TAutoConsoleVariable<bool> CVarDebugSSRTimingCandidates(
+    TEXT("Enclave.Debug.SSRTimingCandidates"), false,
+    TEXT("Evaluate server RTT anchor vs untrusted shot-clock candidate in shadow; never enables SSR damage."),
+    ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarDebugSSRTimingSmoothingMs(
+    TEXT("Enclave.Debug.SSRTimingSmoothingMs"), 0.f,
+    TEXT("Additional assumed target presentation delay in milliseconds for SHADOW candidate comparison only."),
+    ECVF_Cheat);
+
 static TAutoConsoleVariable<bool> CVarDebugSSRProductionReadiness(
     TEXT("Enclave.Debug.SSRProductionReadiness"),
     false,
@@ -268,6 +279,7 @@ bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuer
 	const bool bCurrentHit = TraceCurrentGeometry(Query, OutHit, Mode);
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	DebugAuditServerHistoricalReadiness(Query, Mode);
+	DebugCompareSSRTimingCandidates(Query, Mode);
 	DebugProbeServerHistoricalEvaluator(Query, Mode);
 	DebugCompareHistoricalCapsules(Query, bCurrentHit, OutHit, Mode);
 	DebugCompareSSRGameplay(Query, bCurrentHit, OutHit, Mode);
@@ -369,6 +381,64 @@ void UEnclaveHitRegistrationSubsystem::DebugProbeServerHistoricalEvaluator(
         Assessment.AvailableHistoryCount, Assessment.MissingHistoryCount,
         Assessment.Policy.bWorldOccluded ? 1 : 0,
         *GetNameSafe(Assessment.Target.Get()), Assessment.EntryDistanceCm);
+}
+
+void UEnclaveHitRegistrationSubsystem::DebugCompareSSRTimingCandidates(
+    const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const
+{
+    if (!CVarDebugSSRTimingCandidates.GetValueOnGameThread() ||
+        !Query.bHasValidatedClientTiming)
+    {
+        return;
+    }
+    UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() == NM_Client ||
+        Mode != EEnclaveWeaponHitDetectionMode::Capsule || !Query.Instigator.IsValid())
+    {
+        return;
+    }
+
+    const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
+    const float SmoothingMs = CVarDebugSSRTimingSmoothingMs.GetValueOnGameThread();
+    const double SmoothingSeconds = static_cast<double>(SmoothingMs) / 1000.0;
+    double ServerAnchor = 0.0;
+    double ClientClockCandidate = 0.0;
+    const bool bServerValid = Timing.TryResolveServerDerivedHistoryTime(
+        SmoothingSeconds, ServerAnchor);
+    const bool bClientValid = Timing.TryResolveTargetHistoryTime(
+        SmoothingSeconds, ClientClockCandidate);
+
+    FEnclaveServerHistoricalAssessment ServerAssessment;
+    FEnclaveServerHistoricalAssessment ClientAssessment;
+    if (bServerValid)
+    {
+        ServerAssessment = FEnclaveServerHistoricalEvaluator::EvaluateCapsules(
+            World, Query.Instigator.Get(), Query.Start, Query.End, Timing, ServerAnchor);
+    }
+    if (bClientValid)
+    {
+        ClientAssessment = FEnclaveServerHistoricalEvaluator::EvaluateCapsules(
+            World, Query.Instigator.Get(), Query.Start, Query.End, Timing, ClientClockCandidate);
+    }
+    const bool bBothValid = bServerValid && bClientValid;
+    const bool bComparable = bBothValid &&
+        ServerAssessment.Policy.HasDefinitiveHistoricalResult() &&
+        ClientAssessment.Policy.HasDefinitiveHistoricalResult();
+    ENCLAVE_LOG(LogEnclaveCombat, Log,
+        "SSRTimingCandidates SERVER seq=%u assumedSmoothingMs=%.2f "
+        "serverAnchorValid=%d untrustedShotClockValid=%d "
+        "candidateDeltaMs=%.2f serverOutcome=%d shotClockOutcome=%d "
+        "serverReason=%d shotClockReason=%d comparable=%d outcomesAgree=%d "
+        "(TWO UNPROVEN CANDIDATES; CLIENT CLOCK UNTRUSTED; SHADOW ONLY; NO DAMAGE AUTHORITY)",
+        static_cast<uint32>(Query.ShotSequence), SmoothingMs,
+        bServerValid ? 1 : 0, bClientValid ? 1 : 0,
+        bBothValid ? (ServerAnchor - ClientClockCandidate) * 1000.0 : 0.0,
+        static_cast<int32>(ServerAssessment.Policy.Outcome),
+        static_cast<int32>(ClientAssessment.Policy.Outcome),
+        static_cast<int32>(ServerAssessment.Policy.UnavailableReason),
+        static_cast<int32>(ClientAssessment.Policy.UnavailableReason),
+        bComparable ? 1 : 0,
+        bComparable && ServerAssessment.Policy.Outcome == ClientAssessment.Policy.Outcome ? 1 : 0);
 }
 
 void UEnclaveHitRegistrationSubsystem::DebugAuditServerHistoricalReadiness(
