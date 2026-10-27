@@ -38,6 +38,15 @@ bool UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled()
 #endif
 }
 
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+static TAutoConsoleVariable<bool> CVarDebugSSRProductionReadiness(
+    TEXT("Enclave.Debug.SSRProductionReadiness"),
+    false,
+    TEXT("D11D-3B: audit validated remote shot readiness for production historical evaluation. "
+         "No history-time authority exists yet; never queries historical hits or changes damage."),
+    ECVF_Cheat);
+#endif
+
 static TAutoConsoleVariable<bool> CVarDebugFireTrace(
 	TEXT("Enclave.Debug.FireTrace"),
 	false,
@@ -246,6 +255,7 @@ bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuer
 
 	const bool bCurrentHit = TraceCurrentGeometry(Query, OutHit, Mode);
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+	DebugAuditServerHistoricalReadiness(Query, Mode);
 	DebugCompareHistoricalCapsules(Query, bCurrentHit, OutHit, Mode);
 	DebugCompareSSRGameplay(Query, bCurrentHit, OutHit, Mode);
 #endif
@@ -295,6 +305,51 @@ bool UEnclaveHitRegistrationSubsystem::TraceCurrentGeometry(const FEnclaveHitsca
 }
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
+void UEnclaveHitRegistrationSubsystem::DebugAuditServerHistoricalReadiness(
+    const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const
+{
+    if (!CVarDebugSSRProductionReadiness.GetValueOnGameThread() ||
+        !Query.bHasValidatedClientTiming)
+    {
+        return;
+    }
+
+    // This method must remain a read-only audit. A validated shot timestamp
+    // establishes shot plausibility, NOT the time at which the target was rendered.
+    // Neither the RTT nor the D11C target-specific diagnostic claim is an
+    // authorized replacement for that missing presentation-time evidence.
+    const UWorld* World = GetWorld();
+    const AEnclaveGameModeBase* GameMode = World
+        ? World->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
+    const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
+    const TCHAR* Reason = TEXT("presentation_time_unavailable");
+    if (!GameMode)
+    {
+        Reason = TEXT("game_mode_unavailable");
+    }
+    else if (Mode != EEnclaveWeaponHitDetectionMode::Capsule)
+    {
+        Reason = TEXT("unsupported_geometry");
+    }
+    else if (!FMath::IsFinite(Timing.ServerReceiptTimeSeconds) ||
+             Timing.ServerReceiptTimeSeconds <= 0.0 ||
+             !FMath::IsFinite(Timing.MaxRewindSeconds) ||
+             Timing.MaxRewindSeconds <= 0.0)
+    {
+        Reason = TEXT("server_timing_unavailable");
+    }
+
+    ENCLAVE_LOG(LogEnclaveCombat, Log,
+        "SSRProductionReadiness SERVER seq=%u ready=0 reason=%s "
+        "receipt=%.6f clientShotAgeMs=%.2f observedRTTMs=%.2f "
+        "rewindLimitMs=%.2f (NO HISTORICAL QUERY; NO DAMAGE AUTHORITY)",
+        static_cast<uint32>(Query.ShotSequence), Reason,
+        Timing.ServerReceiptTimeSeconds,
+        Timing.GetObservedShotAgeSeconds() * 1000.0,
+        Timing.ServerObservedRTTSeconds * 1000.0,
+        Timing.MaxRewindSeconds * 1000.0);
+}
+
 void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHitscanQuery& Query,
 	bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const
 {
