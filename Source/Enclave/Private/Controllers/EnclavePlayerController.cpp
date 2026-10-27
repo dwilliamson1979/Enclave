@@ -1,4 +1,5 @@
 ﻿#include "Controllers/EnclavePlayerController.h"
+#include "Debug/EnclaveSSRTestSubsystem.h"
 #include "Characters/EnclaveCharacter.h"
 #include "Characters/Components/EnclaveCharacterMovementComponent.h"
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
@@ -1306,7 +1307,8 @@ void AEnclavePlayerController::AcknowledgePossession(APawn* P)
 void AEnclavePlayerController::OnUnPossess()
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (HasAuthority() && DebugSSRTestPhase != 0) StopDebugSSRTestCoordinator(TEXT("host_unpossessed"));
+	if (HasAuthority())
+        if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr) Session->ParticipantUnpossessed(this);
 	StopDebugSSRAutoFire(TEXT("unpossessed"));
 	StopDebugSSRStrafe(TEXT("unpossessed"));
 	StopDebugSSRCrouch(TEXT("unpossessed"));
@@ -1330,98 +1332,19 @@ void AEnclavePlayerController::OnUnPossess()
 void AEnclavePlayerController::EnclaveDebugSSRTestStart(int32 Scenario)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (!HasAuthority() || !IsLocalController() || GetNetMode() != NM_ListenServer || !GetWorld() ||
-		(Scenario != 2 && Scenario != 3 && Scenario != 4 && Scenario != 5))
-	{
-		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest START rejected=invalid_host_or_scenario scenario=%d (DEBUG ONLY)", Scenario);
-		return;
-	}
-	if (DebugSSRTestPhase != 0)
-	{
-		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest START rejected=already_active use_Stop_first (DEBUG ONLY)");
-		return;
-	}
-	TArray<AEnclavePlayerController*> Remotes;
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-	{
-		AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(It->Get());
-		if (IsValid(PC) && PC != this && PC->HasAuthority() && !PC->IsLocalController() &&
-			IsValid(PC->GetPawn()) && IsValid(PC->PlayerState))
-		{
-			Remotes.Add(PC);
-		}
-	}
-	if (Remotes.Num() != 2)
-	{
-		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest START rejected=requires_exactly_two_remote_controllers found=%d (DEBUG ONLY)", Remotes.Num());
-		return;
-	}
-	Remotes.Sort([](const AEnclavePlayerController& A, const AEnclavePlayerController& B) {
-		return A.PlayerState->GetPlayerId() < B.PlayerState->GetPlayerId();
-	});
-	AEnclaveCharacter* TargetPawn = Cast<AEnclaveCharacter>(Remotes[1]->GetPawn());
-	if (!IsValid(TargetPawn) || !IsValid(Cast<AEnclaveCharacter>(Remotes[0]->GetPawn())))
-	{
-		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest START rejected=missing_characters (DEBUG ONLY)");
-		return;
-	}
-	CVarDebugSSRGameplayGate.AsVariable()->Set(true, ECVF_SetByCode);
-	DebugSSRTestId++;
-	if (DebugSSRTestId <= 0) DebugSSRTestId = 1;
-	DebugSSRTestScenario = Scenario;
-	DebugSSRTestElapsed = 0.0f;
-	DebugSSRTestPhase = 1;
-	bDebugSSRTestTargetReady = false;
-	bDebugSSRTestShooterReady = false;
-	DebugSSRTestShooter = Remotes[0];
-	DebugSSRTestTarget = Remotes[1];
-	DebugSSRTestTargetPawn = TargetPawn;
-	TargetPawn->DebugSetSSRStrafeDamageSuppressed(true);
-	Remotes[1]->ClientEnclaveSSRTestConfigure(DebugSSRTestId, 2, Scenario, 1729, nullptr);
-	Remotes[0]->ClientEnclaveSSRTestConfigure(DebugSSRTestId, 1, Scenario, 1729, TargetPawn);
-	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRTest START id=%d scenario=%d shooterPlayerId=%d targetPlayerId=%d shooter=%s target=%s (SHADOW ONLY)",
-		DebugSSRTestId, Scenario, Remotes[0]->PlayerState->GetPlayerId(), Remotes[1]->PlayerState->GetPlayerId(),
-		*GetNameSafe(Remotes[0]->GetPawn()), *GetNameSafe(TargetPawn));
-#else
-	(void)Scenario;
+    if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr) Session->Start(Scenario);
 #endif
 }
-
-void AEnclavePlayerController::StopDebugSSRTestCoordinator(const TCHAR* Reason)
-{
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (!HasAuthority() || DebugSSRTestPhase == 0) return;
-	const int32 OldId = DebugSSRTestId;
-	if (AEnclavePlayerController* Shooter = DebugSSRTestShooter.Get()) Shooter->ClientEnclaveSSRTestCleanup(OldId);
-	if (AEnclavePlayerController* Target = DebugSSRTestTarget.Get()) Target->ClientEnclaveSSRTestCleanup(OldId);
-	if (AEnclaveCharacter* ProtectedTargetPawn = DebugSSRTestTargetPawn.Get()) ProtectedTargetPawn->DebugSetSSRStrafeDamageSuppressed(false);
-	ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest STOP id=%d reason=%s phase=%d elapsed=%.1f (DEBUG ONLY)",
-		OldId, Reason, DebugSSRTestPhase, DebugSSRTestElapsed);
-	DebugSSRTestPhase = 0;
-	DebugSSRTestShooter.Reset();
-	DebugSSRTestTarget.Reset();
-	DebugSSRTestTargetPawn.Reset();
-	bDebugSSRTestTargetReady = false;
-	bDebugSSRTestShooterReady = false;
-#endif
-}
-
 void AEnclavePlayerController::EnclaveDebugSSRTestStop()
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	StopDebugSSRTestCoordinator(TEXT("manual"));
+    if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr) Session->Stop(TEXT("manual"));
 #endif
 }
-
 void AEnclavePlayerController::EnclaveDebugSSRTestStatus()
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRTest STATUS id=%d phase=%d scenario=%d shooter=%s target=%s shooterReady=%d targetReady=%d elapsed=%.1f (DEBUG ONLY)",
-		DebugSSRTestId, DebugSSRTestPhase, DebugSSRTestScenario, *GetNameSafe(DebugSSRTestShooter.Get()),
-		*GetNameSafe(DebugSSRTestTarget.Get()), bDebugSSRTestShooterReady ? 1 : 0,
-		bDebugSSRTestTargetReady ? 1 : 0, DebugSSRTestElapsed);
+    if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr) Session->Status();
 #endif
 }
 
@@ -1463,25 +1386,9 @@ void AEnclavePlayerController::ClientEnclaveSSRTestConfigure_Implementation(int3
 void AEnclavePlayerController::ServerEnclaveSSRTestReady_Implementation(int32 TestId, int32 TestRole, bool bReady)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	// Only accept an acknowledgment on a controller assigned by this listen-server host.
-	if (!HasAuthority() || GetNetMode() != NM_ListenServer || !GetWorld()) return;
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-	{
-		AEnclavePlayerController* Host = Cast<AEnclavePlayerController>(It->Get());
-		if (!IsValid(Host) || !Host->IsLocalController() || Host->DebugSSRTestPhase != 1 ||
-			Host->DebugSSRTestId != TestId) continue;
-		if ((TestRole == 1 && Host->DebugSSRTestShooter.Get() == this) ||
-			(TestRole == 2 && Host->DebugSSRTestTarget.Get() == this))
-		{
-			if (!bReady) { Host->StopDebugSSRTestCoordinator(TEXT("client_not_ready")); return; }
-			if (TestRole == 1) Host->bDebugSSRTestShooterReady = true;
-			else Host->bDebugSSRTestTargetReady = true;
-			ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest READY id=%d role=%d (DEBUG ONLY)", TestId, TestRole);
-		}
-		return;
-	}
-#else
-	(void)TestId; (void)TestRole; (void)bReady;
+    if (HasAuthority())
+        if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr)
+            Session->ParticipantReady(this, TestId, TestRole, bReady);
 #endif
 }
 
@@ -1515,42 +1422,6 @@ void AEnclavePlayerController::ClientEnclaveSSRTestCleanup_Implementation(int32 
 	}
 #else
 	(void)TestId;
-#endif
-}
-
-void AEnclavePlayerController::TickDebugSSRTestCoordinator(float DeltaSeconds)
-{
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (!HasAuthority() || !IsLocalController() || DebugSSRTestPhase == 0) return;
-	DebugSSRTestElapsed += DeltaSeconds;
-	if (DebugSSRTestElapsed >= 180.0f || !DebugSSRTestShooter.IsValid() ||
-		!DebugSSRTestTarget.IsValid() || !DebugSSRTestTargetPawn.IsValid())
-	{
-		StopDebugSSRTestCoordinator(TEXT("timeout_or_participant_lost"));
-		return;
-	}
-	if (DebugSSRTestPhase == 1 && bDebugSSRTestShooterReady && bDebugSSRTestTargetReady)
-	{
-		DebugSSRTestPhase = 2;
-		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest CONFIGURED id=%d waiting_target_motion=1 (DEBUG ONLY)", DebugSSRTestId);
-	}
-	if (DebugSSRTestPhase == 2 && DebugSSRTestElapsed >= 2.5f)
-	{
-		AEnclaveCharacter* Target = DebugSSRTestTargetPawn.Get();
-		const float Speed = Target ? Target->GetVelocity().Size2D() : 0.0f;
-		if (DebugSSRTestScenario == 5 || Speed >= 30.0f)
-		{
-			DebugSSRTestPhase = 3;
-			if (AEnclavePlayerController* Shooter = DebugSSRTestShooter.Get()) Shooter->ClientEnclaveSSRTestBeginFire(DebugSSRTestId);
-			ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest FIRING id=%d targetServerSpeedCmS=%.1f (DEBUG ONLY)", DebugSSRTestId, Speed);
-		}
-		else if (DebugSSRTestElapsed > 12.0f)
-		{
-			StopDebugSSRTestCoordinator(TEXT("target_movement_not_verified"));
-		}
-	}
-#else
-	(void)DeltaSeconds;
 #endif
 }
 
@@ -2277,7 +2148,8 @@ void AEnclavePlayerController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	TickDebugSSRTestCoordinator(DeltaSeconds);
+	if (HasAuthority() && IsLocalController())
+        if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr) Session->TickSession(DeltaSeconds);
 	DebugTickSSRClockSync();
 	TickDebugSSRCrouch(DeltaSeconds);
 	TickDebugSSRAutoFire(DeltaSeconds);

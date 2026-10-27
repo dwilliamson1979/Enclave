@@ -14,11 +14,14 @@ class IEnclaveInputReceiverInterface;
 class IEnclaveInputConfigProviderInterface;
 class UEnclaveCombatFeedbackComponent;
 class AEnclaveCharacter;
+class UEnclaveSSRTestSubsystem;
 
 UCLASS()
 class ENCLAVE_API AEnclavePlayerController : public APlayerController
 {
 	GENERATED_BODY()
+
+	friend class UEnclaveSSRTestSubsystem;
 
 public:
 
@@ -262,21 +265,10 @@ private:
 	bool bDebugSSRCrouchPending = false;
 	bool bDebugSSRStrafeQueuedForCrouch = false;
 
-	// Single active server-coordinated debug test. Server-owned; no replicated state.
-	void TickDebugSSRTestCoordinator(float DeltaSeconds);
-	void StopDebugSSRTestCoordinator(const TCHAR* Reason);
-	int32 DebugSSRTestId = 0;
-	int32 DebugSSRTestScenario = 0;
-	float DebugSSRTestElapsed = 0.0f;
-	int32 DebugSSRTestPhase = 0; // 0=idle, 1=configure, 2=target running, 3=firing
-	bool bDebugSSRTestTargetReady = false;
-	bool bDebugSSRTestShooterReady = false;
-	TWeakObjectPtr<AEnclavePlayerController> DebugSSRTestShooter;
-	TWeakObjectPtr<AEnclavePlayerController> DebugSSRTestTarget;
-	TWeakObjectPtr<AEnclaveCharacter> DebugSSRTestTargetPawn;
+	// Client participation state; session orchestration lives in UEnclaveSSRTestSubsystem.
 	TWeakObjectPtr<AEnclaveCharacter> DebugSSRTestForcedTarget;
 	int32 DebugSSRTestClientId = 0;
-	int32 DebugSSRTestClientRole = 0; // 1=shooter, 2=target
+	int32 DebugSSRTestClientRole = 0;
 
 	// D1.1B automated shot sampling; never replicated or compiled for Test/Shipping.
 	void StopDebugSSRAutoFire(const TCHAR* Reason);
