@@ -45,3 +45,15 @@ The shooter sets `Enclave.Debug.SSRScenario` before each run: `1 stationary`, `2
 - Shipping gate requires dedicated-server, multi-target nearest-hit, security, and network-profile testing. D1.1C alone cannot authorize SSR in production.
 
 For stationary/crouching samples, the listen-server target may run `EnclaveDebugSSRProtect 1` while the gameplay gate is active; disable explicitly with `EnclaveDebugSSRProtect 0` at the end. The debug command is server-local, nonreplicated, and does not affect the historical query.
+
+---
+
+## 2026-10-26 — Changes before first bounded latency check
+
+**Current decision:** This document's original 50/100/150 ms, multi-scenario, 600+ shot contract is retained above as **deferred pre-release qualification**, not the present development gate. Its old challenger, float-engine-stamp and command references are historical; the live shadow claim now uses the exact server-authored paired-observation timestamp (`double`) without the retired elapsed challenger. Do not treat the historical text above as instructions to enable those retired paths.
+
+**Single development gate:** After broadening the debug generator's clear-hit and clear-miss sampling, run one non-authoritative shadow session at approximately **100 ms emulated RTT** against a server-protected strafing remote player. Aim for **50 scored clear hits and 50 scored clear misses** (actual `SSRGameplay SERVER` records, matched to attempts by key, not merely attempted input). Count `missing_history`, rejected timing, `stampFallback` and unresolvable records explicitly; do not silently drop them. Score clear hits >= 49/50 and clear misses <= 1/50 false hits, with near-zero unexpected `missing_history`. Record measured `rttMs`, not only emulator settings. A short static-cover check separately requires `stampOccluded=1` and `stampFinalHit=0` when a wall truly occludes the capsule; `worldBlocked=1` alone does not prove occlusion.
+
+**Outcome:** If the bounded check passes, close *D11C shadow SSR validation for this scenario* and return to gameplay; if it fails, retain present-time damage and defer SSR investigation. **Passing does not authorize SSR to decide production damage.** Live damage remains present-time until authoritative integration plus security, fallback and multi-target correctness review in a separate milestone.
+
+**Explicitly deferred:** full three RTT bands; dedicated-server CPU/bandwidth; remote-vs-remote targets; nearest-hit/multiple targets; changing/dynamic cover; skeletal hitboxes; abuse-resistant client shot timestamp/origin/direction validation; authoritative damage integration; production SSR cleanup. Keep the committed shadow implementation and existing debug rigs available for later regression.

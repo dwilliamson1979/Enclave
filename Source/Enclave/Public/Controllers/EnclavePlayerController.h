@@ -88,6 +88,11 @@ public:
 	UFUNCTION(Exec)
 	void EnclaveDebugSSRCrouch(int32 bEnable);
 
+	/** Listen-server-only, development-only three-player SSR test orchestration. */
+	void EnclaveDebugSSRTestStart(int32 Scenario);
+	void EnclaveDebugSSRTestStop();
+	void EnclaveDebugSSRTestStatus();
+
 	/** Opt-in, non-gameplay per-shot camera-vs-authoritative-ray diagnostic. */
 	static bool IsShotAlignmentDebugEnabled();
 
@@ -173,6 +178,19 @@ private:
 		FVector_NetQuantize10 ClientMeshAnchor);
 
 	/** Debug-only request from a remotely owned target; validates possession and gate on authority. */
+	/** Fixed-parameter developer test control, never arbitrary console command execution. */
+	UFUNCTION(Client, Reliable)
+	void ClientEnclaveSSRTestConfigure(int32 TestId, int32 TestRole, int32 Scenario, int32 Seed, AEnclaveCharacter* Target);
+
+	UFUNCTION(Server, Reliable)
+	void ServerEnclaveSSRTestReady(int32 TestId, int32 TestRole, bool bReady);
+
+	UFUNCTION(Client, Reliable)
+	void ClientEnclaveSSRTestBeginFire(int32 TestId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientEnclaveSSRTestCleanup(int32 TestId);
+
 	UFUNCTION(Server, Reliable)
 	void ServerEnclaveDebugSSRProtect(bool bEnable);
 
@@ -243,6 +261,22 @@ private:
 	bool bDebugSSRCrouchDesired = false;
 	bool bDebugSSRCrouchPending = false;
 	bool bDebugSSRStrafeQueuedForCrouch = false;
+
+	// Single active server-coordinated debug test. Server-owned; no replicated state.
+	void TickDebugSSRTestCoordinator(float DeltaSeconds);
+	void StopDebugSSRTestCoordinator(const TCHAR* Reason);
+	int32 DebugSSRTestId = 0;
+	int32 DebugSSRTestScenario = 0;
+	float DebugSSRTestElapsed = 0.0f;
+	int32 DebugSSRTestPhase = 0; // 0=idle, 1=configure, 2=target running, 3=firing
+	bool bDebugSSRTestTargetReady = false;
+	bool bDebugSSRTestShooterReady = false;
+	TWeakObjectPtr<AEnclavePlayerController> DebugSSRTestShooter;
+	TWeakObjectPtr<AEnclavePlayerController> DebugSSRTestTarget;
+	TWeakObjectPtr<AEnclaveCharacter> DebugSSRTestTargetPawn;
+	TWeakObjectPtr<AEnclaveCharacter> DebugSSRTestForcedTarget;
+	int32 DebugSSRTestClientId = 0;
+	int32 DebugSSRTestClientRole = 0; // 1=shooter, 2=target
 
 	// D1.1B automated shot sampling; never replicated or compiled for Test/Shipping.
 	void StopDebugSSRAutoFire(const TCHAR* Reason);
