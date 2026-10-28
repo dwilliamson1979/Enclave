@@ -5,6 +5,24 @@
 #include "Characters/EnclaveCharacter.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Engine/World.h"
+#include "Debug/EnclaveDebug.h"
+#include "HAL/IConsoleManager.h"
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+// Milestone 3 abuse tests: make the owning client lie about its timing evidence.
+static TAutoConsoleVariable<int32> CVarDebugSSRTimingFault(
+	TEXT("Enclave.Debug.SSRTimingFault"), 0,
+	TEXT("Owning client: falsify SSR timing evidence. 0=off, 1=backtrack (echo a REAL received stamp at least FaultMs old), "
+		"2=forged stamp (latest + 7 ms, not a recorded frame), 3=future stamp (latest + FaultMs). DEBUG ONLY."),
+	ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarDebugSSRTimingFaultMs(
+	TEXT("Enclave.Debug.SSRTimingFaultMs"), 100.0f,
+	TEXT("Offset in ms used by Enclave.Debug.SSRTimingFault. DEBUG ONLY."), ECVF_Cheat);
+static TAutoConsoleVariable<bool> CVarDebugSSRReplicateStamps(
+	TEXT("Enclave.Debug.SSRReplicateStamps"), true,
+	TEXT("Server: replicate SSR history stamps to clients (debug builds always do unless this is 0). For bandwidth A/B runs."),
+	ECVF_Cheat);
+#endif
 
 uint32 EnclaveSSRTimingPolicy::QuantizeServerTimeMs(double ServerTimeSeconds)
 {
@@ -115,6 +133,34 @@ FEnclaveSSRClientTimingEvidence CaptureClientSSRTimingEvidence(UWorld* World,
 	const FEnclaveSSRReceivedProxyUpdate& Observation = Target->GetLastReceivedSSRObservation();
 	const double Elapsed = World->GetTimeSeconds() - Observation.ClientReceiveWorldSeconds;
 	const uint32 StampMs = EnclaveSSRTimingPolicy::QuantizeServerTimeMs(Observation.ServerStamp);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// A cheating client ignores the freshness rule, so faults are applied first.
+	if (const int32 Fault = CVarDebugSSRTimingFault.GetValueOnGameThread(); Fault != 0 && Observation.ReceiveCount != 0)
+	{
+		const double FaultSeconds = FMath::Max(0.0f, CVarDebugSSRTimingFaultMs.GetValueOnGameThread()) / 1000.0;
+		double FaultStamp = 0.0;
+		if (Fault == 1)
+		{
+			for (const double Received : Target->DebugGetReceivedSSRStamps())
+			{
+				if (Received <= Observation.ServerStamp - FaultSeconds) { FaultStamp = Received; }
+			}
+		}
+		else if (Fault == 2)
+		{
+			FaultStamp = Observation.ServerStamp + 0.007;
+		}
+		else if (Fault == 3)
+		{
+			FaultStamp = Observation.ServerStamp + FaultSeconds;
+		}
+		Evidence.Target = const_cast<AEnclaveCharacter*>(Target);
+		Evidence.StampMs = EnclaveSSRTimingPolicy::QuantizeServerTimeMs(FaultStamp);
+		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTimingFault CLIENT fault=%d target=%s realStamp=%.3f sentStamp=%.3f (DEBUG ONLY)",
+			Fault, *GetNameSafe(Target), Observation.ServerStamp, EnclaveSSRTimingPolicy::DequantizeServerTimeMs(Evidence.StampMs));
+		return Evidence;
+	}
+#endif
 	if (Observation.ReceiveCount == 0 || StampMs == 0 || !FMath::IsFinite(Elapsed) || Elapsed < 0.0 ||
 		Elapsed > EnclaveSSRTimingPolicy::MaxClientStampAgeSeconds)
 	{

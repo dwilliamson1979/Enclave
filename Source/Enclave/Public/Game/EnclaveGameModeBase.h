@@ -114,11 +114,12 @@ private:
 	EEnclaveSSRTimingSource SSRTimingSource = EEnclaveSSRTimingSource::Hybrid;
 
 	/** Signed offset from the server RTT anchor: target age = RTT + offset.
-	 * -50 ms measured best at ~60 and ~170 ms RTT on a local listen server (D11D-3D);
-	 * recalibrate on dedicated servers.
+	 * -25 ms was as good as or better than -50 ms in every dedicated-server condition
+	 * measured in milestone 3 (Documents/SSR_M3_NetworkValidation.md); the earlier
+	 * -50 ms came from a listen server, whose host frame time inflates ping.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true", ClampMin = "-150.0", ClampMax = "100.0", Units = "ms"))
-	float SSRAnchorOffsetMs = -50.0f;
+	float SSRAnchorOffsetMs = -25.0f;
 
 	/** Hybrid: an echoed stamp may be this much younger than the anchor age. Bounds backtracking. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", ClampMax = "100.0", Units = "ms"))

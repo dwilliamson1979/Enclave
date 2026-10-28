@@ -118,7 +118,11 @@ bool FEnclaveSSRTimingResolutionTest::RunTest(const FString& Parameters)
     Timing.ServerReceiptTimeSeconds = 100.0;
     Timing.ServerObservedRTTSeconds = 0.150;
     Timing.MaxRewindSeconds = 0.200;
-    FEnclaveSSRTimingSettings Settings; // Hybrid, -50 ms offset, -40/+60 ms window
+    // Explicit values: the test checks the policy, not the tunable defaults.
+    FEnclaveSSRTimingSettings Settings;
+    Settings.AnchorOffsetSeconds = -0.050;
+    Settings.StampEarlyToleranceSeconds = 0.040;
+    Settings.StampLateToleranceSeconds = 0.060;
     const double Anchor = 100.0 - 0.100;
 
     // Server anchor ignores client evidence entirely.

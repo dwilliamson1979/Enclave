@@ -37,6 +37,7 @@
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 #include "Debug/EnclaveDebug.h"
+#include "HAL/IConsoleManager.h"
 
 // Input tag tracing. Previously printed unconditionally on every input
 // event; now opt-in like the other Enclave.Debug.* toggles.
@@ -587,14 +588,7 @@ void AEnclaveCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 bool FEnclaveSSRServerCapsuleObservation::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
 {
 	Ar.SerializeIntPacked(ServerTimeMs);
-	bool bCenterOk = true;
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	// Both endpoints must be the same build configuration (as with all debug payloads).
-	Center.NetSerialize(Ar, Map, bCenterOk);
-	Ar << RadiusCm;
-	Ar << HalfHeightCm;
-#endif
-	bOutSuccess = bCenterOk && !Ar.IsError();
+	bOutSuccess = !Ar.IsError();
 	return true;
 }
 
@@ -602,8 +596,10 @@ void AEnclaveCharacter::PreReplication(IRepChangedPropertyTracker& ChangedProper
 {
 	Super::PreReplication(ChangedPropertyTracker);
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	// Shadow diagnostics read stamps in every mode.
-	constexpr bool bReplicateSSRStamps = true;
+	// Shadow diagnostics read stamps in every mode; the cvar exists for bandwidth A/B runs.
+	static const IConsoleVariable* ReplicateStamps =
+		IConsoleManager::Get().FindConsoleVariable(TEXT("Enclave.Debug.SSRReplicateStamps"));
+	const bool bReplicateSSRStamps = !ReplicateStamps || ReplicateStamps->GetBool();
 #else
 	const AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
 	const bool bReplicateSSRStamps = GameMode && GameMode->RequiresClientSSRStamps();
@@ -617,10 +613,21 @@ void AEnclaveCharacter::HandleSSRHistoryFrameRecorded(const FEnclaveTargetCapsul
 	{
 		return;
 	}
+	// Only publish a new stamp when the capsule changed: an unchanged pose needs no
+	// new timing evidence, and an unchanged property lets idle characters go quiet.
+	constexpr double MinMoveCm = 0.5;
+	const bool bChanged = SSRServerCapsuleObservation.ServerTimeMs == 0 || Frame.bBreakBefore ||
+		FVector::DistSquared(Frame.Center, LastStampedCenter) > MinMoveCm * MinMoveCm ||
+		!FMath::IsNearlyEqual(Frame.RadiusCm, LastStampedRadiusCm, 0.5f) ||
+		!FMath::IsNearlyEqual(Frame.HalfHeightCm, LastStampedHalfHeightCm, 0.5f);
+	if (!bChanged)
+	{
+		return;
+	}
 	SSRServerCapsuleObservation.ServerTimeMs = EnclaveSSRTimingPolicy::QuantizeServerTimeMs(Frame.ServerTimeSeconds);
-	SSRServerCapsuleObservation.Center = Frame.Center;
-	SSRServerCapsuleObservation.RadiusCm = Frame.RadiusCm;
-	SSRServerCapsuleObservation.HalfHeightCm = Frame.HalfHeightCm;
+	LastStampedCenter = Frame.Center;
+	LastStampedRadiusCm = Frame.RadiusCm;
+	LastStampedHalfHeightCm = Frame.HalfHeightCm;
 }
 
 void AEnclaveCharacter::OnRep_SSRServerCapsuleObservation()
@@ -631,11 +638,19 @@ void AEnclaveCharacter::OnRep_SSRServerCapsuleObservation()
 	}
 	FEnclaveSSRReceivedProxyUpdate& Update = LastReceivedSSRObservation;
 	Update.ServerStamp = EnclaveSSRTimingPolicy::DequantizeServerTimeMs(SSRServerCapsuleObservation.ServerTimeMs);
-	Update.ReplicatedLocation = SSRServerCapsuleObservation.Center;
+	// The stamp carries no geometry; diagnostics compare against the proxy at receipt.
+	Update.ReplicatedLocation = GetActorLocation();
 	Update.ReplicatedVelocity = FVector::ZeroVector;
-	Update.CapsuleAtReceive = SSRServerCapsuleObservation.Center;
+	Update.CapsuleAtReceive = GetActorLocation();
 	Update.ClientReceiveWorldSeconds = GetWorld()->GetTimeSeconds();
 	++Update.ReceiveCount;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	DebugReceivedSSRStamps.Add(Update.ServerStamp);
+	while (DebugReceivedSSRStamps.Num() > 0 && DebugReceivedSSRStamps[0] < Update.ServerStamp - 1.0)
+	{
+		DebugReceivedSSRStamps.RemoveAt(0);
+	}
+#endif
 }
 
 void AEnclaveCharacter::OnRep_ReplicatedMovement()

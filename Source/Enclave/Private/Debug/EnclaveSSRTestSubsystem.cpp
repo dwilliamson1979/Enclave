@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "GameFramework/PlayerState.h"
+#include "Engine/NetConnection.h"
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 // Unattended multi-process runs (Tools/Scripts/RunSSRSession.ps1): there is no
@@ -37,22 +38,28 @@ bool UEnclaveSSRTestSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 #endif
 }
 
+bool UEnclaveSSRTestSubsystem::IsServerWorld() const
+{
+	const UWorld* World = GetWorld();
+	return World && (World->GetNetMode() == NM_ListenServer || World->GetNetMode() == NM_DedicatedServer);
+}
+
 void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (!GetWorld() || GetWorld()->GetNetMode() != NM_ListenServer ||
-		(Scenario != 2 && Scenario != 3 && Scenario != 4 && Scenario != 5))
+	if (!IsServerWorld() || (Scenario != 2 && Scenario != 3 && Scenario != 4 && Scenario != 5))
 	{
 		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest START rejected=invalid_host_or_scenario scenario=%d (DEBUG ONLY)", Scenario);
 		return;
 	}
+	// A listen server must have its host; a dedicated server has none.
 	HostController.Reset();
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(It->Get());
 		if (IsValid(PC) && PC->HasAuthority() && PC->IsLocalController()) { HostController = PC; break; }
 	}
-	if (!HostController.IsValid()) return;
+	if (GetWorld()->GetNetMode() == NM_ListenServer && !HostController.IsValid()) return;
 	if (Phase != 0)
 	{
 		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest START rejected=already_active use_Stop_first (DEBUG ONLY)");
@@ -97,6 +104,7 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 	SelectedTargetPawn->DebugSetSSRStrafeDamageSuppressed(true);
 	Remotes[1]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 2, Scenario, 1729, nullptr);
 	Remotes[0]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 1, Scenario, 1729, SelectedTargetPawn);
+	LogNetStats(TEXT("start"));
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
 		"SSRTest START id=%d scenario=%d shooterPlayerId=%d targetPlayerId=%d shooter=%s target=%s (SHADOW ONLY)",
 		TestId, Scenario, Remotes[0]->PlayerState->GetPlayerId(), Remotes[1]->PlayerState->GetPlayerId(),
@@ -109,8 +117,9 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 void UEnclaveSSRTestSubsystem::Stop(const TCHAR* Reason)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (!GetWorld() || GetWorld()->GetNetMode() != NM_ListenServer || Phase == 0) return;
+	if (!IsServerWorld() || Phase == 0) return;
 	const int32 OldId = TestId;
+	LogNetStats(TEXT("stop"));
 	if (AEnclavePlayerController* Shooter = ShooterController.Get()) Shooter->GetSSRTestComponent()->ClientEnclaveSSRTestCleanup(OldId);
 	if (AEnclavePlayerController* Target = TargetController.Get()) Target->GetSSRTestComponent()->ClientEnclaveSSRTestCleanup(OldId);
 	if (AEnclaveCharacter* ProtectedTargetPawn = TargetPawn.Get()) ProtectedTargetPawn->DebugSetSSRStrafeDamageSuppressed(false);
@@ -145,13 +154,14 @@ void UEnclaveSSRTestSubsystem::Status() const
 void UEnclaveSSRTestSubsystem::TickSession(float DeltaSeconds)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (!GetWorld() || GetWorld()->GetNetMode() != NM_ListenServer) return;
+	if (!IsServerWorld()) return;
 	if (Phase == 0)
 	{
 		TickAutoStart(DeltaSeconds);
 		return;
 	}
 	Elapsed += DeltaSeconds;
+	++SessionTicks;
 	const float DurationSeconds = FMath::Clamp(CVarSSRTestDurationSeconds.GetValueOnGameThread(), 10.0f, 600.0f);
 	if (Elapsed >= DurationSeconds || !ShooterController.IsValid() ||
 		!TargetController.IsValid() || !TargetPawn.IsValid())
@@ -220,6 +230,55 @@ void UEnclaveSSRTestSubsystem::TickAutoStart(float DeltaSeconds)
 	}
 #else
 	(void)DeltaSeconds;
+#endif
+}
+
+void UEnclaveSSRTestSubsystem::LogNetStats(const TCHAR* Label)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// Cumulative connection counters: snapshot at start, log the session delta at stop.
+	const bool bStart = FCString::Strcmp(Label, TEXT("start")) == 0;
+	if (bStart)
+	{
+		NetStart.Reset();
+		SessionTicks = 0;
+	}
+	else
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest TICKRATE id=%d serverTickHz=%.1f ticks=%d seconds=%.1f (DEBUG ONLY)",
+			TestId, SessionTicks / FMath::Max(Elapsed, 0.001f), SessionTicks, Elapsed);
+	}
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PC = It->Get();
+		UNetConnection* Connection = IsValid(PC) ? PC->GetNetConnection() : nullptr;
+		if (!IsValid(Connection)) continue;
+		FNetSample Now;
+		Now.Connection = Connection;
+		Now.Player = PC->PlayerState ? FString::FromInt(PC->PlayerState->GetPlayerId()) : TEXT("?");
+		Now.OutBytes = Connection->OutTotalBytes;
+		Now.InBytes = Connection->InTotalBytes;
+		Now.OutPackets = Connection->OutTotalPackets;
+		Now.InPackets = Connection->InTotalPackets;
+		Now.OutLost = Connection->OutTotalPacketsLost;
+		Now.InLost = Connection->InTotalPacketsLost;
+		if (bStart)
+		{
+			NetStart.Add(Now);
+			continue;
+		}
+		const FNetSample* Start = NetStart.FindByPredicate([Connection](const FNetSample& S) { return S.Connection.Get() == Connection; });
+		if (!Start) continue;
+		const double Seconds = FMath::Max(Elapsed, 0.001f);
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRTest NETSTATS id=%d playerId=%s seconds=%.1f serverOutBytesPerSec=%.0f serverInBytesPerSec=%.0f "
+			"outPackets=%lld inPackets=%lld outLost=%lld inLost=%lld (DEBUG ONLY)",
+			TestId, *Now.Player, Seconds, (Now.OutBytes - Start->OutBytes) / Seconds, (Now.InBytes - Start->InBytes) / Seconds,
+			Now.OutPackets - Start->OutPackets, Now.InPackets - Start->InPackets,
+			Now.OutLost - Start->OutLost, Now.InLost - Start->InLost);
+	}
+#else
+	(void)Label;
 #endif
 }
 

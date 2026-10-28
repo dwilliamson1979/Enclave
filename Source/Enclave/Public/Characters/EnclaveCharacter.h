@@ -45,8 +45,8 @@ struct FEnclaveStartingSlottedItem
 
 /** Server-authored stamp of a single authoritative history frame, echoed back by
  * shooters as SSR timing evidence. It does not replace FRepMovement.
- * Wire cost: a packed whole-millisecond stamp (3-4 bytes). Capsule geometry is a
- * diagnostic cross-check and is only serialized in builds with debug code.
+ * Wire cost: a packed whole-millisecond stamp (3-4 bytes), identical in every build
+ * so that bandwidth measured in Development matches Shipping.
  */
 USTRUCT()
 struct FEnclaveSSRServerCapsuleObservation
@@ -55,11 +55,6 @@ struct FEnclaveSSRServerCapsuleObservation
 
 	/** GameState server world time of the recorded frame, rounded to whole ms. */
 	UPROPERTY() uint32 ServerTimeMs = 0;
-
-	// Diagnostic-only; not UPROPERTYs, so they never trigger replication on their own.
-	FVector_NetQuantize10 Center = FVector::ZeroVector;
-	float RadiusCm = 0.0f;
-	float HalfHeightCm = 0.0f;
 
 	bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
 };
@@ -99,6 +94,8 @@ public:
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	const FEnclaveSSRReceivedProxyUpdate& DebugGetLastReceivedProxyUpdate() const { return DebugLastReceivedProxyUpdate; }
+	/** Simulated proxies: server stamps received in the last second, oldest first (abuse tests). */
+	const TArray<double>& DebugGetReceivedSSRStamps() const { return DebugReceivedSSRStamps; }
 
 
 
@@ -164,9 +161,16 @@ private:
 
 	FEnclaveSSRReceivedProxyUpdate LastReceivedSSRObservation;
 
+	// Authority only: the capsule last published as a stamp. A character that has not
+	// moved keeps its old stamp, so idle characters do not replicate every tick.
+	FVector LastStampedCenter = FVector::ZeroVector;
+	float LastStampedRadiusCm = 0.0f;
+	float LastStampedHalfHeightCm = 0.0f;
+
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	// Updated by OnRep_ReplicatedMovement on simulated proxies only.
 	FEnclaveSSRReceivedProxyUpdate DebugLastReceivedProxyUpdate;
+	TArray<double> DebugReceivedSSRStamps;
 	bool bDebugSSRStrafeDamageSuppressed = false;
 #endif
 	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */

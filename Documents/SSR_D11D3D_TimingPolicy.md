@@ -50,7 +50,7 @@ EchoedStamp falls back on every shot whose local ray missed: all clear misses, a
 |---|---|---|
 | `LagCompensationMode` / `?LagCompensation=` | Disabled | `ServerSideRewind` enables D11D-4 in Capsule mode |
 | `SSRTimingSource` / `?SSRTimingSource=` | Hybrid | See above. Dev builds can also switch live with `EnclaveSetSSRTimingSource` |
-| `SSRAnchorOffsetMs` | −50 | target age = RTT + offset, clamped to [−150, 100] |
+| `SSRAnchorOffsetMs` | −25 (was −50; see `SSR_M3_NetworkValidation.md`) | target age = RTT + offset, clamped to [−150, 100] |
 | `SSRStampEarlyToleranceMs` / `SSRStampLateToleranceMs` | 40 / 60 | Hybrid: how much younger / older than the anchor age an accepted stamp may be |
 | `SSRUnavailableFallbackPolicy` | PresentTimeTrace | What happens when no trustworthy historical answer exists (C4D proposal) |
 | `MaxRewindAllowanceMs` | 200 | Hard cap applied to every source. Never clamped: anything over the cap is unavailable |

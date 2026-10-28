@@ -1560,8 +1560,6 @@ void AEnclavePlayerController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (HasAuthority() && IsLocalController())
-        if (UEnclaveSSRTestSubsystem* Session = GetWorld() ? GetWorld()->GetSubsystem<UEnclaveSSRTestSubsystem>() : nullptr) Session->TickSession(DeltaSeconds);
 	DebugTickSSRClockSync();
 	if (SSRTestComponent) SSRTestComponent->TickParticipant(DeltaSeconds);
 #endif

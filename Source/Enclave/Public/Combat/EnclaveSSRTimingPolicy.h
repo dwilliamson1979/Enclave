@@ -37,7 +37,7 @@ struct ENCLAVE_API FEnclaveSSRTimingSettings
 {
 	EEnclaveSSRTimingSource Source = EEnclaveSSRTimingSource::Hybrid;
 	/** Signed offset from the RTT anchor: targetAge = RTT + AnchorOffset. */
-	double AnchorOffsetSeconds = -0.050;
+	double AnchorOffsetSeconds = -0.025;
 	/** Hybrid only: how much younger / older than the anchor age an echoed stamp may be. */
 	double StampEarlyToleranceSeconds = 0.040;
 	double StampLateToleranceSeconds = 0.060;

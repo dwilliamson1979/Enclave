@@ -30,7 +30,7 @@ def fields(line):
 
 
 def load(paths):
-    labels, sweeps, selections, rtts = {}, {}, {}, []
+    labels, sweeps, selections, rtts, netstats = {}, {}, {}, [], []
     for path in paths:
         with open(path, encoding='utf-8-sig', errors='replace') as file:
             for line in file:
@@ -40,6 +40,8 @@ def load(paths):
                         labels[(path, f['key'])] = f
                         if f.get('rttMs'):
                             rtts.append(float(f['rttMs']))
+                elif 'SSRTest NETSTATS ' in line:
+                    netstats.append(fields(line))
                 elif 'SSRSelection SERVER ' in line:
                     f = fields(line)
                     if 'seq' in f:
@@ -52,7 +54,7 @@ def load(paths):
                             delay, outcome = pair.split(':')
                             samples[int(float(delay))] = int(outcome)
                         sweeps[(path, f['seq'])] = samples
-    return labels, sweeps, selections, rtts
+    return labels, sweeps, selections, rtts, netstats
 
 
 def score(labels, sweeps):
@@ -106,6 +108,27 @@ def score_selection(labels, selections):
     return c
 
 
+def stamp_acceptance(selections):
+    """All selections (labeled or not): how echoed stamps fared and how far
+    accepted ones were from the server anchor (stampAge - baseAge, ms)."""
+    sent = verified = used = rejected = 0
+    deltas = []
+    for sel in selections.values():
+        if sel.get('stampTarget', 'None') != 'None':
+            sent += 1
+        verified += sel.get('stampVerified') == '1'
+        rejected += sel.get('stampRejected') == '1'
+        if sel.get('stampUsed') == '1':
+            used += 1
+            try:
+                deltas.append(float(sel['stampAgeMs']) - float(sel['baseAgeMs']))
+            except (KeyError, ValueError):
+                pass
+    deltas.sort()
+    return {'sent': sent, 'verified': verified, 'used': used, 'rejected': rejected,
+            'usedDeltaMs': {'min': deltas[0], 'max': deltas[-1]} if deltas else None}
+
+
 def pct(ok, n):
     return round(100.0 * ok / n, 1) if n else None
 
@@ -116,7 +139,7 @@ def main():
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
 
-    labels, sweeps, selections, rtts = load(args.logs)
+    labels, sweeps, selections, rtts, netstats = load(args.logs)
     per_delay, stamp, unmatched = score(labels, sweeps)
     sel = score_selection(labels, selections) if selections else None
     rows = []
@@ -145,6 +168,10 @@ def main():
             'presentTimeFallbacks': sel['clear_hit_fallback'] + sel['clear_miss_fallback'],
             'stampUsed': sel['stamp_used'], 'stampRejected': sel['stamp_rejected'], 'unmatched': sel['unmatched'],
         },
+        'stampAcceptance': stamp_acceptance(selections) if selections else None,
+        'netstats': [{'playerId': n.get('playerId'), 'serverOutBytesPerSec': float(n['serverOutBytesPerSec']),
+                      'serverInBytesPerSec': float(n['serverInBytesPerSec'])}
+                     for n in netstats if 'serverOutBytesPerSec' in n],
     }
     if args.json:
         json.dump(summary, sys.stdout, indent=2)
@@ -158,6 +185,12 @@ def main():
         print(f"AUTHORITATIVE {a['source']}:  clear_hit {a['clearHitPct']}% (n={a['clearHitN']})  "
               f"clear_miss {a['clearMissPct']}% (n={a['clearMissN']})  fallbacks={a['presentTimeFallbacks']}  "
               f"stampUsed={a['stampUsed']} stampRejected={a['stampRejected']} unmatched={a['unmatched']}")
+    sa = summary['stampAcceptance']
+    if sa:
+        print(f"stamps: sent={sa['sent']} verified={sa['verified']} used={sa['used']} rejected={sa['rejected']} "
+              f"usedDeltaMs={sa['usedDeltaMs']}")
+    for n in summary['netstats']:
+        print(f"netstats player {n['playerId']}: server out {n['serverOutBytesPerSec']:.0f} B/s, in {n['serverInBytesPerSec']:.0f} B/s")
     print('server anchor t_r - RTT - d:')
     for r in rows:
         print(f"  d={r['delayMs']:>3}ms  clear_hit {r['clearHitPct']}% (n={r['clearHitN']})  "

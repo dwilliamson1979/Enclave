@@ -123,6 +123,17 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestCleanup_Implementation(int32 
     AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
     if (IsValid(PC) && PC->IsLocalController() && ClientTestId == TestId)
     {
+        if (SessionFrames > 0)
+        {
+            ENCLAVE_LOG(LogEnclaveCombat, Log,
+                "SSRTest CLIENT_FPS id=%d avgFps=%.1f worstFrameMs=%.1f framesOver33Ms=%d frames=%d (DEBUG ONLY)",
+                TestId, SessionFrames / FMath::Max(SessionFrameSeconds, 0.001),
+                SessionWorstFrameSeconds * 1000.0f, SessionFramesOver33Ms, SessionFrames);
+        }
+        SessionFrames = 0;
+        SessionFrameSeconds = 0.0;
+        SessionWorstFrameSeconds = 0.0f;
+        SessionFramesOver33Ms = 0;
         bAwaitingViewReady = false;
         EnclaveDebugSSRAutoFire(0);
         EnclaveDebugSSRStrafe(0);
@@ -773,6 +784,13 @@ void UEnclaveSSRTestComponent::TickParticipant(float DeltaSeconds)
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
 	if (!IsValid(PC)) return;
+	if (ClientTestId > 0 && PC->IsLocalController() && PC->GetNetMode() == NM_Client)
+	{
+		++SessionFrames;
+		SessionFrameSeconds += DeltaSeconds;
+		SessionWorstFrameSeconds = FMath::Max(SessionWorstFrameSeconds, DeltaSeconds);
+		SessionFramesOver33Ms += DeltaSeconds > 0.0333f ? 1 : 0;
+	}
 	TickDebugSSRCrouch(DeltaSeconds);
 	TickDebugSSRAutoFire(DeltaSeconds);
 	if (!bDebugSSRStrafeEnabled)

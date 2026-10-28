@@ -43,6 +43,13 @@ private:
     friend class AEnclavePlayerController;
     // C4E test rig state is local to the owning component; never replicated.
     void StopDebugSSRStrafe(const TCHAR* Reason);
+
+    // Client frame pacing during a coordinated session. Labels are scored on the
+    // client, so a slow client looks like a timing error; log it alongside results.
+    int32 SessionFrames = 0;
+    double SessionFrameSeconds = 0.0;
+    float SessionWorstFrameSeconds = 0.0f;
+    int32 SessionFramesOver33Ms = 0;
     FVector DebugSSRStrafeOrigin = FVector::ZeroVector;
     FVector DebugSSRStrafeRight = FVector::ZeroVector;
     float DebugSSRStrafeElapsedSeconds = 0.0f;
