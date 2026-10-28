@@ -21,37 +21,6 @@ struct ENCLAVE_API FEnclaveTargetCapsuleFrame
 	// True when this sample begins a new continuous movement/time segment.
 	// A query may return either endpoint but MUST NOT interpolate across the boundary.
 	bool bBreakBefore = false;
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	// C4B diagnostic-only process-monotonic capture; NEVER a network rewind clock.
-	FVector DebugVelocity = FVector::ZeroVector;
-	double DebugCaptureProcessSeconds = 0.0;
-	double DebugCaptureWorldSeconds = 0.0;
-	uint64 DebugCaptureFrame = 0;
-#endif
-};
-
-/**
- * Diagnostic inverse position-to-time lookup against recorded server capsule
- * centers. A positive SignedOffsetSeconds means the client's sampled visual
- * anchor best matches server target movement AFTER its supplied shot time.
- * This is NOT trusted gameplay timing and NOT a measured presentation delay.
- */
-struct ENCLAVE_API FEnclaveVisualHistoryTimeMatch
-{
-	double MatchedServerTimeSeconds = 0.0;
-	double SignedOffsetSeconds = 0.0;
-	double ResidualCm = 0.0;
-	double MatchedSpeedCmPerSecond = 0.0;
-	int32 EvaluatedSegments = 0;
-	bool bAmbiguous = false;
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	// Interpolated within the same authoritative history segment as the fit.
-	// Comparability to the client's monotonic clock REQUIRES the same process ID.
-	double DebugMatchedProcessSeconds = 0.0;
-	double DebugMatchedWorldSeconds = 0.0;
-	uint64 DebugOlderFrame = 0;
-	uint64 DebugNewerFrame = 0;
-#endif
 };
 
 /**
@@ -86,13 +55,6 @@ public:
 	 * timing context must independently enforce the match rewind allowance.
 	 */
 	bool TryGetCapsuleAtTime(double ServerTimeSeconds, FEnclaveTargetCapsuleFrame& OutFrame) const;
-
-	/** Debug-only trajectory inversion for the separately reported patrol visual anchor.
-	 * Only moves along recorded continuous server segments; never extrapolates.
-	 * The result must never influence damage, firing, or the rewind policy.
-	 */
-	bool TryMatchVisualAnchorToHistory(const FVector& VisualAnchor, double ClientShotTimeSeconds,
-		double LookbackSeconds, double LookaheadSeconds, FEnclaveVisualHistoryTimeMatch& OutMatch) const;
 
 	/** Clear all samples at avatar identity boundaries (possession/policy/respawn). */
 	/** Record authoritative death boundary without discarding pre-death snapshots. */

@@ -141,8 +141,31 @@ The last column is a paired comparison (the anchor sweep runs on the same shots 
 
 With frame pacing controlled and the server at 60 Hz, measured RTT dropped by 20–60 ms compared with the earlier runs at the same emulated lag, and accuracy is at the top of the scale. Packet loss remains the only condition below 100%.
 
+## Windows timer throttling (fixed)
+
+With four or more harness processes, the 60 Hz dedicated server ran at ~35 Hz and clients at ~47 FPS, while the machine was mostly idle (18% CPU, ~36% GPU). Windows 11 power throttling stops honoring a background process's 1 ms timer request, and the engine's frame limiter uses `Sleep()`, so every wait rounds up to 15.6 ms ticks. The game module now opts out (`SetProcessInformation`, `PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION`): dedicated servers in every build, every process in builds with debug code. After the fix, a 4-client run: server 59.9 Hz, all clients 60 FPS, measured RTT 81 ms instead of 114 ms. A Windows-hosted production server would have had the same problem.
+
+## Player-count scaling (load only)
+
+`RunSSRSession.ps1 -Clients N`: client 1 shoots, client 2 is the target, and the rest are moving, damage-protected bystanders. Non-shooter clients run headless (`-nullrhi`), since only the shooter's view is scored; four fully rendered clients had saturated the shared GPU. Server 60 Hz, mid condition:
+
+| Clients | Server tick | Server CPU (whole run) | Server out per client |
+|---|---|---|---|
+| 2 | 59.5–59.7 Hz | 0.19–0.21 cores | 3.1–3.6 KB/s |
+| 4 | 59.7–59.8 | 0.37 | 5.0–5.6 KB/s |
+| 6 | 59.8–59.9 | 0.44–0.45 | 5.2–5.8 KB/s |
+| 8 | 59.9 | 0.34–0.37 | 7.0–8.8 KB/s |
+
+The server held 60 Hz with 8 players. Bandwidth grows with the number of visible characters. The CPU figure averages the whole process lifetime, including startup and staggered joins, so it is rough.
+
+**Accuracy at 4+ clients is not valid yet.** EnclaveMap has only three PlayerStarts. Once they run out, the engine reuses occupied starts, so characters spawned stacked and stood in the line of fire. The analyzer reports hits on a non-target character separately (`otherTargetHits`), but this was not a controlled occlusion test. Next: a scripted test map with enough spawns and per-scenario placement (see below). Spawn selection for real matches is noted for milestone 4.
+
+## Diagnostics pruned
+
+Removed the finished research instrumentation (about 1,300 lines): timing-candidate comparison, historical probe, C4D `SSRShadow`, C0 `SSRPreflight`, C4F clock probe (`SSRClock`) and its RPC, the echoed-snapshot probe (`SSREcho`) and its RPC, the patrol visual-anchor fitting, the temporal-uncertainty classifier, and two superseded timing resolvers with their tests. The harness, the D11C shot labels, the timing sweep, `SSRSelection`, the fault injection and the general fire tools remain. The patrol component itself remains (`BP_SSRPatrolTarget` uses it).
+
 ## Next in milestone 3
 
-1. Measure tick rate and CPU with more players (needs more than two clients per machine, or a second machine).
-2. More clients (multi-target occlusion, nearest-hit), lag switching, crouch/teleport around fallback.
-3. Prune shadow diagnostics that are no longer needed.
+1. Scripted SSR test map: 12+ PlayerStarts, cover pieces, and tagged layout markers; the harness places participants per scenario.
+2. Controlled multi-character tests: a bystander crossing the line of fire, a backstop behind the target, cover in/out, corner peek, with occlusion-aware labels. Then redo accuracy at 4–8 clients.
+3. Lag switching, and crouch/teleport around the fallback.

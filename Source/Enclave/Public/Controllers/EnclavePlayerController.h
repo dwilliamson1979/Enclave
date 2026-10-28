@@ -114,25 +114,6 @@ public:
 	/** Called only by a locally controlled GA_Fire activation (after CommitAbility). */
 	void DebugCaptureLocalShot(int32 PredictionKey);
 
-	/** Opt-in Stage C4F clock-only probe. Not part of validated shot intent.
-	 * The server compares process times only in same-process PIE.
-	 */
-	void DebugProbeSSRShotClock(int32 PredictionKey, double ClientShotServerTimeSeconds);
-
-	static bool IsSSRClockDebugEnabled();
-
-	/** Bounded echo feasibility probe: client samples a simulated proxy near its view ray. */
-	void DebugProbeSSREchoedSnapshot(int32 PredictionKey);
-
-
-	/** Observe GameState time-estimate corrections and PIE frame phases without changing the sync algorithm. */
-	void DebugTickSSRClockSync();
-
-	/** Stage C1: sample a locally simulated patrol's visual proxy anchor at shot capture.
-	 * Debug-only, no effect on hit registration. Sends an unreliable telemetry RPC.
-	 */
-	void DebugLogSSRProxySample(int32 PredictionKey, double ClientShotServerTimeSeconds);
-
 	/** Brackets the synchronous server-side fireable hit query; no gameplay inputs change. */
 	void DebugBeginAuthoritativeShot(int32 PredictionKey);
 	void DebugEndAuthoritativeShot();
@@ -162,29 +143,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UEnclaveSSRTestComponent> SSRTestComponent = nullptr;
-
-	/** Optional debug-only telemetry; no gameplay decision may consume this RPC.
-	 * Its independent arrival time must not be confused with Fire target-data receipt.
-	 */
-	/** Untrusted diagnostics only: independent from the GAS shot-intent RPC. */
-	UFUNCTION(Server, Unreliable)
-	void ServerEnclaveDebugShotClockProbe(int32 PredictionKey, uint32 ClientProcessId,
-		double ClientCaptureProcessSeconds, double ClientCaptureWorldSeconds,
-		double ClientEstimatedServerSeconds);
-
-	UFUNCTION(Server, Unreliable)
-	void ServerEnclaveDebugPatrolVisualSample(int32 PredictionKey, AEnclaveCharacter* PatrolTarget,
-		FVector_NetQuantize10 ClientVisualProxyAnchor, double ClientShotServerTimeSeconds,
-		uint32 ClientProcessId, double ClientVisualCaptureProcessSeconds,
-		double ClientVisualSampleWorldSeconds, double ClientVisualSampleServerEstimateSeconds);
-
-	/** Untrusted opt-in telemetry, NEVER gameplay hit authority. */
-	UFUNCTION(Server, Unreliable)
-	void ServerEnclaveDebugEchoedSnapshot(int32 PredictionKey, AEnclaveCharacter* Target,
-		double EchoedMovementStamp, float ElapsedSinceUpdateSeconds,
-		FVector_NetQuantize10 ReplicatedLocation, FVector_NetQuantize10 ReplicatedVelocity,
-		FVector_NetQuantize10 CapsuleAtReceive, FVector_NetQuantize10 ClientCapsuleAtShot,
-		FVector_NetQuantize10 ClientMeshAnchor);
 
 	/** Debug-only request from a remotely owned target; validates possession and gate on authority. */
 	/** Fixed-parameter developer test control, never arbitrary console command execution. */
@@ -234,24 +192,6 @@ private:
 	int32 ActiveServerShotKey = INDEX_NONE;
 	TMap<int32, FDebugShotRay> PendingLocalShots;
 	TMap<int32, FDebugServerShot> PendingServerShots;
-
-	// C4 diagnostic RPCs must not queue unbounded delayed history comparisons.
-	int32 PendingSSRVisualTimingMatches = 0;
-
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	// C4F.1: private, nonreplicated, opt-in clock-observation state.
-	// Compare adjacent frames to identify server-time estimate offset steps;
-	// compare adjacent process/world deltas to expose PIE frame stalls.
-	bool bDebugSSRClockSyncHasSample = false;
-	double DebugSSRClockSyncLastProcessSeconds = 0.0;
-	double DebugSSRClockSyncLastWorldSeconds = 0.0;
-	double DebugSSRClockSyncLastEstimatedSeconds = 0.0;
-	double DebugSSRClockSyncLastOffsetSeconds = 0.0;
-	double DebugSSRClockSyncLastReportProcessSeconds = 0.0;
-	double DebugSSRClockSyncLastReportWorldSeconds = 0.0;
-	double DebugSSRClockSyncLastReportEstimatedSeconds = 0.0;
-	double DebugSSRClockSyncLastReportOffsetSeconds = 0.0;
-#endif
 
 	void HandleInput(const FInputActionValue& Value, ETriggerEvent TriggerEvent, FGameplayTag InputTag, bool bRoutesReleaseEvents);
 

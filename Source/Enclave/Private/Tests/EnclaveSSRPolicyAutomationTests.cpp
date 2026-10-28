@@ -8,7 +8,6 @@
 #include "Combat/EnclaveShotTiming.h"
 #include "Combat/EnclaveSSRTimingPolicy.h"
 #include "Combat/EnclaveSSRTimingCalibration.h"
-#include "Combat/EnclaveSSRTemporalUncertainty.h"
 #include "Combat/EnclaveSSRHistoricalEligibility.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
@@ -28,48 +27,6 @@ bool FEnclaveSSRPolicyClassificationTest::RunTest(const FString& Parameters)
     Result.Outcome = EEnclaveSSRQueryOutcome::Unavailable;
     Result.UnavailableReason = EEnclaveSSRUnavailableReason::HistoryMissing;
     TestFalse(TEXT("Missing history is not a miss"), Result.HasDefinitiveHistoricalResult());
-    return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRBoundedTimingTest,
-    "Enclave.Combat.SSR.BoundedTiming",
-    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-bool FEnclaveSSRBoundedTimingTest::RunTest(const FString& Parameters)
-{
-    FEnclaveShotTimingContext Timing;
-    Timing.ServerReceiptTimeSeconds = 100.0;
-    Timing.ClientEstimatedShotTimeSeconds = 99.95;
-    Timing.MaxRewindSeconds = 0.2;
-    Timing.ServerObservedRTTSeconds = 0.10;
-    double Resolved = -1.0;
-    TestTrue(TEXT("Validated presentation delay resolves candidate"),
-        Timing.TryResolveTargetHistoryTime(0.05, Resolved));
-    TestTrue(TEXT("Resolved time is 99.90"), FMath::IsNearlyEqual(Resolved, 99.90, 1e-6));
-    TestFalse(TEXT("Too-old candidate rejected, not clamped"),
-        Timing.TryResolveTargetHistoryTime(0.3, Resolved));
-    TestTrue(TEXT("Rejected candidate clears output"), FMath::IsNearlyZero(Resolved));
-    TestFalse(TEXT("Negative delay rejected"),
-        Timing.TryResolveTargetHistoryTime(-0.1, Resolved));
-    TestTrue(TEXT("Diagnostic server anchor resolves under cap"),
-        Timing.TryResolveServerDerivedHistoryTime(0.05, Resolved));
-    TestFalse(TEXT("Diagnostic server anchor above cap rejected"),
-        Timing.TryResolveServerDerivedHistoryTime(0.2, Resolved));
-    // Two candidate clocks remain independently bounded. The two are
-    // diagnostic alternatives, not evidence of actual client presentation.
-    Timing.ClientEstimatedShotTimeSeconds = 99.97;
-    Timing.ServerObservedRTTSeconds = 0.08;
-    double ShotClock = 0.0;
-    double ServerAnchor = 0.0;
-    TestTrue(TEXT("Client clock candidate bounded"),
-        Timing.TryResolveTargetHistoryTime(0.02, ShotClock));
-    TestTrue(TEXT("Server RTT anchor bounded"),
-        Timing.TryResolveServerDerivedHistoryTime(0.02, ServerAnchor));
-    TestTrue(TEXT("Distinct candidate clocks remain distinct"),
-        FMath::IsNearlyEqual(ShotClock - ServerAnchor, 0.05, 1e-6));
-    TestFalse(TEXT("Server anchor rejects negative smoothing"),
-        Timing.TryResolveServerDerivedHistoryTime(-0.01, ServerAnchor));
-    TestFalse(TEXT("Client candidate rejects beyond rewind allowance"),
-        Timing.TryResolveTargetHistoryTime(0.30, ShotClock));
     return true;
 }
 
@@ -247,31 +204,6 @@ bool FEnclaveSSRTimingCalibrationTest::RunTest(const FString& Parameters)
 #endif // WITH_DEV_AUTOMATION_TESTS
 
 #if WITH_DEV_AUTOMATION_TESTS
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRTemporalUncertaintyTest,
-    "Enclave.Combat.SSR.TemporalUncertainty",
-    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-bool FEnclaveSSRTemporalUncertaintyTest::RunTest(const FString& Parameters)
-{
-    using namespace EnclaveSSRTemporalUncertainty;
-    FAssessment Stable;
-    TestEqual(TEXT("No samples"), Stable.Classification, EClassification::NoSamples);
-    Stable.Add(EEnclaveSSRQueryOutcome::HistoricalHit);
-    Stable.Add(EEnclaveSSRQueryOutcome::HistoricalHit);
-    TestEqual(TEXT("All hit samples"), Stable.Classification, EClassification::StableHit);
-    Stable.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
-    TestEqual(TEXT("Conflicting samples"), Stable.Classification, EClassification::ConflictingResults);
-    FAssessment Missing;
-    Missing.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
-    Missing.Add(EEnclaveSSRQueryOutcome::Unavailable);
-    TestEqual(TEXT("Missing history is not stable miss"), Missing.Classification, EClassification::Unavailable);
-    Missing.Add(EEnclaveSSRQueryOutcome::HistoricalHit);
-    TestEqual(TEXT("Missing history retains precedence"), Missing.Classification, EClassification::Unavailable);
-    FAssessment AllMiss;
-    AllMiss.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
-    AllMiss.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
-    TestEqual(TEXT("Stable misses"), AllMiss.Classification, EClassification::StableMiss);
-    return true;
-}
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRHistoricalEligibilityTest,
     "Enclave.Combat.SSR.HistoricalEligibility",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

@@ -51,4 +51,6 @@ private:
     TWeakObjectPtr<AEnclavePlayerController> ShooterController;
     TWeakObjectPtr<AEnclavePlayerController> TargetController;
     TWeakObjectPtr<AEnclaveCharacter> TargetPawn;
+    // Extra remote players: they move like the target and are damage-protected.
+    TArray<TWeakObjectPtr<AEnclavePlayerController>> Bystanders;
 };

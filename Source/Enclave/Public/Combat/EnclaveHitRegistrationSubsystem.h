@@ -63,9 +63,6 @@ public:
 
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
-	/** Stage C0 instrumentation only; does not enable server-side rewind. */
-	static bool IsSSRPreflightDebugEnabled();
-
 	/** Checks untrusted remote player aim against present authoritative shooter
 	 * state. Tolerances intentionally allow network delay, and therefore are
 	 * NOT a substitute for shooter-history or anti-cheat verification.
@@ -80,12 +77,8 @@ public:
 
 private:
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	void DebugProbeServerHistoricalEvaluator(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
-	void DebugCompareSSRTimingCandidates(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugSweepSSRTimingSensitivity(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugCompareSSRGameplay(const FEnclaveHitscanQuery& Query, bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const;
-	void DebugCompareHistoricalCapsules(const FEnclaveHitscanQuery& Query,
-		bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const;
 #endif
 	bool TraceCurrentGeometry(const FEnclaveHitscanQuery& Query, FHitResult& OutHit, EEnclaveWeaponHitDetectionMode Mode) const;
 

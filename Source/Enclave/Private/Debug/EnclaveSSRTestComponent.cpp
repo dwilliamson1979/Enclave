@@ -45,7 +45,8 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestConfigure_Implementation(int3
 #if ENCLAVE_INCLUDE_DEBUG_CODE
     AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
     if (!IsValid(PC)) return;
-    if (!PC->IsLocalController() || PC->GetNetMode() != NM_Client || (TestRole != 1 && TestRole != 2) ||
+    // Roles: 1 = shooter, 2 = target, 3 = bystander (extra character that moves like the target).
+    if (!PC->IsLocalController() || PC->GetNetMode() != NM_Client || TestRole < 1 || TestRole > 3 ||
         Scenario < 2 || Scenario > 5 || TestId <= 0)
     {
         ServerEnclaveSSRTestReady(TestId, TestRole, false);
@@ -68,7 +69,7 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestConfigure_Implementation(int3
         Duration->Set(180.0f, ECVF_SetByCode);
     bool bReady = IsValid(Cast<AEnclaveCharacter>(PC->GetPawn()));
     if (TestRole == 1) bReady &= IsValid(Target) && Target->GetLocalRole() == ROLE_SimulatedProxy;
-    if (bReady && TestRole == 2)
+    if (bReady && (TestRole == 2 || TestRole == 3))
     {
         if (Scenario == 4) EnclaveDebugSSRCrouch(1);
         if (Scenario != 5) EnclaveDebugSSRStrafe(1);

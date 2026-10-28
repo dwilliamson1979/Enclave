@@ -14,6 +14,7 @@ param(
     [double]$SweepStartMs = -75,
     [double]$SweepStepMs = 25,
     [int]$ServerTickRate = 0,
+    [int]$Clients = 2,
     [string[]]$Only = @()
 )
 
@@ -36,7 +37,7 @@ if ($Only.Count -gt 0) { $conditions = $conditions | Where-Object { $Only -conta
 
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..")).TrimEnd('\', '/')
 $tickLabel = if ($ServerTickRate -gt 0) { "${ServerTickRate}Hz" } else { "defaultHz" }
-$matrixName = "matrix_{0}_{1}_{2}" -f (Get-Date -Format "yyyyMMdd-HHmmss"), $TimingSource, $tickLabel
+$matrixName = "matrix_{0}_{1}_{2}_{3}clients" -f (Get-Date -Format "yyyyMMdd-HHmmss"), $TimingSource, $tickLabel, $Clients
 $matrixDirectory = Join-Path $projectRoot "Saved\Automation\SSRSession\$matrixName"
 New-Item -ItemType Directory -Force $matrixDirectory | Out-Null
 
@@ -50,7 +51,7 @@ foreach ($condition in $conditions)
     & (Join-Path $PSScriptRoot "RunSSRSession.ps1") -Dedicated -LagCompensation ServerSideRewind -TimingSource $TimingSource `
         -ServerLagMs $condition.ServerLagMs -ClientLagMs $condition.ClientLagMs -JitterMs $condition.JitterMs `
         -LossPct $condition.LossPct -DurationSeconds $DurationSeconds -SweepStartMs $SweepStartMs `
-        -SweepStepMs $SweepStepMs -ServerTickRate $ServerTickRate -ExtraShooterCmds "$($condition.ShooterCmds)" `
+        -SweepStepMs $SweepStepMs -ServerTickRate $ServerTickRate -Clients $Clients -ExtraShooterCmds "$($condition.ShooterCmds)" `
         -SessionName $sessionName | Out-Host
 
     $serverLog = Join-Path $matrixDirectory "$($condition.Name)\server.log"
@@ -70,6 +71,7 @@ foreach ($condition in $conditions)
         authHitN = $result.authoritative.clearHitN; authMissN = $result.authoritative.clearMissN
         fallbacks = $result.authoritative.presentTimeFallbacks
         stampUsed = $result.authoritative.stampUsed; stampRejected = $result.authoritative.stampRejected
+        otherTargetHits = $result.authoritative.otherTargetHits
         echoHitPct = $result.echoedStamp.clearHitPct; echoMissPct = $result.echoedStamp.clearMissPct
         bestAnchorOffsetMs = $best.delayMs; bestAnchorCombinedPct = $best.combinedPct
         serverTickHz = if ($tick) { [double]$tick.Matches[0].Groups[1].Value } else { $null }
@@ -82,12 +84,12 @@ foreach ($condition in $conditions)
 
 $rows | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 (Join-Path $matrixDirectory "summary.json")
 $markdown = @(
-    "| Condition | Lag srv/cli ms | Jitter | Loss | RTT median | $TimingSource hit % | miss % | Fallbacks | Stamps used/rejected | Echo hit/miss % | Server Hz | Server CPU cores | Out B/s/client | Shooter FPS | Anchor sweep (d:combined %) |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    "| Condition | Lag srv/cli ms | Jitter | Loss | RTT median | $TimingSource hit % | miss % | Fallbacks | Other-target hits | Stamps used/rejected | Echo hit/miss % | Server Hz | Server CPU cores | Out B/s/client | Shooter FPS | Anchor sweep (d:combined %) |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
 )
 foreach ($r in $rows)
 {
-    $markdown += "| $($r.condition) | $($r.serverLagMs)/$($r.clientLagMs) | +/-$($r.jitterMs) | $($r.lossPct)% | $($r.rttMedianMs) | $($r.authHitPct) (n=$($r.authHitN)) | $($r.authMissPct) (n=$($r.authMissN)) | $($r.fallbacks) | $($r.stampUsed)/$($r.stampRejected) | $($r.echoHitPct)/$($r.echoMissPct) | $($r.serverTickHz) | $($r.serverCpuCores) | $($r.serverOutBytesPerClientPerSec) | $($r.shooterFps) | $($r.sweep) |"
+    $markdown += "| $($r.condition) | $($r.serverLagMs)/$($r.clientLagMs) | +/-$($r.jitterMs) | $($r.lossPct)% | $($r.rttMedianMs) | $($r.authHitPct) (n=$($r.authHitN)) | $($r.authMissPct) (n=$($r.authMissN)) | $($r.fallbacks) | $($r.otherTargetHits) | $($r.stampUsed)/$($r.stampRejected) | $($r.echoHitPct)/$($r.echoMissPct) | $($r.serverTickHz) | $($r.serverCpuCores) | $($r.serverOutBytesPerClientPerSec) | $($r.shooterFps) | $($r.sweep) |"
 }
 $markdown | Set-Content -Encoding utf8 (Join-Path $matrixDirectory "summary.md")
 $markdown | Write-Host

@@ -98,6 +98,13 @@ def score_selection(labels, selections):
         if sel is None:
             c['unmatched'] += 1
             continue
+        # With bystanders, the nearest character on the ray may legitimately be
+        # someone else; that is neither a correct nor a wrong verdict about the
+        # labeled target, so it is reported separately and left out of the rates.
+        claim = label.get('claimTarget')
+        if claim and sel.get('hit') == '1' and sel.get('target') not in (None, claim):
+            c['other_target'] += 1
+            continue
         c[name + '_n'] += 1
         c['stamp_used'] += sel.get('stampUsed') == '1'
         c['stamp_rejected'] += sel.get('stampRejected') == '1'
@@ -167,6 +174,7 @@ def main():
             'clearMissN': sel['clear_miss_n'], 'clearMissPct': pct(sel['clear_miss_ok'], sel['clear_miss_n']),
             'presentTimeFallbacks': sel['clear_hit_fallback'] + sel['clear_miss_fallback'],
             'stampUsed': sel['stamp_used'], 'stampRejected': sel['stamp_rejected'], 'unmatched': sel['unmatched'],
+            'otherTargetHits': sel['other_target'],
         },
         'stampAcceptance': stamp_acceptance(selections) if selections else None,
         'netstats': [{'playerId': n.get('playerId'), 'serverOutBytesPerSec': float(n['serverOutBytesPerSec']),
@@ -184,7 +192,8 @@ def main():
     if a:
         print(f"AUTHORITATIVE {a['source']}:  clear_hit {a['clearHitPct']}% (n={a['clearHitN']})  "
               f"clear_miss {a['clearMissPct']}% (n={a['clearMissN']})  fallbacks={a['presentTimeFallbacks']}  "
-              f"stampUsed={a['stampUsed']} stampRejected={a['stampRejected']} unmatched={a['unmatched']}")
+              f"stampUsed={a['stampUsed']} stampRejected={a['stampRejected']} unmatched={a['unmatched']} "
+              f"otherTargetHits={a['otherTargetHits']}")
     sa = summary['stampAcceptance']
     if sa:
         print(f"stamps: sent={sa['sent']} verified={sa['verified']} used={sa['used']} rejected={sa['rejected']} "

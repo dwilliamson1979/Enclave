@@ -228,14 +228,6 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 	Next.Rotation = Capsule->GetComponentQuat();
 	Next.RadiusCm = Capsule->GetScaledCapsuleRadius();
 	Next.HalfHeightCm = Capsule->GetScaledCapsuleHalfHeight();
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	// The transform and process clock are sampled together after physics. This
-	// monotonic sample is for same-process PIE diagnosis ONLY, not hit authority.
-	Next.DebugVelocity = Character->GetVelocity();
-	Next.DebugCaptureProcessSeconds = FPlatformTime::Seconds();
-	Next.DebugCaptureWorldSeconds = World->GetTimeSeconds();
-	Next.DebugCaptureFrame = GFrameCounter;
-#endif
 	if (!FMath::IsFinite(Next.ServerTimeSeconds) || Next.ServerTimeSeconds < 0.0 ||
 		Next.Center.ContainsNaN() || Next.Rotation.ContainsNaN() ||
 		!FMath::IsFinite(Next.RadiusCm) || !FMath::IsFinite(Next.HalfHeightCm) ||
@@ -388,9 +380,6 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 			const float Alpha = static_cast<float>((ServerTimeSeconds - Older.ServerTimeSeconds) / Span);
 			OutFrame.ServerTimeSeconds = ServerTimeSeconds;
 			OutFrame.Center = FMath::Lerp(Older.Center, Newer.Center, Alpha);
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-			OutFrame.DebugVelocity = FMath::Lerp(Older.DebugVelocity, Newer.DebugVelocity, Alpha);
-#endif
 			OutFrame.Rotation = FQuat::Slerp(Older.Rotation, Newer.Rotation, Alpha).GetNormalized();
 			OutFrame.RadiusCm = FMath::Lerp(Older.RadiusCm, Newer.RadiusCm, Alpha);
 			OutFrame.HalfHeightCm = FMath::Lerp(Older.HalfHeightCm, Newer.HalfHeightCm, Alpha);
@@ -401,117 +390,3 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 }
 
 
-bool UEnclaveTargetHistoryComponent::TryMatchVisualAnchorToHistory(const FVector& VisualAnchor,
-	double ClientShotTimeSeconds, double LookbackSeconds, double LookaheadSeconds,
-	FEnclaveVisualHistoryTimeMatch& OutMatch) const
-{
-	OutMatch = FEnclaveVisualHistoryTimeMatch();
-	const AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
-	const UEnclaveAvatarLifecycleComponent* Lifecycle = IsValid(Character)
-		? Character->FindComponentByClass<UEnclaveAvatarLifecycleComponent>() : nullptr;
-	if (!IsValid(Character) || !Character->HasAuthority() ||
-		(IsValid(Lifecycle) && Lifecycle->IsDead()) || VisualAnchor.ContainsNaN() ||
-		!FMath::IsFinite(ClientShotTimeSeconds) || ClientShotTimeSeconds < 0.0 ||
-		!FMath::IsFinite(LookbackSeconds) || !FMath::IsFinite(LookaheadSeconds) ||
-		LookbackSeconds < 0.0 || LookaheadSeconds < 0.0 || Frames.Num() < 2)
-	{
-		return false;
-	}
-
-	// Limit this diagnostic even if an incorrect caller supplies a huge window.
-	const double Start = ClientShotTimeSeconds - FMath::Min(LookbackSeconds, 0.150);
-	const double End = ClientShotTimeSeconds + FMath::Min(LookaheadSeconds, 0.150);
-	if (Start > Frames.Last().ServerTimeSeconds || End < Frames[0].ServerTimeSeconds)
-	{
-		return false;
-	}
-
-	struct FCandidate
-	{
-		double TimeSeconds;
-		double ResidualCm;
-	};
-	TArray<FCandidate, TInlineAllocator<128>> Candidates;
-	double BestResidualCm = TNumericLimits<double>::Max();
-	double BestMatchTime = 0.0;
-	double BestSpeedCmPerSecond = 0.0;
-
-	for (int32 Index = 1; Index < Frames.Num(); ++Index)
-	{
-		const FEnclaveTargetCapsuleFrame& Older = Frames[Index - 1];
-		const FEnclaveTargetCapsuleFrame& Newer = Frames[Index];
-		const double Span = Newer.ServerTimeSeconds - Older.ServerTimeSeconds;
-		// This diagnostic fits a linear center trajectory. A shape step is
-		// atomic in the authoritative query, so it must not be fitted as a
-		// continuous visual motion segment either.
-		if (Newer.bBreakBefore || Span <= 0.0 || Span > EnclaveTargetHistory::MaxCaptureGapSeconds ||
-			EnclaveTargetHistory::HasShapeStep(Older, Newer))
-		{
-			continue;
-		}
-
-		const double SegmentStart = FMath::Max(Start, Older.ServerTimeSeconds);
-		const double SegmentEnd = FMath::Min(End, Newer.ServerTimeSeconds);
-		if (SegmentStart >= SegmentEnd)
-		{
-			continue;
-		}
-
-		const FVector PositionStart = FMath::Lerp(Older.Center, Newer.Center,
-			(SegmentStart - Older.ServerTimeSeconds) / Span);
-		const FVector PositionEnd = FMath::Lerp(Older.Center, Newer.Center,
-			(SegmentEnd - Older.ServerTimeSeconds) / Span);
-		const FVector Motion = PositionEnd - PositionStart;
-		const double MotionLengthSq = Motion.SizeSquared();
-		const double Speed = FMath::Sqrt(MotionLengthSq) / (SegmentEnd - SegmentStart);
-		// A stationary capsule cannot identify *when* the client viewed it.
-		if (Speed < 150.0 || MotionLengthSq < FMath::Square(0.1))
-		{
-			continue;
-		}
-
-		const double Alpha = FMath::Clamp(FVector::DotProduct(VisualAnchor - PositionStart, Motion) /
-			MotionLengthSq, 0.0, 1.0);
-		const double MatchTime = FMath::Lerp(SegmentStart, SegmentEnd, Alpha);
-		const double Residual = FVector::Dist(VisualAnchor, PositionStart + Alpha * Motion);
-		Candidates.Add({ MatchTime, Residual });
-		if (Residual < BestResidualCm)
-		{
-			BestResidualCm = Residual;
-			BestMatchTime = MatchTime;
-			BestSpeedCmPerSecond = Speed;
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-			const double FullSegmentAlpha = (MatchTime - Older.ServerTimeSeconds) / Span;
-			OutMatch.DebugMatchedProcessSeconds = FMath::Lerp(
-				Older.DebugCaptureProcessSeconds, Newer.DebugCaptureProcessSeconds, FullSegmentAlpha);
-			OutMatch.DebugMatchedWorldSeconds = FMath::Lerp(
-				Older.DebugCaptureWorldSeconds, Newer.DebugCaptureWorldSeconds, FullSegmentAlpha);
-			OutMatch.DebugOlderFrame = Older.DebugCaptureFrame;
-			OutMatch.DebugNewerFrame = Newer.DebugCaptureFrame;
-#endif
-		}
-	}
-
-	if (Candidates.IsEmpty())
-	{
-		return false;
-	}
-
-	OutMatch.MatchedServerTimeSeconds = BestMatchTime;
-	OutMatch.SignedOffsetSeconds = BestMatchTime - ClientShotTimeSeconds;
-	OutMatch.ResidualCm = BestResidualCm;
-	OutMatch.MatchedSpeedCmPerSecond = BestSpeedCmPerSecond;
-	OutMatch.EvaluatedSegments = Candidates.Num();
-	// Another similarly fitting point more than 25ms away makes the inverse
-	// time underdetermined (e.g. near a patrol reversal). Report, do not guess.
-	for (const FCandidate& Candidate : Candidates)
-	{
-		if (FMath::Abs(Candidate.TimeSeconds - BestMatchTime) > 0.025 &&
-			Candidate.ResidualCm <= BestResidualCm + 1.5)
-		{
-			OutMatch.bAmbiguous = true;
-			break;
-		}
-	}
-	return true;
-}

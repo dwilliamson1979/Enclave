@@ -133,16 +133,6 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 			if (const AGameStateBase* GameState = World->GetGameState())
 			{
 				ShotData->Shot.ClientServerTimeSeconds = GameState->GetServerWorldTimeSeconds();
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-				// C4F: debug-only clock probe, independent of this GAS shot-intent
-				// payload. It must not influence the server's shot-time policy.
-				if (AEnclavePlayerController* DiagnosticController = Cast<AEnclavePlayerController>(ActorInfo->PlayerController.Get()))
-				{
-					DiagnosticController->DebugProbeSSRShotClock(
-						ActivationInfo.GetActivationPredictionKey().Current,
-						ShotData->Shot.ClientServerTimeSeconds);
-				}
-#endif
 			}
 		}
 #if ENCLAVE_INCLUDE_DEBUG_CODE
@@ -196,11 +186,6 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		if (AEnclavePlayerController::IsShotAlignmentDebugEnabled())
 		{
 			DebugController->DebugCaptureLocalShot(ActivationInfo.GetActivationPredictionKey().Current);
-		}
-		if (UEnclaveHitRegistrationSubsystem::IsSSRPreflightDebugEnabled() && !bAuthority)
-		{
-			DebugController->DebugLogSSRProxySample(ActivationInfo.GetActivationPredictionKey().Current,
-				DebugClientShotServerTimeSeconds);
 		}
 	}
 #endif

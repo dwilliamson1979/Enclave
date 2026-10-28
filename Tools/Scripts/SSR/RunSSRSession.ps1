@@ -26,6 +26,8 @@ param(
     [int]$JitterMs = 0,
     [double]$LossPct = 0,
     [switch]$Dedicated,
+    # Remote clients: 1 = shooter, 2 = target, the rest are moving bystanders.
+    [ValidateRange(2, 12)][int]$Clients = 2,
     [int]$ServerTickRate = 0,
     [int]$Scenario = 2,
     [int]$DurationSeconds = 120,
@@ -39,6 +41,13 @@ param(
     # GPU and the background shooter fell to ~30 FPS, which skewed scoring.
     [int]$ClientMaxFps = 60,
     [ValidateSet("Normal", "AboveNormal", "High")][string]$ClientPriority = "Normal",
+    # Only the shooter's view is scored. Target and bystanders run without rendering
+    # (-nullrhi; movement and networking unchanged) so N clients fit on one machine.
+    # Measured: 4 fully rendered clients pulled the 60 Hz server down to 35 Hz.
+    [switch]$RenderAllClients,
+    [ValidateSet("Normal", "AboveNormal", "High")][string]$ServerPriority = "Normal",
+    # Worker-thread cap for headless clients (0 = engine default, one per core).
+    [int]$HeadlessCoreLimit = 0,
     [string]$SessionName = "",
     [string]$EngineRoot = "D:\UnrealEngine\Versions\UE_5.8"
 )
@@ -78,6 +87,7 @@ $serverCmds = @(
     "Enclave.Debug.SSRSelection 1",
     "Enclave.Debug.SSRTest.DurationSeconds $DurationSeconds",
     "Enclave.Debug.SSRTest.AutoQuit 1",
+    "Enclave.Debug.SSRTest.ExpectedClients $Clients",
     "Enclave.Debug.SSRTest.AutoStart $Scenario"
 )
 if ($ExtraServerCmds -ne "") { $serverCmds += $ExtraServerCmds.Split(",") }
@@ -102,31 +112,36 @@ if ($ServerTickRate -gt 0)
 
 $serverKind = if ($Dedicated) { "dedicated" } else { "listen" }
 if ($ServerTickRate -gt 0) { $serverKind += " ${ServerTickRate}Hz" }
+$serverKind += " clients=$Clients"
 Write-Host ("== SSR session {0} serverLag={1}ms clientLag={2}ms jitter=+/-{3}ms loss={4}% scenario={5} duration={6}s lagComp={7} timing={8} -> {9}" -f
     $serverKind, $ServerLagMs, $ClientLagMs, $JitterMs, $LossPct, $Scenario, $DurationSeconds, $LagCompensation, $TimingSource, $sessionDirectory) -ForegroundColor Cyan
 $server = Start-Process -FilePath $editor -ArgumentList $serverArgs -PassThru
+if ($ServerPriority -ne "Normal") { try { $server.PriorityClass = $ServerPriority } catch { } }
 Start-Sleep -Seconds 20
 
-$clients = @()
-foreach ($index in 1, 2)
+$clientProcesses = @()
+foreach ($index in 1..$Clients)
 {
     # Join order decides roles: the lower PlayerId (first client) is the shooter.
     $clientLog = Join-Path $sessionDirectory "client$index.log"
     $lag = if ($index -eq 1) { $ShooterLagMs } else { $ClientLagMs }
-    $clientArgs = @("`"$projectFile`"", "127.0.0.1") + $window + @(Get-NetEmulationArgs $lag) +
-        @("-WinX=$(660 * $index)", "-WinY=40", "-abslog=`"$clientLog`"")
+    $render = if ($index -eq 1 -or $RenderAllClients) { @() } else { @("-nullrhi") }
+    if ($render.Count -gt 0 -and $HeadlessCoreLimit -gt 0) { $render += "-corelimit=$HeadlessCoreLimit" }
+    $clientArgs = @("`"$projectFile`"", "127.0.0.1") + $window + $render + @(Get-NetEmulationArgs $lag) +
+        @("-WinX=$(40 + 660 * (($index - 1) % 3))", "-WinY=$(40 + 400 * [math]::Floor(($index - 1) / 3))", "-abslog=`"$clientLog`"")
     $clientCmds = @()
     if ($ClientMaxFps -gt 0) { $clientCmds += "t.MaxFPS $ClientMaxFps" }
     if ($index -eq 1 -and $ExtraShooterCmds -ne "") { $clientCmds += $ExtraShooterCmds.Split(",") }
     if ($clientCmds.Count -gt 0) { $clientArgs += "-ExecCmds=`"$($clientCmds -join ",")`"" }
     $client = Start-Process -FilePath $editor -ArgumentList $clientArgs -PassThru
     if ($ClientPriority -ne "Normal") { try { $client.PriorityClass = $ClientPriority } catch { } }
-    $clients += $client
+    $clientProcesses += $client
     Start-Sleep -Seconds 8
 }
+$deadlineSlack = 120 + 8 * [math]::Max(0, $Clients - 2)
 
 # The server quits itself when the auto-started session ends; allow generous slack.
-$deadline = (Get-Date).AddSeconds($DurationSeconds + 120)
+$deadline = (Get-Date).AddSeconds($DurationSeconds + $deadlineSlack)
 # Server CPU over the whole run: total processor time / wall time (1.0 = one full core).
 $serverStart = Get-Date
 $serverCpu = [TimeSpan]::Zero
@@ -140,7 +155,7 @@ $cpuCores = if ($wallSeconds -gt 0) { [math]::Round($serverCpu.TotalSeconds / $w
 "serverCpuSeconds=$([math]::Round($serverCpu.TotalSeconds, 1)) wallSeconds=$([math]::Round($wallSeconds, 1)) serverCpuCores=$cpuCores" |
     Set-Content -Encoding ascii (Join-Path $sessionDirectory "server_cpu.txt")
 Write-Host "Server CPU: $cpuCores cores average (whole run, includes startup and map load)"
-foreach ($process in @($server) + $clients)
+foreach ($process in @($server) + $clientProcesses)
 {
     if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
 }

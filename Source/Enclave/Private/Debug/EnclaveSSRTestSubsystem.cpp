@@ -19,6 +19,10 @@ static TAutoConsoleVariable<bool> CVarSSRTestAutoQuit(
 	TEXT("Enclave.Debug.SSRTest.AutoQuit"), false,
 	TEXT("Listen server: request engine exit when an auto-started SSR test stops. DEBUG ONLY."),
 	ECVF_Cheat);
+static TAutoConsoleVariable<int32> CVarSSRTestExpectedClients(
+	TEXT("Enclave.Debug.SSRTest.ExpectedClients"), 2,
+	TEXT("Remote players AutoStart waits for (>= 2). Lowest PlayerId shoots, next is the target, the rest are bystanders. DEBUG ONLY."),
+	ECVF_Cheat);
 static TAutoConsoleVariable<float> CVarSSRTestDurationSeconds(
 	TEXT("Enclave.Debug.SSRTest.DurationSeconds"), 180.0f,
 	TEXT("Listen server: SSR test session length before it stops itself [10,600]. DEBUG ONLY."),
@@ -75,9 +79,9 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 			Remotes.Add(PC);
 		}
 	}
-	if (Remotes.Num() != 2)
+	if (Remotes.Num() < 2)
 	{
-		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest START rejected=requires_exactly_two_remote_controllers found=%d (DEBUG ONLY)", Remotes.Num());
+		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest START rejected=requires_at_least_two_remote_controllers found=%d (DEBUG ONLY)", Remotes.Num());
 		return;
 	}
 	Remotes.Sort([](const AEnclavePlayerController& A, const AEnclavePlayerController& B) {
@@ -103,12 +107,22 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 	TargetPawn = SelectedTargetPawn;
 	SelectedTargetPawn->DebugSetSSRStrafeDamageSuppressed(true);
 	Remotes[1]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 2, Scenario, 1729, nullptr);
+	Bystanders.Reset();
+	for (int32 Index = 2; Index < Remotes.Num(); ++Index)
+	{
+		Bystanders.Add(Remotes[Index]);
+		if (AEnclaveCharacter* BystanderPawn = Cast<AEnclaveCharacter>(Remotes[Index]->GetPawn()))
+		{
+			BystanderPawn->DebugSetSSRStrafeDamageSuppressed(true);
+		}
+		Remotes[Index]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 3, Scenario, 1729, nullptr);
+	}
 	Remotes[0]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 1, Scenario, 1729, SelectedTargetPawn);
 	LogNetStats(TEXT("start"));
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
-		"SSRTest START id=%d scenario=%d shooterPlayerId=%d targetPlayerId=%d shooter=%s target=%s (SHADOW ONLY)",
+		"SSRTest START id=%d scenario=%d shooterPlayerId=%d targetPlayerId=%d shooter=%s target=%s bystanders=%d (SHADOW ONLY)",
 		TestId, Scenario, Remotes[0]->PlayerState->GetPlayerId(), Remotes[1]->PlayerState->GetPlayerId(),
-		*GetNameSafe(Remotes[0]->GetPawn()), *GetNameSafe(SelectedTargetPawn));
+		*GetNameSafe(Remotes[0]->GetPawn()), *GetNameSafe(SelectedTargetPawn), Bystanders.Num());
 #else
 	(void)Scenario;
 #endif
@@ -123,6 +137,15 @@ void UEnclaveSSRTestSubsystem::Stop(const TCHAR* Reason)
 	if (AEnclavePlayerController* Shooter = ShooterController.Get()) Shooter->GetSSRTestComponent()->ClientEnclaveSSRTestCleanup(OldId);
 	if (AEnclavePlayerController* Target = TargetController.Get()) Target->GetSSRTestComponent()->ClientEnclaveSSRTestCleanup(OldId);
 	if (AEnclaveCharacter* ProtectedTargetPawn = TargetPawn.Get()) ProtectedTargetPawn->DebugSetSSRStrafeDamageSuppressed(false);
+	for (const TWeakObjectPtr<AEnclavePlayerController>& Bystander : Bystanders)
+	{
+		if (AEnclavePlayerController* PC = Bystander.Get())
+		{
+			if (AEnclaveCharacter* BystanderPawn = Cast<AEnclaveCharacter>(PC->GetPawn())) BystanderPawn->DebugSetSSRStrafeDamageSuppressed(false);
+			PC->GetSSRTestComponent()->ClientEnclaveSSRTestCleanup(OldId);
+		}
+	}
+	Bystanders.Reset();
 	ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest STOP id=%d reason=%s phase=%d elapsed=%.1f (DEBUG ONLY)",
 		OldId, Reason, Phase, Elapsed);
 	Phase = 0;
@@ -216,7 +239,7 @@ void UEnclaveSSRTestSubsystem::TickAutoStart(float DeltaSeconds)
 		const APlayerController* PC = It->Get();
 		if (IsValid(PC) && !PC->IsLocalController() && IsValid(PC->GetPawn())) ++RemotesWithPawns;
 	}
-	if (RemotesWithPawns != 2) return;
+	if (RemotesWithPawns < FMath::Max(2, CVarSSRTestExpectedClients.GetValueOnGameThread())) return;
 	// Let initial replication and clock sync settle before measuring timing.
 	AutoStartSettleSeconds += 1.0f;
 	if (AutoStartSettleSeconds < 5.0f) return;
