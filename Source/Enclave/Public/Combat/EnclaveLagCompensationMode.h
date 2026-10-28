@@ -21,7 +21,7 @@ enum class EEnclaveLagCompensationMode : uint8
 UENUM(BlueprintType)
 enum class EEnclaveSSRTimingSource : uint8
 {
-	/** Every target at serverReceipt - (RTT + AnchorOffset). No client timing evidence. */
+	/** Every target at serverReceipt - (RTT + AnchorOffset). No client timing evidence. Default. */
 	ServerAnchor UMETA(DisplayName = "Server Anchor"),
 	/** Every target at the client-echoed server stamp; no verifiable stamp means unavailable. */
 	EchoedStamp UMETA(DisplayName = "Echoed Stamp"),

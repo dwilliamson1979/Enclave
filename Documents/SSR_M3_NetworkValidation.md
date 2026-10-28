@@ -86,14 +86,63 @@ Same four conditions, Hybrid authoritative, ~120 + 120 labeled shots each:
 - **Cost:** bandwidth scales with the update rate (+55%). CPU is small in absolute terms with two players and must be re-measured with a realistic player count.
 - **Not changed.** The default stays 30 Hz until the tick rate is chosen deliberately (see the recommendation in the milestone summary).
 
-## Outliers: client presentation lag
+## 120 Hz
 
-Two sessions (the first matrix "low" run, and the first case of the second abuse suite) scored 85–88% clear hits. In both, the **server-only anchor shifted too**: the best offset moved from −25 to −50/−75 ms. Something on the shooter client made it display the target further in the past than usual, and the echoed stamp didn't correct for it, because it reports the newest stamp received, not the pose being rendered. The clients now log frame pacing per session (`SSRTest CLIENT_FPS`, shown in the summaries) so the next outlier can be attributed. If it is client frame time, the fix is for the client to report its *render* time (newest stamp minus its current smoothing delay) instead of the newest stamp. That is how CS-style interpolation timestamps work.
+| Condition | RTT | Hits / misses | Server Hz | Server CPU cores | Out B/s per client |
+|---|---|---|---|---|---|
+| mid | 90 | 100 / 100 | 119.5 | 0.31 | 4396 |
+| high | 152 | 100 / 100 | 119.5 | 0.31 | 4366 |
+| mid + jitter | 99 | 99.2 / 100 | 119.1 | 0.30 | 3668 |
+| mid + loss | 91 | 98.3 / 100 | 119.5 | 0.31 | 4319 |
+
+From 60 to 120 Hz, bandwidth barely moves (about 4.2 KB/s), because per-character update frequency becomes the limit. Measured RTT drops by about 8 more ms at mid, and CPU rises about 1.5× over 60 Hz. Accuracy is the same at 30, 60 and 120 Hz within noise. The anchor sweep is flat (≥98.8%) from −25 to 0 ms at 120 Hz.
+
+**Recommendation: 60 Hz.** It gets most of the latency gain for moderate bandwidth and CPU. Revisit 120 Hz with a realistic player count on production-like server hardware.
+
+## Frame pacing: the throttled shooter
+
+The client `SSRTest CLIENT_FPS` logging showed that, with uncapped clients, **the shooter ran at ~31–33 FPS (about 40% of frames over 33 ms) while the target ran at ~186 FPS.** Both game windows share one GPU (RTX 3080); the focused, uncapped target window took it, and the background shooter starved. Raising process priority didn't help; capping both clients did (`t.MaxFPS 60`: both at 59.9 FPS, 1 slow frame in 1,200).
+
+**Every session before this fix scored against a throttled, irregular shooter.** That plausibly explains the two 85–88% outliers (both methods shifted together) and much of the ±5-point run-to-run spread. `RunSSRSession.ps1` now caps clients at 60 FPS by default (`-ClientMaxFps`). The matrix adds `mid_shooter30fps`, a steady 30 FPS shooter, as a deliberate condition.
+
+## Hybrid vs ServerAnchor, frame pacing controlled (30 Hz server, 60 FPS clients)
+
+| Condition | Hybrid: hits / misses | ServerAnchor: hits / misses | Same shots in the Hybrid run: Hybrid vs anchor −25 (combined %) |
+|---|---|---|---|
+| mid | 98.3 / 100 | 100 / 100 | 99.2 vs 99.6 |
+| high | 100 / 100 | 100 / 100 | 100 vs 100 |
+| mid + jitter | 98.3 / 100 | 95.8 / 98.3 | 99.2 vs 99.6 |
+| mid + loss | 92.5 / 99.2 | 95.8 / 100 | 95.9 vs 98.3 |
+| shooter at 30 FPS | 99.2 / 100 | 99.2 / 100 | 99.6 vs 100 |
+
+The last column is a paired comparison (the anchor sweep runs on the same shots Hybrid decided). **The anchor at −25 ms matched or beat Hybrid in every condition**; Hybrid was worst under packet loss. A steady 30 FPS shooter did not hurt either method. With frame pacing controlled, the echoed stamp shows no accuracy benefit, while it still costs bandwidth, adds a ~14 ms backtracking window, and adds code paths.
+
+## Decisions (2026-10-28)
+
+- **Default timing source: ServerAnchor** (`RTT − 25 ms`). It matched or beat Hybrid on the same shots in every controlled condition, and needs no client timing evidence, so there is no backtracking window. In non-debug builds stamps stop replicating unless a match selects Hybrid or EchoedStamp. Both remain selectable.
+  - Context: most competitive shooters rewind to a client-reported command/view frame, capped by the server (e.g. Counter-Strike: command tick plus interpolation; Overwatch: command frame). That relies on a fixed global simulation tick, where one frame number describes everything the client sees. Unreal replicates each actor independently and extrapolates and smooths simulated proxies, so a per-target stamp did not beat a calibrated server estimate here. Revisit if characters move to a fixed-tick model (Mover / Network Prediction).
+- **Dedicated-server tick rate: 60 Hz** (`Config/DefaultEngine.ini`, `NetServerMaxTickRate=60`). That's mainstream for competitive shooters (roughly 60–64 for Overwatch, Halo Infinite and CS2; Valorant runs 128; several battle royales run 20–30). Listen servers and PIE are unaffected; they tick at the host frame rate.
+- **Test harness:** clients are capped at 60 FPS by default; the server tick rate comes from project config unless `-ServerTickRate` overrides it.
+
+## Verification on the new defaults (ServerAnchor, 60 Hz server, 60 FPS clients)
+
+| Condition | RTT median | Clear hits / misses | Fallbacks | Server Hz | Server CPU cores | Out B/s per client | Anchor sweep, combined % (−75/−50/−25/0/+25) |
+|---|---|---|---|---|---|---|---|
+| low | 49 | 100 / 100 | 0 | 59.9 | 0.21 | 3576 | unavail / 35.8* / 100 / 100 / 92.1 |
+| mid | 89 | 100 / 100 | 0 | 60.0 | 0.21 | 3560 | 97.1 / 100 / 100 / 100 / 100 |
+| high | 137 | 100 / 100 | 0 | 59.9 | 0.21 | 3260 | 97.1 / 100 / 100 / 100 / 100 |
+| mid + jitter ±15 | 87 | 100 / 100 | 0 | 59.9 | 0.21 | 3094 | 98.3 / 100 / 100 / 100 / 98.8 |
+| mid + loss 2% | 86 | 98.3 / 100 | 0 | 60.0 | 0.20 | 3601 | 75.3 / 93.3 / 99.2 / 99.6 / 93.3 |
+| asym, slow down | 85 | 100 / 100 | 0 | 60.0 | 0.20 | 3604 | 74.6 / 93.8 / 100 / 100 / 94.6 |
+| asym, slow up | 82 | 100 / 100 | 0 | 59.9 | 0.20 | 3627 | 78.8 / 94.6 / 100 / 100 / 95.0 |
+| shooter at 30 FPS | 93 | 100 / 100 | 0 | 59.8 | 0.20 | 3432 | 79.6 / 96.2 / 100 / 99.6 / 91.7 |
+
+\* At ~49 ms RTT, offsets of −50 ms or more put the target age at or below zero, which is unavailable rather than clamped. −25 ms sits in the flat −25…0 plateau in every condition.
+
+With frame pacing controlled and the server at 60 Hz, measured RTT dropped by 20–60 ms compared with the earlier runs at the same emulated lag, and accuracy is at the top of the scale. Packet loss remains the only condition below 100%.
 
 ## Next in milestone 3
 
-1. Attribute presentation-lag outliers with the client FPS logging; if confirmed, echo the rendered time instead of the newest stamp.
-2. Repeated Hybrid-versus-ServerAnchor comparison under jitter and loss, to settle the default.
-3. Choose the server tick rate and measure it with more players.
-4. More clients (multi-target occlusion, nearest-hit), lag switching, crouch/teleport around fallback.
-5. Prune shadow diagnostics that are no longer needed.
+1. Measure tick rate and CPU with more players (needs more than two clients per machine, or a second machine).
+2. More clients (multi-target occlusion, nearest-hit), lag switching, crouch/teleport around fallback.
+3. Prune shadow diagnostics that are no longer needed.

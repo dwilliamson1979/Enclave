@@ -32,9 +32,13 @@ param(
     [double]$SweepStepMs = 25,
     [double]$SweepStartMs = 0,
     [ValidateSet("Disabled", "ServerSideRewind")][string]$LagCompensation = "Disabled",
-    [ValidateSet("Hybrid", "ServerAnchor", "EchoedStamp")][string]$TimingSource = "Hybrid",
+    [ValidateSet("Hybrid", "ServerAnchor", "EchoedStamp")][string]$TimingSource = "ServerAnchor",
     [string]$ExtraServerCmds = "",
     [string]$ExtraShooterCmds = "",
+    # Cap client frame rate (0 = uncapped). Uncapped, the focused client took the shared
+    # GPU and the background shooter fell to ~30 FPS, which skewed scoring.
+    [int]$ClientMaxFps = 60,
+    [ValidateSet("Normal", "AboveNormal", "High")][string]$ClientPriority = "Normal",
     [string]$SessionName = "",
     [string]$EngineRoot = "D:\UnrealEngine\Versions\UE_5.8"
 )
@@ -90,7 +94,7 @@ else
     $serverArgs = @("`"$projectFile`"", "$mapUrl?listen") + $window + @("-WinX=0", "-WinY=40")
 }
 $serverArgs += @(Get-NetEmulationArgs $ServerLagMs) + @("-ExecCmds=`"$serverCmds`"", "-abslog=`"$serverLog`"")
-# 0 keeps the engine default (BaseEngine.ini: 30 Hz).
+# 0 keeps the project default (Config/DefaultEngine.ini: 60 Hz).
 if ($ServerTickRate -gt 0)
 {
     $serverArgs += "-ini:Engine:[/Script/OnlineSubsystemUtils.IpNetDriver]:NetServerMaxTickRate=$ServerTickRate"
@@ -111,8 +115,13 @@ foreach ($index in 1, 2)
     $lag = if ($index -eq 1) { $ShooterLagMs } else { $ClientLagMs }
     $clientArgs = @("`"$projectFile`"", "127.0.0.1") + $window + @(Get-NetEmulationArgs $lag) +
         @("-WinX=$(660 * $index)", "-WinY=40", "-abslog=`"$clientLog`"")
-    if ($index -eq 1 -and $ExtraShooterCmds -ne "") { $clientArgs += "-ExecCmds=`"$ExtraShooterCmds`"" }
-    $clients += Start-Process -FilePath $editor -ArgumentList $clientArgs -PassThru
+    $clientCmds = @()
+    if ($ClientMaxFps -gt 0) { $clientCmds += "t.MaxFPS $ClientMaxFps" }
+    if ($index -eq 1 -and $ExtraShooterCmds -ne "") { $clientCmds += $ExtraShooterCmds.Split(",") }
+    if ($clientCmds.Count -gt 0) { $clientArgs += "-ExecCmds=`"$($clientCmds -join ",")`"" }
+    $client = Start-Process -FilePath $editor -ArgumentList $clientArgs -PassThru
+    if ($ClientPriority -ne "Normal") { try { $client.PriorityClass = $ClientPriority } catch { } }
+    $clients += $client
     Start-Sleep -Seconds 8
 }
 

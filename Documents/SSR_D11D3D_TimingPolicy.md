@@ -1,6 +1,6 @@
 # D11D-3D: SSR timing policy, and D11D-4: authoritative selection
 
-**Status:** Decided (2026-10-28) and implemented behind a server option. The match default stays `LagCompensation=Disabled`. Enable SSR with `?LagCompensation=ServerSideRewind` (Capsule hit detection only).
+**Status:** Decided (2026-10-28) and implemented behind a server option. **Default timing source changed to ServerAnchor in milestone 3**; see `SSR_M3_NetworkValidation.md`. The match default stays `LagCompensation=Disabled`. Enable SSR with `?LagCompensation=ServerSideRewind` (Capsule hit detection only).
 
 ## Decision
 
@@ -8,8 +8,8 @@ The rewind time comes from `ResolveSSRTiming()` (`Combat/EnclaveSSRTimingPolicy.
 
 | Source | Rewind time | Status |
 |---|---|---|
-| **Hybrid** (default) | The client's locally hit target uses its verified echoed stamp. Every other character uses the server anchor. | Supported |
-| ServerAnchor | Every character uses `receipt − (RTT + AnchorOffset)`. | Fallback / diagnostic |
+| Hybrid | The client's locally hit target uses its verified echoed stamp. Every other character uses the server anchor. | Selectable; no measured benefit (M3) |
+| **ServerAnchor** (default since M3) | Every character uses `receipt − (RTT + AnchorOffset)`. | Supported |
 | EchoedStamp | Every character uses the echoed stamp. With no verified stamp the historical answer is unavailable, so the shot follows the unavailable-history policy. | Diagnostic |
 
 The D11D-3C exit gate asked for either "server-verifiable presentation metadata" or "a bounded estimation policy". Hybrid uses both. The client says which replicated stamp it was showing, and the server checks that the stamp names a frame it recorded for that target and that it falls inside a bounded window around its own anchor.
@@ -49,7 +49,7 @@ EchoedStamp falls back on every shot whose local ray missed: all clear misses, a
 | Property | Default | Meaning |
 |---|---|---|
 | `LagCompensationMode` / `?LagCompensation=` | Disabled | `ServerSideRewind` enables D11D-4 in Capsule mode |
-| `SSRTimingSource` / `?SSRTimingSource=` | Hybrid | See above. Dev builds can also switch live with `EnclaveSetSSRTimingSource` |
+| `SSRTimingSource` / `?SSRTimingSource=` | ServerAnchor (was Hybrid; see M3) | See above. Dev builds can also switch live with `EnclaveSetSSRTimingSource` |
 | `SSRAnchorOffsetMs` | −25 (was −50; see `SSR_M3_NetworkValidation.md`) | target age = RTT + offset, clamped to [−150, 100] |
 | `SSRStampEarlyToleranceMs` / `SSRStampLateToleranceMs` | 40 / 60 | Hybrid: how much younger / older than the anchor age an accepted stamp may be |
 | `SSRUnavailableFallbackPolicy` | PresentTimeTrace | What happens when no trustworthy historical answer exists (C4D proposal) |

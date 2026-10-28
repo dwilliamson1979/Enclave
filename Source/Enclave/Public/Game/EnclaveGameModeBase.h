@@ -107,11 +107,13 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
 	EEnclaveLagCompensationMode LagCompensationMode = EEnclaveLagCompensationMode::Disabled;
 
-	/** How the rewind time is chosen. Hybrid is the supported default; the other
-	 * two are fallback/diagnostic modes. URL option ?SSRTimingSource=.
+	/** How the rewind time is chosen. ServerAnchor is the supported default: with client
+	 * frame pacing controlled it matched or beat Hybrid on the same shots in every
+	 * milestone 3 condition, without client timing evidence. Hybrid and EchoedStamp
+	 * remain selectable for comparison. URL option ?SSRTimingSource=.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
-	EEnclaveSSRTimingSource SSRTimingSource = EEnclaveSSRTimingSource::Hybrid;
+	EEnclaveSSRTimingSource SSRTimingSource = EEnclaveSSRTimingSource::ServerAnchor;
 
 	/** Signed offset from the server RTT anchor: target age = RTT + offset.
 	 * -25 ms was as good as or better than -50 ms in every dedicated-server condition

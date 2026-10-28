@@ -35,7 +35,7 @@ namespace EnclaveSSRTimingPolicy
 /** Server-owned match settings consumed by Resolve(). */
 struct ENCLAVE_API FEnclaveSSRTimingSettings
 {
-	EEnclaveSSRTimingSource Source = EEnclaveSSRTimingSource::Hybrid;
+	EEnclaveSSRTimingSource Source = EEnclaveSSRTimingSource::ServerAnchor;
 	/** Signed offset from the RTT anchor: targetAge = RTT + AnchorOffset. */
 	double AnchorOffsetSeconds = -0.025;
 	/** Hybrid only: how much younger / older than the anchor age an echoed stamp may be. */

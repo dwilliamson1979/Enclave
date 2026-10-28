@@ -50,6 +50,8 @@ private:
     double SessionFrameSeconds = 0.0;
     float SessionWorstFrameSeconds = 0.0f;
     int32 SessionFramesOver33Ms = 0;
+    double SessionNextFpsLogSeconds = 10.0;
+    void LogSessionFps() const;
     FVector DebugSSRStrafeOrigin = FVector::ZeroVector;
     FVector DebugSSRStrafeRight = FVector::ZeroVector;
     float DebugSSRStrafeElapsedSeconds = 0.0f;

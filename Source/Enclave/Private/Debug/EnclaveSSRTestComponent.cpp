@@ -123,14 +123,9 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestCleanup_Implementation(int32 
     AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
     if (IsValid(PC) && PC->IsLocalController() && ClientTestId == TestId)
     {
-        if (SessionFrames > 0)
-        {
-            ENCLAVE_LOG(LogEnclaveCombat, Log,
-                "SSRTest CLIENT_FPS id=%d avgFps=%.1f worstFrameMs=%.1f framesOver33Ms=%d frames=%d (DEBUG ONLY)",
-                TestId, SessionFrames / FMath::Max(SessionFrameSeconds, 0.001),
-                SessionWorstFrameSeconds * 1000.0f, SessionFramesOver33Ms, SessionFrames);
-        }
+        LogSessionFps();
         SessionFrames = 0;
+        SessionNextFpsLogSeconds = 10.0;
         SessionFrameSeconds = 0.0;
         SessionWorstFrameSeconds = 0.0f;
         SessionFramesOver33Ms = 0;
@@ -779,6 +774,19 @@ void UEnclaveSSRTestComponent::StopDebugSSRStrafe(const TCHAR* Reason)
 	bDebugSSRStrafeEnabled = false;
 }
 
+void UEnclaveSSRTestComponent::LogSessionFps() const
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (SessionFrames > 0)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRTest CLIENT_FPS id=%d avgFps=%.1f worstFrameMs=%.1f framesOver33Ms=%d frames=%d seconds=%.1f (cumulative; DEBUG ONLY)",
+			ClientTestId, SessionFrames / FMath::Max(SessionFrameSeconds, 0.001),
+			SessionWorstFrameSeconds * 1000.0f, SessionFramesOver33Ms, SessionFrames, SessionFrameSeconds);
+	}
+#endif
+}
+
 void UEnclaveSSRTestComponent::TickParticipant(float DeltaSeconds)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
@@ -790,6 +798,12 @@ void UEnclaveSSRTestComponent::TickParticipant(float DeltaSeconds)
 		SessionFrameSeconds += DeltaSeconds;
 		SessionWorstFrameSeconds = FMath::Max(SessionWorstFrameSeconds, DeltaSeconds);
 		SessionFramesOver33Ms += DeltaSeconds > 0.0333f ? 1 : 0;
+		// Periodic, cumulative: the server may quit before a cleanup RPC arrives.
+		if (SessionFrameSeconds >= SessionNextFpsLogSeconds)
+		{
+			LogSessionFps();
+			SessionNextFpsLogSeconds += 10.0;
+		}
 	}
 	TickDebugSSRCrouch(DeltaSeconds);
 	TickDebugSSRAutoFire(DeltaSeconds);

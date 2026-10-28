@@ -10,7 +10,7 @@
 
 param(
     [int]$DurationSeconds = 120,
-    [ValidateSet("Hybrid", "ServerAnchor", "EchoedStamp")][string]$TimingSource = "Hybrid",
+    [ValidateSet("Hybrid", "ServerAnchor", "EchoedStamp")][string]$TimingSource = "ServerAnchor",
     [double]$SweepStartMs = -75,
     [double]$SweepStepMs = 25,
     [int]$ServerTickRate = 0,
@@ -26,7 +26,9 @@ $conditions = @(
     @{ Name = "mid_jitter"; ServerLagMs = 25; ClientLagMs = 25; JitterMs = 15; LossPct = 0 },
     @{ Name = "mid_loss";   ServerLagMs = 25; ClientLagMs = 25; JitterMs = 0;  LossPct = 2 },
     @{ Name = "asym_down";  ServerLagMs = 45; ClientLagMs = 5;  JitterMs = 0;  LossPct = 0 },
-    @{ Name = "asym_up";    ServerLagMs = 5;  ClientLagMs = 45; JitterMs = 0;  LossPct = 0 }
+    @{ Name = "asym_up";    ServerLagMs = 5;  ClientLagMs = 45; JitterMs = 0;  LossPct = 0 },
+    # A slow-rendering shooter (target stays at the default cap).
+    @{ Name = "mid_shooter30fps"; ServerLagMs = 25; ClientLagMs = 25; JitterMs = 0; LossPct = 0; ShooterCmds = "t.MaxFPS 30" }
 )
 # "powershell -File" passes a comma list as one string.
 $Only = @($Only | ForEach-Object { $_ -split "," } | Where-Object { $_ -ne "" })
@@ -48,7 +50,8 @@ foreach ($condition in $conditions)
     & (Join-Path $PSScriptRoot "RunSSRSession.ps1") -Dedicated -LagCompensation ServerSideRewind -TimingSource $TimingSource `
         -ServerLagMs $condition.ServerLagMs -ClientLagMs $condition.ClientLagMs -JitterMs $condition.JitterMs `
         -LossPct $condition.LossPct -DurationSeconds $DurationSeconds -SweepStartMs $SweepStartMs `
-        -SweepStepMs $SweepStepMs -ServerTickRate $ServerTickRate -SessionName $sessionName | Out-Host
+        -SweepStepMs $SweepStepMs -ServerTickRate $ServerTickRate -ExtraShooterCmds "$($condition.ShooterCmds)" `
+        -SessionName $sessionName | Out-Host
 
     $serverLog = Join-Path $matrixDirectory "$($condition.Name)\server.log"
     $result = python (Join-Path $PSScriptRoot "analyze_timing_sweep.py") $serverLog --json | Out-String | ConvertFrom-Json
