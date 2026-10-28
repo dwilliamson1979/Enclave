@@ -31,6 +31,7 @@
 #include "GameplayTags/EnclaveEquipmentSlotTags.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Game/EnclaveGameModeBase.h"
+#include "Combat/EnclaveSSRTimingPolicy.h"
 
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -583,13 +584,40 @@ void AEnclaveCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
     DOREPLIFETIME_CONDITION(AEnclaveCharacter, SSRServerCapsuleObservation, COND_SimulatedOnly);
 }
 
+bool FEnclaveSSRServerCapsuleObservation::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+{
+	Ar.SerializeIntPacked(ServerTimeMs);
+	bool bCenterOk = true;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// Both endpoints must be the same build configuration (as with all debug payloads).
+	Center.NetSerialize(Ar, Map, bCenterOk);
+	Ar << RadiusCm;
+	Ar << HalfHeightCm;
+#endif
+	bOutSuccess = bCenterOk && !Ar.IsError();
+	return true;
+}
+
+void AEnclaveCharacter::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker)
+{
+	Super::PreReplication(ChangedPropertyTracker);
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	// Shadow diagnostics read stamps in every mode.
+	constexpr bool bReplicateSSRStamps = true;
+#else
+	const AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
+	const bool bReplicateSSRStamps = GameMode && GameMode->RequiresClientSSRStamps();
+#endif
+	DOREPLIFETIME_ACTIVE_OVERRIDE_FAST(AEnclaveCharacter, SSRServerCapsuleObservation, bReplicateSSRStamps);
+}
+
 void AEnclaveCharacter::HandleSSRHistoryFrameRecorded(const FEnclaveTargetCapsuleFrame& Frame)
 {
 	if (!HasAuthority() || !FMath::IsFinite(Frame.ServerTimeSeconds))
 	{
 		return;
 	}
-	SSRServerCapsuleObservation.ServerTimeSeconds = Frame.ServerTimeSeconds;
+	SSRServerCapsuleObservation.ServerTimeMs = EnclaveSSRTimingPolicy::QuantizeServerTimeMs(Frame.ServerTimeSeconds);
 	SSRServerCapsuleObservation.Center = Frame.Center;
 	SSRServerCapsuleObservation.RadiusCm = Frame.RadiusCm;
 	SSRServerCapsuleObservation.HalfHeightCm = Frame.HalfHeightCm;
@@ -602,7 +630,7 @@ void AEnclaveCharacter::OnRep_SSRServerCapsuleObservation()
 		return;
 	}
 	FEnclaveSSRReceivedProxyUpdate& Update = LastReceivedSSRObservation;
-	Update.ServerStamp = SSRServerCapsuleObservation.ServerTimeSeconds;
+	Update.ServerStamp = EnclaveSSRTimingPolicy::DequantizeServerTimeMs(SSRServerCapsuleObservation.ServerTimeMs);
 	Update.ReplicatedLocation = SSRServerCapsuleObservation.Center;
 	Update.ReplicatedVelocity = FVector::ZeroVector;
 	Update.CapsuleAtReceive = SSRServerCapsuleObservation.Center;

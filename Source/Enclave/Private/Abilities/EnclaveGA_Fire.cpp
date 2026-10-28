@@ -7,6 +7,7 @@
 #include "GameplayEffect.h"
 #include "Combat/EnclaveShotIntent.h"
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
+#include "Combat/EnclaveSSRTimingPolicy.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "GameplayPrediction.h"
 #include "GameFramework/GameStateBase.h"
@@ -114,6 +115,13 @@ void UEnclaveGA_Fire::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		ShotData->Shot.Origin = Origin;
 		ShotData->Shot.Direction = ViewRotation.Vector();
 		ShotData->Shot.ShotSequence = static_cast<uint16>(ActivationInfo.GetActivationPredictionKey().Current);
+		// Timing evidence for SSR: which proxy this client was looking at, and
+		// the server stamp it was showing. Cheap local trace; untrusted on arrival.
+		const FEnclaveSSRClientTimingEvidence TimingEvidence = CaptureClientSSRTimingEvidence(
+			AvatarActor->GetWorld(), AvatarActor, Origin, ViewRotation.Vector(),
+			EnclaveSSRTimingPolicy::ClientEvidenceTraceRangeCm);
+		ShotData->Shot.TimingTarget = TimingEvidence.Target;
+		ShotData->Shot.TimingStampMs = TimingEvidence.StampMs;
 #if ENCLAVE_INCLUDE_DEBUG_CODE
         if (AEnclavePlayerController* Controller = Cast<AEnclavePlayerController>(ActorInfo->PlayerController.Get()))
         {

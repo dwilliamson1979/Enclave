@@ -1,6 +1,7 @@
 // Copyright Lightcarrier Studios
 
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
+#include "Combat/EnclaveSSRTimingPolicy.h"
 
 #include "Characters/EnclaveCharacter.h"
 #include "Components/CapsuleComponent.h"
@@ -117,6 +118,27 @@ bool UEnclaveTargetHistoryComponent::HasRecordedFrameStamp(double ServerTimeSeco
 		if (Frame.ServerTimeSeconds == ServerTimeSeconds) return true;
 	}
 	return false;
+}
+
+bool UEnclaveTargetHistoryComponent::TryResolveRecordedStampMs(uint32 StampMs, double& OutServerTimeSeconds) const
+{
+	OutServerTimeSeconds = 0.0;
+	if (StampMs == 0) return false;
+	int32 Matches = 0;
+	for (const FEnclaveTargetCapsuleFrame& Frame : Frames)
+	{
+		if (EnclaveSSRTimingPolicy::QuantizeServerTimeMs(Frame.ServerTimeSeconds) == StampMs)
+		{
+			OutServerTimeSeconds = Frame.ServerTimeSeconds;
+			++Matches;
+		}
+	}
+	if (Matches != 1)
+	{
+		OutServerTimeSeconds = 0.0;
+		return false;
+	}
+	return true;
 }
 
 void UEnclaveTargetHistoryComponent::TrimExpiredFrames(double CurrentServerTimeSeconds, double MaxRewindSeconds)

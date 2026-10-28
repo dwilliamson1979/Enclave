@@ -103,6 +103,11 @@ public:
 	double GetRecordedDeathTimeSeconds() const { return DeathTimeSeconds; }
 	/** Exact server-captured frame stamp. This does not prove client delivery. */
 	bool HasRecordedFrameStamp(double ServerTimeSeconds) const;
+	/** Maps a whole-ms wire stamp back to the exact time of the one recorded frame
+	 * it was quantized from. Fails when no frame (or more than one) matches, so an
+	 * echoed stamp can only ever name a frame this server actually recorded.
+	 */
+	bool TryResolveRecordedStampMs(uint32 StampMs, double& OutServerTimeSeconds) const;
 	void InvalidateHistory();
 
 	/** Preserve preceding history, but forbid interpolation into the next sample.

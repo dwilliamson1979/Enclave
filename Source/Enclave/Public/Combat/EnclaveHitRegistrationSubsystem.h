@@ -6,10 +6,12 @@
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Combat/EnclaveShotTiming.h"
 #include "Combat/EnclaveSSRGameplayClaim.h"
+#include "Combat/EnclaveSSRPolicyContracts.h"
 #include "Debug/EnclaveDebug.h"
 #include "EnclaveHitRegistrationSubsystem.generated.h"
 
 class AActor;
+class AEnclaveGameModeBase;
 struct FEnclaveShotIntent;
 struct FEnclaveValidatedShotRay;
 
@@ -22,7 +24,8 @@ struct FEnclaveValidatedShotRay;
  *   The server checks basic shooter-origin, aim, timestamp, and sequence
  *   plausibility and passes an accepted ray to the Fireable. The Fireable
  *   still builds this query using its own range and damage policy.
- *   True historical pose validation / target rewind are NOT yet implemented.
+ * D11D-4: with ServerSideRewind active, validated remote shots are registered
+ *   against capsule history (targets only; the shooter pose is not rewound).
  */
 struct ENCLAVE_API FEnclaveHitscanQuery
 {
@@ -35,6 +38,9 @@ struct ENCLAVE_API FEnclaveHitscanQuery
 	bool bHasValidatedClientTiming = false;
 	FEnclaveShotTimingContext ValidatedClientTiming;
 	uint16 ShotSequence = 0;
+	// Untrusted client timing evidence for the SSR timing policy (D11D-3D).
+	TWeakObjectPtr<AActor> TimingTarget;
+	uint32 TimingStampMs = 0;
 	FEnclaveSSRGameplayClaim SSRGameplayClaim; // Diagnostic ONLY
 };
 
@@ -77,10 +83,16 @@ private:
 	void DebugProbeServerHistoricalEvaluator(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugCompareSSRTimingCandidates(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugSweepSSRTimingSensitivity(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
-	void DebugAuditServerHistoricalReadiness(const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugCompareSSRGameplay(const FEnclaveHitscanQuery& Query, bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const;
 	void DebugCompareHistoricalCapsules(const FEnclaveHitscanQuery& Query,
 		bool bLiveHit, const FHitResult& LiveHit, EEnclaveWeaponHitDetectionMode Mode) const;
 #endif
 	bool TraceCurrentGeometry(const FEnclaveHitscanQuery& Query, FHitResult& OutHit, EEnclaveWeaponHitDetectionMode Mode) const;
+
+	/** D11D-4 authoritative historical selection for one validated remote shot.
+	 * Fills OutHit only for Selection == Historical; the caller runs the
+	 * present-time trace for PresentTimeUnavailableFallback.
+	 */
+	FEnclaveSSRSelectionDecision SelectHistoricalHit(const FEnclaveHitscanQuery& Query,
+		const AEnclaveGameModeBase& GameMode, FHitResult& OutHit) const;
 };

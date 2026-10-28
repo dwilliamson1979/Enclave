@@ -43,17 +43,31 @@ struct FEnclaveStartingSlottedItem
 	FGameplayTag SlotTag;
 };
 
-/** Server-authored time and capsule geometry from a single authoritative history frame.
- * Replication supplies a server-clock anchor; it does not replace FRepMovement. */
+/** Server-authored stamp of a single authoritative history frame, echoed back by
+ * shooters as SSR timing evidence. It does not replace FRepMovement.
+ * Wire cost: a packed whole-millisecond stamp (3-4 bytes). Capsule geometry is a
+ * diagnostic cross-check and is only serialized in builds with debug code.
+ */
 USTRUCT()
 struct FEnclaveSSRServerCapsuleObservation
 {
 	GENERATED_BODY()
 
-	UPROPERTY() double ServerTimeSeconds = 0.0;
-	UPROPERTY() FVector_NetQuantize10 Center = FVector::ZeroVector;
-	UPROPERTY() float RadiusCm = 0.0f;
-	UPROPERTY() float HalfHeightCm = 0.0f;
+	/** GameState server world time of the recorded frame, rounded to whole ms. */
+	UPROPERTY() uint32 ServerTimeMs = 0;
+
+	// Diagnostic-only; not UPROPERTYs, so they never trigger replication on their own.
+	FVector_NetQuantize10 Center = FVector::ZeroVector;
+	float RadiusCm = 0.0f;
+	float HalfHeightCm = 0.0f;
+
+	bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
+};
+
+template<>
+struct TStructOpsTypeTraits<FEnclaveSSRServerCapsuleObservation> : TStructOpsTypeTraitsBase2<FEnclaveSSRServerCapsuleObservation>
+{
+	enum { WithNetSerializer = true };
 };
 
 /** Last received authoritative observation; local arrival time is not a network clock. */
@@ -78,6 +92,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnRep_ReplicatedMovement() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 	/** Called when the history component publishes an authoritative sample. */
 	void HandleSSRHistoryFrameRecorded(const struct FEnclaveTargetCapsuleFrame& Frame);
 	const FEnclaveSSRReceivedProxyUpdate& GetLastReceivedSSRObservation() const { return LastReceivedSSRObservation; }

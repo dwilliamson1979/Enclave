@@ -21,10 +21,10 @@ FEnclaveServerHistoricalAssessment Unavailable(EEnclaveSSRUnavailableReason Reas
 
 FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCapsules(
     UWorld* ServerWorld, AActor* Shooter, const FVector& Start, const FVector& End,
-    const FEnclaveShotTimingContext& ValidatedTiming, double AuthorizedHistoryTimeSeconds)
+    const FEnclaveShotTimingContext& ValidatedTiming, double AuthorizedHistoryTimeSeconds,
+    const AEnclaveCharacter* OverrideTarget, double OverrideTimeSeconds)
 {
-    // The GameMode currently forcibly disables SSR; this evaluator is isolated
-    // until Stage B connects a diagnostic-only call site. Never route damage here.
+    // Shared by D11D-4 authoritative selection and the shadow diagnostics.
     if (!IsValid(ServerWorld) || ServerWorld->GetNetMode() == NM_Client ||
         !IsValid(Shooter) || !Shooter->HasAuthority() || Shooter->GetWorld() != ServerWorld ||
         Start.ContainsNaN() || End.ContainsNaN() || Start.Equals(End) ||
@@ -42,8 +42,8 @@ FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCa
     {
         return Unavailable(EEnclaveSSRUnavailableReason::UnsupportedGeometry);
     }
-    // Do not check GetLagCompensationMode here: Stage A remains callable in
-    // shadow-only tests even though executable production SSR is disabled.
+    // Do not check GetLagCompensationMode here: shadow diagnostics call this
+    // while the match runs present-time.
     const AGameStateBase* GameState = ServerWorld->GetGameState();
     if (!IsValid(GameState) || !FMath::IsFinite(AuthorizedHistoryTimeSeconds) ||
         !FMath::IsFinite(ValidatedTiming.ServerReceiptTimeSeconds) ||
@@ -60,6 +60,15 @@ FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCa
     {
         return Unavailable(EEnclaveSSRUnavailableReason::RewindWindowExceeded);
     }
+    if (OverrideTarget)
+    {
+        const double OverrideAge = ValidatedTiming.ServerReceiptTimeSeconds - OverrideTimeSeconds;
+        if (!FMath::IsFinite(OverrideAge) || OverrideTimeSeconds <= 0.0 ||
+            OverrideAge < 0.0 || OverrideAge > ValidatedTiming.MaxRewindSeconds)
+        {
+            return Unavailable(EEnclaveSSRUnavailableReason::RewindWindowExceeded);
+        }
+    }
     // A stale caller-owned timing context cannot turn an old shot into a valid
     // evaluation merely by asking for a time within its old rewind window.
     const double ClockDrift = GameState->GetServerWorldTimeSeconds() - ValidatedTiming.ServerReceiptTimeSeconds;
@@ -73,12 +82,16 @@ FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCa
     {
         return Unavailable(EEnclaveSSRUnavailableReason::HistoricalQueryNotPrepared);
     }
-    const FEnclaveHistoricalHitQueryResult Hit = Query.Trace(AuthorizedHistoryTimeSeconds);
+    const FEnclaveHistoricalHitQueryResult Hit = OverrideTarget
+        ? Query.TraceWithOverride(AuthorizedHistoryTimeSeconds, OverrideTarget, OverrideTimeSeconds)
+        : Query.Trace(AuthorizedHistoryTimeSeconds);
     FEnclaveServerHistoricalAssessment Result;
     Result.EvaluatedServerTimeSeconds = AuthorizedHistoryTimeSeconds;
     Result.AvailableHistoryCount = Hit.Available;
     Result.MissingHistoryCount = Hit.Missing;
     Result.Policy.bWorldOccluded = Hit.bOccluded;
+    Result.WorldHit = Query.GetWorldHit();
+    Result.bWorldBlocked = Query.IsWorldBlocked();
     // The query reports missing history across all other character targets.
     // Treating an apparent miss as definitive would permit a phantom pass-through.
     if (Hit.Missing > 0)
@@ -88,6 +101,7 @@ FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCa
         return Result;
     }
     Result.Target = Hit.Target;
+    Result.Capsule = Hit.Capsule;
     Result.Point = Hit.Point;
     Result.EntryDistanceCm = Hit.EntryDistanceCm;
     Result.Policy.Outcome = Hit.bHit ? EEnclaveSSRQueryOutcome::HistoricalHit

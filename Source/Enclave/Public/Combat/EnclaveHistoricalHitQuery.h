@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/HitResult.h"
+#include "Combat/Components/EnclaveTargetHistoryComponent.h"
 
 class AActor;
 class AEnclaveCharacter;
@@ -18,6 +19,8 @@ class UWorld;
 struct ENCLAVE_API FEnclaveHistoricalHitQueryResult
 {
 	TWeakObjectPtr<AEnclaveCharacter> Target;
+	/** The historical capsule that was intersected (valid when Target is set). */
+	FEnclaveTargetCapsuleFrame Capsule;
 	FVector Point = FVector::ZeroVector;
 	double EntryDistanceCm = -1.0;
 	int32 Available = 0;
@@ -53,7 +56,16 @@ public:
 	/** Returns a miss/empty result on invalid time or unavailable query context. */
 	FEnclaveHistoricalHitQueryResult Trace(double HistoryTimeSeconds, const AEnclaveCharacter* OnlyTarget = nullptr) const;
 
+	/** Like Trace(), but OverrideTarget is evaluated at OverrideTimeSeconds instead
+	 * (Hybrid timing: the echoed target at its stamp, everyone else at the anchor).
+	 */
+	FEnclaveHistoricalHitQueryResult TraceWithOverride(double HistoryTimeSeconds,
+		const AEnclaveCharacter* OverrideTarget, double OverrideTimeSeconds) const;
+
 private:
+	FEnclaveHistoricalHitQueryResult TraceInternal(double HistoryTimeSeconds, const AEnclaveCharacter* OnlyTarget,
+		const AEnclaveCharacter* OverrideTarget, double OverrideTimeSeconds) const;
+
 	TWeakObjectPtr<UWorld> World;
 	TWeakObjectPtr<AActor> Shooter;
 	FVector Start = FVector::ZeroVector;

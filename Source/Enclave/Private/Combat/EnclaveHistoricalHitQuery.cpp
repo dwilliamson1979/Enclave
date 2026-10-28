@@ -60,8 +60,24 @@ bool FEnclaveHistoricalHitQuery::IsPrepared() const
 
 FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::Trace(double HistoryTimeSeconds, const AEnclaveCharacter* OnlyTarget) const
 {
+	return TraceInternal(HistoryTimeSeconds, OnlyTarget, nullptr, 0.0);
+}
+
+FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::TraceWithOverride(double HistoryTimeSeconds,
+	const AEnclaveCharacter* OverrideTarget, double OverrideTimeSeconds) const
+{
+	if (OverrideTarget && (!FMath::IsFinite(OverrideTimeSeconds) || OverrideTimeSeconds < 0.0))
+	{
+		return FEnclaveHistoricalHitQueryResult();
+	}
+	return TraceInternal(HistoryTimeSeconds, nullptr, OverrideTarget, OverrideTimeSeconds);
+}
+
+FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::TraceInternal(double BaseTimeSeconds,
+	const AEnclaveCharacter* OnlyTarget, const AEnclaveCharacter* OverrideTarget, double OverrideTimeSeconds) const
+{
 	FEnclaveHistoricalHitQueryResult Result;
-	if (!IsPrepared() || !FMath::IsFinite(HistoryTimeSeconds) || HistoryTimeSeconds < 0.0)
+	if (!IsPrepared() || !FMath::IsFinite(BaseTimeSeconds) || BaseTimeSeconds < 0.0)
 	{
 		return Result;
 	}
@@ -76,6 +92,7 @@ FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::Trace(double Histor
 		{
 			continue;
 		}
+		const double HistoryTimeSeconds = Target == OverrideTarget ? OverrideTimeSeconds : BaseTimeSeconds;
 
         const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
         const UEnclaveAvatarLifecycleComponent* Lifecycle = Target->FindComponentByClass<UEnclaveAvatarLifecycleComponent>();
@@ -119,6 +136,7 @@ FEnclaveHistoricalHitQueryResult FEnclaveHistoricalHitQuery::Trace(double Histor
 		{
 			NearestDistanceCm = EntryDistanceCm;
 			Result.Target = Target;
+			Result.Capsule = Capsule;
 			Result.EntryDistanceCm = EntryDistanceCm;
 			Result.Point = HitPoint;
 		}

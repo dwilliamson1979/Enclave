@@ -5,9 +5,9 @@
 #include "Combat/EnclaveSSRPolicyContracts.h"
 
 /**
- * Diagnostic-only classification of a bounded set of candidate historical queries.
- * Stability is not a proof of the client-rendered pose, and this type never
- * authorizes historical damage. Unavailable samples invalidate stability.
+ * Diagnostic-only classification of a bounded set of candidate historical queries
+ * (the timing sweep). Authoritative timing is ResolveSSRTiming(); this type never
+ * selects damage. Unavailable samples invalidate stability.
  */
 namespace EnclaveSSRTemporalUncertainty
 {
@@ -50,8 +50,5 @@ namespace EnclaveSSRTemporalUncertainty
                 Classification = Hits ? EClassification::StableHit : EClassification::StableMiss;
             }
         }
-
-        /** Cannot become true without independently verified presentation provenance. */
-        bool IsAuthorizedForDamage() const { return false; }
     };
 }

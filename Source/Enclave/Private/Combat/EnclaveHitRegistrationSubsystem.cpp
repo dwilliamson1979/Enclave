@@ -8,6 +8,7 @@
 #include "Combat/EnclaveHistoricalHitQuery.h"
 #include "Combat/EnclaveServerHistoricalEvaluator.h"
 #include "Combat/EnclaveSSRTimingCalibration.h"
+#include "Combat/EnclaveSSRTimingPolicy.h"
 #include "Combat/EnclaveSSRTemporalUncertainty.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Characters/EnclaveCharacter.h"
@@ -72,12 +73,14 @@ static TAutoConsoleVariable<bool> CVarDebugSSRTimingSweep(
 static TAutoConsoleVariable<float> CVarDebugSSRTimingSweepStepMs(
     TEXT("Enclave.Debug.SSRTimingSweepStepMs"), 25.f,
     TEXT("Step between timing sweep samples in ms [0,100]. Results outside the rewind window are unavailable, not clamped."), ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarDebugSSRTimingSweepStartMs(
+    TEXT("Enclave.Debug.SSRTimingSweepStartMs"), 0.f,
+    TEXT("Offset from the server RTT anchor of the first sweep sample in ms [-150,100]. Negative rewinds less than a full RTT. Shadow only."), ECVF_Cheat);
 
-static TAutoConsoleVariable<bool> CVarDebugSSRProductionReadiness(
-    TEXT("Enclave.Debug.SSRProductionReadiness"),
+static TAutoConsoleVariable<bool> CVarDebugSSRSelection(
+    TEXT("Enclave.Debug.SSRSelection"),
     false,
-    TEXT("D11D-3B: audit validated remote shot readiness for production historical evaluation. "
-         "No history-time authority exists yet; never queries historical hits or changes damage."),
+    TEXT("Log the authoritative D11D-4 SSR selection for every validated remote shot."),
     ECVF_Cheat);
 #endif
 
@@ -245,6 +248,8 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 	OutValidatedRay.Direction = ClientDirection;
 	OutValidatedRay.ClientServerTimeSeconds = Intent.ClientServerTimeSeconds;
 	OutValidatedRay.ShotSequence = Intent.ShotSequence;
+	OutValidatedRay.TimingTarget = Intent.TimingTarget;
+	OutValidatedRay.TimingStampMs = Intent.TimingStampMs;
 	OutValidatedRay.SSRGameplayClaim = Intent.SSRGameplayClaim; // Diagnostic, untrusted
 	OutValidatedRay.Timing.ClientEstimatedShotTimeSeconds = Intent.ClientServerTimeSeconds;
 	OutValidatedRay.Timing.ServerReceiptTimeSeconds = ServerReceiptTimeSeconds;
@@ -287,16 +292,143 @@ bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuer
 		? GameMode->GetWeaponHitDetectionMode()
 		: EEnclaveWeaponHitDetectionMode::Capsule;
 
-	const bool bCurrentHit = TraceCurrentGeometry(Query, OutHit, Mode);
+	// Listen-host, AI and other authority-local shots have no validated client
+	// timing and stay present-time, as does every shot while SSR is inactive.
+	FEnclaveSSRSelectionDecision Decision;
+	Decision.Selection = EEnclaveSSRSelection::PresentTimeByMatchPolicy;
+	if (GameMode && GameMode->IsServerSideRewindActive() && Query.bHasValidatedClientTiming)
+	{
+		Decision = SelectHistoricalHit(Query, *GameMode, OutHit);
+	}
+
+	bool bHit = false;
+	switch (Decision.Selection)
+	{
+	case EEnclaveSSRSelection::Historical:
+		bHit = Decision.bSelectedHit;
+		break;
+	case EEnclaveSSRSelection::NoHitUnavailable:
+		OutHit = FHitResult();
+		break;
+	default:
+		bHit = TraceCurrentGeometry(Query, OutHit, Mode);
+		break;
+	}
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	DebugAuditServerHistoricalReadiness(Query, Mode);
 	DebugCompareSSRTimingCandidates(Query, Mode);
 	DebugSweepSSRTimingSensitivity(Query, Mode);
 	DebugProbeServerHistoricalEvaluator(Query, Mode);
-	DebugCompareHistoricalCapsules(Query, bCurrentHit, OutHit, Mode);
-	DebugCompareSSRGameplay(Query, bCurrentHit, OutHit, Mode);
+	DebugCompareHistoricalCapsules(Query, bHit, OutHit, Mode);
+	DebugCompareSSRGameplay(Query, bHit, OutHit, Mode);
 #endif
-	return bCurrentHit;
+	return bHit;
+}
+
+namespace
+{
+// A historical capsule hit as a regular blocking FHitResult. The component is
+// the target's live capsule; the location is where it was at the rewind time.
+FHitResult MakeHistoricalHitResult(const FEnclaveHitscanQuery& Query, const FEnclaveServerHistoricalAssessment& Assessment)
+{
+	AEnclaveCharacter* Target = Assessment.Target.Get();
+	const FVector ShotDirection = (Query.End - Query.Start).GetSafeNormal();
+	const FVector Normal = FEnclaveHistoricalCapsuleIntersection::SurfaceNormal(
+		Assessment.Capsule, Assessment.Point, -ShotDirection);
+	FHitResult Hit(Target, Target ? Target->GetCapsuleComponent() : nullptr, Assessment.Point, Normal);
+	Hit.bBlockingHit = true;
+	Hit.TraceStart = Query.Start;
+	Hit.TraceEnd = Query.End;
+	Hit.Distance = static_cast<float>(Assessment.EntryDistanceCm);
+	const double Length = FVector::Dist(Query.Start, Query.End);
+	Hit.Time = Length > UE_DOUBLE_SMALL_NUMBER ? static_cast<float>(Assessment.EntryDistanceCm / Length) : 0.0f;
+	return Hit;
+}
+}
+
+FEnclaveSSRSelectionDecision UEnclaveHitRegistrationSubsystem::SelectHistoricalHit(const FEnclaveHitscanQuery& Query,
+	const AEnclaveGameModeBase& GameMode, FHitResult& OutHit) const
+{
+	FEnclaveSSRSelectionDecision Decision;
+	UWorld* World = GetWorld();
+	AActor* Shooter = Query.Instigator.Get();
+	const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
+	const FEnclaveSSRTimingSettings Settings = GameMode.GetSSRTimingSettings();
+
+	// Echoed evidence counts only if it names a frame this server recorded for
+	// that exact target. It never names the hit target: the trace still does.
+	const AEnclaveCharacter* StampTarget = Cast<AEnclaveCharacter>(Query.TimingTarget.Get());
+	double StampTime = 0.0;
+	bool bStampVerified = false;
+	if (IsValid(StampTarget) && StampTarget != Shooter && StampTarget->GetWorld() == World)
+	{
+		if (const UEnclaveTargetHistoryComponent* History = StampTarget->FindComponentByClass<UEnclaveTargetHistoryComponent>())
+		{
+			bStampVerified = History->TryResolveRecordedStampMs(Query.TimingStampMs, StampTime);
+		}
+	}
+
+	const FEnclaveSSRTimingResolution Resolution = ResolveSSRTiming(Settings, Timing, bStampVerified, StampTime);
+	FEnclaveServerHistoricalAssessment Assessment;
+	if (Resolution.bValid)
+	{
+		const bool bOverride = Resolution.bUseStamp && Settings.Source == EEnclaveSSRTimingSource::Hybrid;
+		Assessment = FEnclaveServerHistoricalEvaluator::EvaluateCapsules(World, Shooter, Query.Start, Query.End,
+			Timing, Resolution.BaseTimeSeconds, bOverride ? StampTarget : nullptr, Resolution.StampTimeSeconds);
+	}
+	else
+	{
+		Assessment.Policy.Outcome = EEnclaveSSRQueryOutcome::Unavailable;
+		Assessment.Policy.UnavailableReason = Resolution.UnavailableReason;
+	}
+
+	switch (Assessment.Policy.Outcome)
+	{
+	case EEnclaveSSRQueryOutcome::HistoricalHit:
+		Decision.Selection = EEnclaveSSRSelection::Historical;
+		Decision.bSelectedHit = Assessment.Target.IsValid();
+		if (Decision.bSelectedHit)
+		{
+			OutHit = MakeHistoricalHitResult(Query, Assessment);
+		}
+		break;
+	case EEnclaveSSRQueryOutcome::HistoricalMiss:
+		// Terminal: never retry present-time after a definitive historical miss
+		// (including world-occluded targets). The bullet still stops at the wall.
+		Decision.Selection = EEnclaveSSRSelection::Historical;
+		Decision.bSelectedHit = Assessment.bWorldBlocked;
+		if (Decision.bSelectedHit)
+		{
+			OutHit = Assessment.WorldHit;
+		}
+		break;
+	default:
+		Decision.UnavailableReason = Assessment.Policy.UnavailableReason;
+		Decision.Selection = GameMode.GetSSRUnavailableFallbackPolicy() == EEnclaveSSRUnavailableFallbackPolicy::RejectHit
+			? EEnclaveSSRSelection::NoHitUnavailable
+			: EEnclaveSSRSelection::PresentTimeUnavailableFallback;
+		break;
+	}
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	if (CVarDebugSSRSelection.GetValueOnGameThread())
+	{
+		const double Receipt = Timing.ServerReceiptTimeSeconds;
+		ENCLAVE_LOG(LogEnclaveCombat, Log,
+			"SSRSelection SERVER seq=%u source=%s selection=%d hit=%d target=%s outcome=%d reason=%d occluded=%d "
+			"stampTarget=%s stampVerified=%d stampUsed=%d stampRejected=%d baseAgeMs=%.1f stampAgeMs=%.1f rttMs=%.1f "
+			"missing=%d",
+			static_cast<uint32>(Query.ShotSequence), *UEnum::GetValueAsString(Settings.Source),
+			static_cast<int32>(Decision.Selection), Decision.bSelectedHit && Assessment.Target.IsValid() ? 1 : 0,
+			*GetNameSafe(Assessment.Target.Get()), static_cast<int32>(Assessment.Policy.Outcome),
+			static_cast<int32>(Assessment.Policy.UnavailableReason), Assessment.Policy.bWorldOccluded ? 1 : 0,
+			*GetNameSafe(StampTarget), bStampVerified ? 1 : 0, Resolution.bUseStamp ? 1 : 0,
+			Resolution.bStampRejected ? 1 : 0,
+			Resolution.bValid ? (Receipt - Resolution.BaseTimeSeconds) * 1000.0 : -1.0,
+			bStampVerified ? (Receipt - StampTime) * 1000.0 : -1.0,
+			Timing.ServerObservedRTTSeconds * 1000.0, Assessment.MissingHistoryCount);
+	}
+#endif
+	return Decision;
 }
 
 bool UEnclaveHitRegistrationSubsystem::TraceCurrentGeometry(const FEnclaveHitscanQuery& Query, FHitResult& OutHit, EEnclaveWeaponHitDetectionMode Mode) const
@@ -478,16 +610,19 @@ void UEnclaveHitRegistrationSubsystem::DebugSweepSSRTimingSensitivity(
         return;
     }
 
+    const double StartMs = FMath::Clamp(
+        static_cast<double>(CVarDebugSSRTimingSweepStartMs.GetValueOnGameThread()), -150.0, 100.0);
     EnclaveSSRTimingCalibration::FSummary Summary;
     EnclaveSSRTemporalUncertainty::FAssessment Uncertainty;
     FString Outcomes;
     for (int32 Index = 0; Index < EnclaveSSRTimingCalibration::SampleCount; ++Index)
     {
-        const double AdditionalMs = EnclaveSSRTimingCalibration::DelayMs(Index, StepMs);
+        const double StepOffsetMs = EnclaveSSRTimingCalibration::DelayMs(Index, StepMs);
+        const double AdditionalMs = StartMs + StepOffsetMs;
         double CandidateTime = 0.0;
         EEnclaveSSRQueryOutcome Outcome = EEnclaveSSRQueryOutcome::Unavailable;
-        if (AdditionalMs >= 0.0 &&
-            Timing.TryResolveServerDerivedHistoryTime(AdditionalMs / 1000.0, CandidateTime))
+        if (StepOffsetMs >= 0.0 &&
+            Timing.TryResolveServerAnchoredHistoryTime(AdditionalMs / 1000.0, CandidateTime))
         {
             const FEnclaveServerHistoricalAssessment Assessment =
                 FEnclaveServerHistoricalEvaluator::EvaluateCapsules(
@@ -501,65 +636,18 @@ void UEnclaveHitRegistrationSubsystem::DebugSweepSSRTimingSensitivity(
     }
 
     ENCLAVE_LOG(LogEnclaveCombat, Log,
-        "SSRTimingSweep SERVER seq=%u stepMs=%.1f sampleOutcomes=%s hits=%d misses=%d unavailable=%d transitions=%d firstTransitionIndex=%d "
+        "SSRTimingSweep SERVER seq=%u rttMs=%.1f stepMs=%.1f sampleOutcomes=%s hits=%d misses=%d unavailable=%d transitions=%d firstTransitionIndex=%d "
         "(SERVER RTT ESTIMATE PLUS ADDITIONAL DELAY; NOT VERIFIED CLIENT PRESENTATION; SHADOW ONLY; NO DAMAGE AUTHORITY)",
-        static_cast<uint32>(Query.ShotSequence), StepMs, *Outcomes,
+        static_cast<uint32>(Query.ShotSequence), Timing.ServerObservedRTTSeconds * 1000.0, StepMs, *Outcomes,
         Summary.Hits, Summary.Misses, Summary.Unavailable, Summary.Transitions,
         Summary.FirstTransitionIndex);
 
     ENCLAVE_LOG(LogEnclaveCombat, Log,
         "SSRTemporalUncertainty SERVER seq=%u classification=%d samples=%d hits=%d misses=%d unavailable=%d "
-        "presentationProvenance=0 damageAuthorized=%d "
-        "(STABILITY IS NOT PRESENTATION PROOF; SHADOW ONLY; NO DAMAGE AUTHORITY)",
+        "(SWEEP STABILITY; SHADOW ONLY)",
         static_cast<uint32>(Query.ShotSequence),
         static_cast<int32>(Uncertainty.Classification),
-        Uncertainty.Samples, Uncertainty.Hits, Uncertainty.Misses, Uncertainty.Unavailable,
-        Uncertainty.IsAuthorizedForDamage() ? 1 : 0);
-}
-
-void UEnclaveHitRegistrationSubsystem::DebugAuditServerHistoricalReadiness(
-    const FEnclaveHitscanQuery& Query, EEnclaveWeaponHitDetectionMode Mode) const
-{
-    if (!CVarDebugSSRProductionReadiness.GetValueOnGameThread() ||
-        !Query.bHasValidatedClientTiming)
-    {
-        return;
-    }
-
-    // This method must remain a read-only audit. A validated shot timestamp
-    // establishes shot plausibility, NOT the time at which the target was rendered.
-    // Neither the RTT nor the D11C target-specific diagnostic claim is an
-    // authorized replacement for that missing presentation-time evidence.
-    const UWorld* World = GetWorld();
-    const AEnclaveGameModeBase* GameMode = World
-        ? World->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
-    const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
-    const TCHAR* Reason = TEXT("presentation_time_unavailable");
-    if (!GameMode)
-    {
-        Reason = TEXT("game_mode_unavailable");
-    }
-    else if (Mode != EEnclaveWeaponHitDetectionMode::Capsule)
-    {
-        Reason = TEXT("unsupported_geometry");
-    }
-    else if (!FMath::IsFinite(Timing.ServerReceiptTimeSeconds) ||
-             Timing.ServerReceiptTimeSeconds <= 0.0 ||
-             !FMath::IsFinite(Timing.MaxRewindSeconds) ||
-             Timing.MaxRewindSeconds <= 0.0)
-    {
-        Reason = TEXT("server_timing_unavailable");
-    }
-
-    ENCLAVE_LOG(LogEnclaveCombat, Log,
-        "SSRProductionReadiness SERVER seq=%u ready=0 reason=%s "
-        "receipt=%.6f clientShotAgeMs=%.2f observedRTTMs=%.2f "
-        "rewindLimitMs=%.2f (NO HISTORICAL QUERY; NO DAMAGE AUTHORITY)",
-        static_cast<uint32>(Query.ShotSequence), Reason,
-        Timing.ServerReceiptTimeSeconds,
-        Timing.GetObservedShotAgeSeconds() * 1000.0,
-        Timing.ServerObservedRTTSeconds * 1000.0,
-        Timing.MaxRewindSeconds * 1000.0);
+        Uncertainty.Samples, Uncertainty.Hits, Uncertainty.Misses, Uncertainty.Unavailable);
 }
 
 void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHitscanQuery& Query,
@@ -640,7 +728,9 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 	const UEnclaveTargetHistoryComponent* History = Target->FindComponentByClass<UEnclaveTargetHistoryComponent>();
 	FEnclaveTargetCapsuleFrame BaseFrame;
 	const bool bBase = IsValid(History) && History->TryGetCapsuleAtTime(Stamp, BaseFrame);
-	const bool bCapturedServerStamp = IsValid(History) && History->HasRecordedFrameStamp(Stamp);
+	double RecordedStamp = 0.0;
+	const bool bCapturedServerStamp = IsValid(History) &&
+		History->TryResolveRecordedStampMs(EnclaveSSRTimingPolicy::QuantizeServerTimeMs(Stamp), RecordedStamp);
 	if (!bBase)
 	{
 		double HistoryOldest = 0.0;

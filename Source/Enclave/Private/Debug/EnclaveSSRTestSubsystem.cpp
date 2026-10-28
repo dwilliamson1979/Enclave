@@ -7,11 +7,31 @@
 #include "HAL/IConsoleManager.h"
 #include "GameFramework/PlayerState.h"
 
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+// Unattended multi-process runs (Tools/Scripts/RunSSRSession.ps1): there is no
+// console to type Start into after both clients have joined.
+static TAutoConsoleVariable<int32> CVarSSRTestAutoStart(
+	TEXT("Enclave.Debug.SSRTest.AutoStart"), 0,
+	TEXT("Listen server: start this SSR test scenario (2/3/4/5) once exactly two remote players have pawns. 0=off. DEBUG ONLY."),
+	ECVF_Cheat);
+static TAutoConsoleVariable<bool> CVarSSRTestAutoQuit(
+	TEXT("Enclave.Debug.SSRTest.AutoQuit"), false,
+	TEXT("Listen server: request engine exit when an auto-started SSR test stops. DEBUG ONLY."),
+	ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarSSRTestDurationSeconds(
+	TEXT("Enclave.Debug.SSRTest.DurationSeconds"), 180.0f,
+	TEXT("Listen server: SSR test session length before it stops itself [10,600]. DEBUG ONLY."),
+	ECVF_Cheat);
+#endif
+
 bool UEnclaveSSRTestSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
     const UWorld* World = Cast<UWorld>(Outer);
-    return World && World->IsGameWorld() && World->GetNetMode() == NM_ListenServer;
+    // A -game "?listen" world initializes as Standalone and only then starts
+    // listening, so creation cannot require NM_ListenServer; every entry point
+    // re-checks the net mode at runtime.
+    return World && World->IsGameWorld() && World->GetNetMode() != NM_Client;
 #else
     return false;
 #endif
@@ -63,6 +83,7 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 		return;
 	}
 	if (IConsoleVariable* Gate = IConsoleManager::Get().FindConsoleVariable(TEXT("Enclave.Debug.SSRGameplayGate"))) Gate->Set(true, ECVF_SetByCode);
+	bAutoStarted = false;
 	TestId++;
 	if (TestId <= 0) TestId = 1;
 	TestScenario = Scenario;
@@ -96,6 +117,12 @@ void UEnclaveSSRTestSubsystem::Stop(const TCHAR* Reason)
 	ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest STOP id=%d reason=%s phase=%d elapsed=%.1f (DEBUG ONLY)",
 		OldId, Reason, Phase, Elapsed);
 	Phase = 0;
+	if (bAutoStarted && CVarSSRTestAutoQuit.GetValueOnGameThread())
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest AUTOQUIT id=%d (DEBUG ONLY)", OldId);
+		FPlatformMisc::RequestExit(false, TEXT("SSRTest.AutoQuit"));
+	}
+	bAutoStarted = false;
 	ShooterController.Reset();
 	TargetController.Reset();
 	TargetPawn.Reset();
@@ -118,9 +145,15 @@ void UEnclaveSSRTestSubsystem::Status() const
 void UEnclaveSSRTestSubsystem::TickSession(float DeltaSeconds)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (!GetWorld() || GetWorld()->GetNetMode() != NM_ListenServer || Phase == 0) return;
+	if (!GetWorld() || GetWorld()->GetNetMode() != NM_ListenServer) return;
+	if (Phase == 0)
+	{
+		TickAutoStart(DeltaSeconds);
+		return;
+	}
 	Elapsed += DeltaSeconds;
-	if (Elapsed >= 180.0f || !ShooterController.IsValid() ||
+	const float DurationSeconds = FMath::Clamp(CVarSSRTestDurationSeconds.GetValueOnGameThread(), 10.0f, 600.0f);
+	if (Elapsed >= DurationSeconds || !ShooterController.IsValid() ||
 		!TargetController.IsValid() || !TargetPawn.IsValid())
 	{
 		Stop(TEXT("timeout_or_participant_lost"));
@@ -151,6 +184,39 @@ void UEnclaveSSRTestSubsystem::TickSession(float DeltaSeconds)
 		{
 			Stop(TEXT("target_movement_not_verified"));
 		}
+	}
+#else
+	(void)DeltaSeconds;
+#endif
+}
+
+void UEnclaveSSRTestSubsystem::TickAutoStart(float DeltaSeconds)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	const int32 Scenario = CVarSSRTestAutoStart.GetValueOnGameThread();
+	if (Scenario == 0 || bAutoStartConsumed) return;
+	// Poll once per second and stay quiet until the lobby is complete; Start()
+	// logs its own rejection reasons once the participant count is right.
+	AutoStartPollSeconds += DeltaSeconds;
+	if (AutoStartPollSeconds < 1.0f) return;
+	AutoStartPollSeconds = 0.0f;
+	int32 RemotesWithPawns = 0;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PC = It->Get();
+		if (IsValid(PC) && !PC->IsLocalController() && IsValid(PC->GetPawn())) ++RemotesWithPawns;
+	}
+	if (RemotesWithPawns != 2) return;
+	// Let initial replication and clock sync settle before measuring timing.
+	AutoStartSettleSeconds += 1.0f;
+	if (AutoStartSettleSeconds < 5.0f) return;
+	bAutoStartConsumed = true;
+	Start(Scenario);
+	bAutoStarted = Phase != 0;
+	ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest AUTOSTART scenario=%d started=%d (DEBUG ONLY)", Scenario, bAutoStarted ? 1 : 0);
+	if (!bAutoStarted && CVarSSRTestAutoQuit.GetValueOnGameThread())
+	{
+		FPlatformMisc::RequestExit(false, TEXT("SSRTest.AutoQuit"));
 	}
 #else
 	(void)DeltaSeconds;

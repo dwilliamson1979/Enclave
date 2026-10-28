@@ -18,16 +18,12 @@ void AEnclaveGameModeBase::InitGame(const FString& MapName, const FString& Optio
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
 
-	// Editor-exposed SSR configuration is only a contract at this milestone.
-	// Never claim rewind is active when RegisterHitscan still uses current geometry.
 	MaxRewindAllowanceMs = FMath::Clamp(MaxRewindAllowanceMs, 0.0f, 500.0f);
-	if (LagCompensationMode != EEnclaveLagCompensationMode::Disabled)
-	{
-		UE_LOG(LogEnclaveCombat, Warning,
-			TEXT("Server-Side Rewind is not implemented; forcing lag compensation to Disabled (present-time traces)."));
-		LagCompensationMode = EEnclaveLagCompensationMode::Disabled;
-	}
-	UE_LOG(LogEnclaveCombat, Log, TEXT("Match lag compensation: Disabled; future rewind allowance: %.1f ms."), MaxRewindAllowanceMs);
+	SSRAnchorOffsetMs = FMath::Clamp(SSRAnchorOffsetMs, -150.0f, 100.0f);
+	SSRStampEarlyToleranceMs = FMath::Clamp(SSRStampEarlyToleranceMs, 0.0f, 100.0f);
+	SSRStampLateToleranceMs = FMath::Clamp(SSRStampLateToleranceMs, 0.0f, 100.0f);
+	ParseEnumOption(Options, TEXT("LagCompensation"), LagCompensationMode);
+	ParseEnumOption(Options, TEXT("SSRTimingSource"), SSRTimingSource);
 
 	const FString HitDetectionModeOption = UGameplayStatics::ParseOption(Options, TEXT("WeaponHitDetectionMode"));
 
@@ -56,6 +52,62 @@ void AEnclaveGameModeBase::InitGame(const FString& MapName, const FString& Optio
 		Log,
 		TEXT("Match weapon hit detection mode: %s."),
 		GetEnclaveWeaponHitDetectionModeName(WeaponHitDetectionMode));
+
+	UE_LOG(LogEnclaveCombat, Log,
+		TEXT("Match lag compensation: %s (timing=%s anchorOffset=%.1f ms stampWindow=-%.1f/+%.1f ms rewindAllowance=%.1f ms unavailable=%s)."),
+		*UEnum::GetValueAsString(LagCompensationMode), *UEnum::GetValueAsString(SSRTimingSource),
+		SSRAnchorOffsetMs, SSRStampEarlyToleranceMs, SSRStampLateToleranceMs, MaxRewindAllowanceMs,
+		*UEnum::GetValueAsString(SSRUnavailableFallbackPolicy));
+	if (LagCompensationMode == EEnclaveLagCompensationMode::ServerSideRewind && !IsServerSideRewindActive())
+	{
+		UE_LOG(LogEnclaveCombat, Warning,
+			TEXT("Server-Side Rewind supports Capsule hit detection only; %s shots stay present-time."),
+			GetEnclaveWeaponHitDetectionModeName(WeaponHitDetectionMode));
+	}
+}
+
+template <typename TEnum>
+void AEnclaveGameModeBase::ParseEnumOption(const FString& Options, const TCHAR* Key, TEnum& InOutValue)
+{
+	const FString Value = UGameplayStatics::ParseOption(Options, Key);
+	if (Value.IsEmpty())
+	{
+		return;
+	}
+	const int64 Parsed = StaticEnum<TEnum>()->GetValueByNameString(Value);
+	if (Parsed == INDEX_NONE)
+	{
+		UE_LOG(LogEnclaveCombat, Warning, TEXT("Ignoring invalid %s server option '%s'."), Key, *Value);
+		return;
+	}
+	InOutValue = static_cast<TEnum>(Parsed);
+}
+
+FEnclaveSSRTimingSettings AEnclaveGameModeBase::GetSSRTimingSettings() const
+{
+	FEnclaveSSRTimingSettings Settings;
+	Settings.Source = SSRTimingSource;
+	Settings.AnchorOffsetSeconds = SSRAnchorOffsetMs / 1000.0;
+	Settings.StampEarlyToleranceSeconds = SSRStampEarlyToleranceMs / 1000.0;
+	Settings.StampLateToleranceSeconds = SSRStampLateToleranceMs / 1000.0;
+	return Settings;
+}
+
+void AEnclaveGameModeBase::EnclaveSetSSRTimingSource(const FString& SourceName)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	const int64 Parsed = StaticEnum<EEnclaveSSRTimingSource>()->GetValueByNameString(SourceName);
+	if (Parsed == INDEX_NONE)
+	{
+		UE_LOG(LogEnclaveCombat, Warning, TEXT("Usage: EnclaveSetSSRTimingSource ServerAnchor|EchoedStamp|Hybrid"));
+		return;
+	}
+	SSRTimingSource = static_cast<EEnclaveSSRTimingSource>(Parsed);
+	UE_LOG(LogEnclaveCombat, Log, TEXT("Active SSR timing source: %s"), *UEnum::GetValueAsString(SSRTimingSource));
+#else
+	// The reflected Exec function remains declared for UHT compatibility, but cannot change match rules.
+	(void)SourceName;
+#endif
 }
 
 void AEnclaveGameModeBase::SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode NewMode)

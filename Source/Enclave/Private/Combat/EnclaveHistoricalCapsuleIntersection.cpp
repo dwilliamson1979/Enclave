@@ -100,3 +100,13 @@ bool FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(const FVector& S
 	OutPoint = Start + Direction * NearestEntry;
 	return true;
 }
+
+FVector FEnclaveHistoricalCapsuleIntersection::SurfaceNormal(const FEnclaveTargetCapsuleFrame& Capsule,
+	const FVector& Point, const FVector& FallbackNormal)
+{
+	const FVector Axis = Capsule.Rotation.GetNormalized().GetAxisZ();
+	const double AxisHalfLength = FMath::Max(0.0, static_cast<double>(Capsule.HalfHeightCm - Capsule.RadiusCm));
+	const double AlongAxis = FMath::Clamp(FVector::DotProduct(Point - Capsule.Center, Axis), -AxisHalfLength, AxisHalfLength);
+	const FVector Normal = (Point - (Capsule.Center + Axis * AlongAxis)).GetSafeNormal();
+	return Normal.IsNearlyZero() ? FallbackNormal.GetSafeNormal() : Normal;
+}

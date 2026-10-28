@@ -56,4 +56,12 @@ struct ENCLAVE_API FEnclaveShotTimingContext
 	 * frame. Only C4D shadow comparisons may consume it until C5 is reviewed.
 	 */
 	bool TryResolveServerDerivedHistoryTime(double AdditionalSmoothingSeconds, double& OutTargetTimeSeconds) const;
+
+	/**
+	 * Like TryResolveServerDerivedHistoryTime, but the offset from the RTT anchor
+	 * may be negative (rewind less than a full RTT):
+	 *   targetAge = serverObservedRTT + OffsetFromRTTSeconds, within [0, MaxRewind].
+	 * Fails instead of clamping when the age leaves that window.
+	 */
+	bool TryResolveServerAnchoredHistoryTime(double OffsetFromRTTSeconds, double& OutTargetTimeSeconds) const;
 };

@@ -6,6 +6,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Combat/EnclaveSSRPolicyContracts.h"
 #include "Combat/EnclaveShotTiming.h"
+#include "Combat/EnclaveSSRTimingPolicy.h"
 #include "Combat/EnclaveSSRTimingCalibration.h"
 #include "Combat/EnclaveSSRTemporalUncertainty.h"
 #include "Combat/EnclaveSSRHistoricalEligibility.h"
@@ -69,6 +70,122 @@ bool FEnclaveSSRBoundedTimingTest::RunTest(const FString& Parameters)
         Timing.TryResolveServerDerivedHistoryTime(-0.01, ServerAnchor));
     TestFalse(TEXT("Client candidate rejects beyond rewind allowance"),
         Timing.TryResolveTargetHistoryTime(0.30, ShotClock));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRServerAnchoredTimingTest,
+    "Enclave.Combat.SSR.ServerAnchoredTiming",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveSSRServerAnchoredTimingTest::RunTest(const FString& Parameters)
+{
+    FEnclaveShotTimingContext Timing;
+    Timing.ServerReceiptTimeSeconds = 100.0;
+    Timing.ServerObservedRTTSeconds = 0.150;
+    Timing.MaxRewindSeconds = 0.200;
+    double Time = 0.0;
+    TestTrue(TEXT("Negative offset rewinds less than RTT"), Timing.TryResolveServerAnchoredHistoryTime(-0.050, Time));
+    TestEqual(TEXT("Age is RTT plus offset"), Time, 99.9, 1e-9);
+    TestTrue(TEXT("Zero offset is the RTT anchor"), Timing.TryResolveServerAnchoredHistoryTime(0.0, Time));
+    TestEqual(TEXT("RTT anchor time"), Time, 99.85, 1e-9);
+    TestFalse(TEXT("Age beyond rewind window fails, no clamp"), Timing.TryResolveServerAnchoredHistoryTime(0.051, Time));
+    TestFalse(TEXT("Negative age (future) fails"), Timing.TryResolveServerAnchoredHistoryTime(-0.151, Time));
+    Timing.ServerObservedRTTSeconds = -1.0;
+    TestFalse(TEXT("Missing RTT fails"), Timing.TryResolveServerAnchoredHistoryTime(-0.050, Time));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRStampQuantizationTest,
+    "Enclave.Combat.SSR.StampQuantization",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveSSRStampQuantizationTest::RunTest(const FString& Parameters)
+{
+    using namespace EnclaveSSRTimingPolicy;
+    TestEqual(TEXT("Rounds to nearest ms"), QuantizeServerTimeMs(12.3456), 12346u);
+    TestEqual(TEXT("Round trip within half a ms"), DequantizeServerTimeMs(QuantizeServerTimeMs(98.7654)), 98.765, 1e-9);
+    TestEqual(TEXT("Zero time is invalid"), QuantizeServerTimeMs(0.0), 0u);
+    TestEqual(TEXT("Negative time is invalid"), QuantizeServerTimeMs(-1.0), 0u);
+    TestEqual(TEXT("NaN is invalid"), QuantizeServerTimeMs(std::numeric_limits<double>::quiet_NaN()), 0u);
+    TestEqual(TEXT("Beyond uint32 ms is invalid"), QuantizeServerTimeMs(5.0e6), 0u);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRTimingResolutionTest,
+    "Enclave.Combat.SSR.TimingResolution",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveSSRTimingResolutionTest::RunTest(const FString& Parameters)
+{
+    FEnclaveShotTimingContext Timing;
+    Timing.ServerReceiptTimeSeconds = 100.0;
+    Timing.ServerObservedRTTSeconds = 0.150;
+    Timing.MaxRewindSeconds = 0.200;
+    FEnclaveSSRTimingSettings Settings; // Hybrid, -50 ms offset, -40/+60 ms window
+    const double Anchor = 100.0 - 0.100;
+
+    // Server anchor ignores client evidence entirely.
+    Settings.Source = EEnclaveSSRTimingSource::ServerAnchor;
+    FEnclaveSSRTimingResolution R = ResolveSSRTiming(Settings, Timing, true, 99.88);
+    TestTrue(TEXT("Anchor valid"), R.bValid);
+    TestEqual(TEXT("Anchor time is receipt - (RTT + offset)"), R.BaseTimeSeconds, Anchor, 1e-9);
+    TestFalse(TEXT("Anchor never uses a stamp"), R.bUseStamp);
+
+    // Hybrid: stamp inside the window is used for its target only.
+    Settings.Source = EEnclaveSSRTimingSource::Hybrid;
+    R = ResolveSSRTiming(Settings, Timing, true, 99.88); // age 120 ms, anchor age 100 ms: +20 ms
+    TestTrue(TEXT("Hybrid valid"), R.bValid);
+    TestEqual(TEXT("Hybrid base stays at anchor"), R.BaseTimeSeconds, Anchor, 1e-9);
+    TestTrue(TEXT("Hybrid uses in-window stamp"), R.bUseStamp);
+    TestEqual(TEXT("Hybrid stamp time"), R.StampTimeSeconds, 99.88, 1e-9);
+
+    R = ResolveSSRTiming(Settings, Timing, true, 99.83); // age 170 ms: +70 ms, beyond +60
+    TestTrue(TEXT("Too-old stamp still resolves via anchor"), R.bValid && !R.bUseStamp);
+    TestTrue(TEXT("Too-old stamp flagged"), R.bStampRejected);
+    R = ResolveSSRTiming(Settings, Timing, true, 99.95); // age 50 ms: -50 ms, beyond -40
+    TestTrue(TEXT("Too-new stamp falls back to anchor"), R.bValid && !R.bUseStamp && R.bStampRejected);
+    R = ResolveSSRTiming(Settings, Timing, false, 0.0);
+    TestTrue(TEXT("No stamp: anchor only, not flagged"), R.bValid && !R.bUseStamp && !R.bStampRejected);
+
+    // Echoed stamp only: no verifiable stamp means unavailable, never the anchor.
+    Settings.Source = EEnclaveSSRTimingSource::EchoedStamp;
+    R = ResolveSSRTiming(Settings, Timing, true, 99.83);
+    TestTrue(TEXT("Echo uses any in-window stamp"), R.bValid && R.bUseStamp);
+    TestEqual(TEXT("Echo base is the stamp"), R.BaseTimeSeconds, 99.83, 1e-9);
+    R = ResolveSSRTiming(Settings, Timing, false, 0.0);
+    TestFalse(TEXT("Echo without stamp is unavailable"), R.bValid);
+    TestEqual(TEXT("Echo without stamp reason"), R.UnavailableReason, EEnclaveSSRUnavailableReason::ServerTimingUnavailable);
+    R = ResolveSSRTiming(Settings, Timing, true, 99.7);
+    TestFalse(TEXT("Echo stamp outside rewind window"), R.bValid);
+    TestEqual(TEXT("Echo outside window reason"), R.UnavailableReason, EEnclaveSSRUnavailableReason::RewindWindowExceeded);
+    R = ResolveSSRTiming(Settings, Timing, true, 100.01);
+    TestFalse(TEXT("Echo stamp from the future"), R.bValid);
+
+    // Anchor beyond the rewind window is unavailable, not clamped.
+    Settings.Source = EEnclaveSSRTimingSource::Hybrid;
+    Timing.ServerObservedRTTSeconds = 0.300;
+    R = ResolveSSRTiming(Settings, Timing, true, 99.85);
+    TestFalse(TEXT("High ping anchor unavailable"), R.bValid);
+    TestEqual(TEXT("High ping reason"), R.UnavailableReason, EEnclaveSSRUnavailableReason::RewindWindowExceeded);
+    Timing.ServerObservedRTTSeconds = -1.0;
+    R = ResolveSSRTiming(Settings, Timing, false, 0.0);
+    TestEqual(TEXT("Missing RTT reason"), R.UnavailableReason, EEnclaveSSRUnavailableReason::ServerTimingUnavailable);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRCapsuleSurfaceNormalTest,
+    "Enclave.Combat.SSR.CapsuleSurfaceNormal",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveSSRCapsuleSurfaceNormalTest::RunTest(const FString& Parameters)
+{
+    FEnclaveTargetCapsuleFrame Capsule;
+    Capsule.Center = FVector(100., 0., 0.);
+    Capsule.RadiusCm = 30.f;
+    Capsule.HalfHeightCm = 90.f;
+    const FVector Fallback(-1., 0., 0.);
+    TestTrue(TEXT("Side hit faces outward"), FEnclaveHistoricalCapsuleIntersection::SurfaceNormal(
+        Capsule, FVector(70., 0., 20.), Fallback).Equals(FVector(-1., 0., 0.), 1e-6));
+    TestTrue(TEXT("Top cap faces up"), FEnclaveHistoricalCapsuleIntersection::SurfaceNormal(
+        Capsule, FVector(100., 0., 90.), Fallback).Equals(FVector(0., 0., 1.), 1e-6));
+    TestTrue(TEXT("On-axis point uses fallback"), FEnclaveHistoricalCapsuleIntersection::SurfaceNormal(
+        Capsule, FVector(100., 0., 10.), Fallback).Equals(Fallback, 1e-6));
     return true;
 }
 
@@ -137,7 +254,6 @@ bool FEnclaveSSRTemporalUncertaintyTest::RunTest(const FString& Parameters)
     Stable.Add(EEnclaveSSRQueryOutcome::HistoricalHit);
     Stable.Add(EEnclaveSSRQueryOutcome::HistoricalHit);
     TestEqual(TEXT("All hit samples"), Stable.Classification, EClassification::StableHit);
-    TestFalse(TEXT("Stable results are never presentation proof"), Stable.IsAuthorizedForDamage());
     Stable.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
     TestEqual(TEXT("Conflicting samples"), Stable.Classification, EClassification::ConflictingResults);
     FAssessment Missing;
@@ -150,7 +266,6 @@ bool FEnclaveSSRTemporalUncertaintyTest::RunTest(const FString& Parameters)
     AllMiss.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
     AllMiss.Add(EEnclaveSSRQueryOutcome::HistoricalMiss);
     TestEqual(TEXT("Stable misses"), AllMiss.Classification, EClassification::StableMiss);
-    TestFalse(TEXT("Stable miss is not authorization"), AllMiss.IsAuthorizedForDamage());
     return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSSRHistoricalEligibilityTest,

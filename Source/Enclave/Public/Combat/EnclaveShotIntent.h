@@ -39,6 +39,13 @@ struct ENCLAVE_API FEnclaveShotIntent
 	/** Reserved for a future server-enforced spread policy. Always zero for now. */
 	UPROPERTY()
 	uint32 SpreadSeed = 0;
+
+	/** D11D-3D timing evidence: the proxy the client's local ray hit and the server
+	 * stamp (ms) it was showing. Untrusted; the server verifies it against its own
+	 * recorded history and a bounded window, and never treats it as a hit claim.
+	 */
+	TWeakObjectPtr<AActor> TimingTarget;
+	uint32 TimingStampMs = 0;
 	/** Development-only shadow test. Never hit authority. */
 	FEnclaveSSRGameplayClaim SSRGameplayClaim;
 };
@@ -52,6 +59,10 @@ struct ENCLAVE_API FEnclaveValidatedShotRay
 	FVector Origin = FVector::ZeroVector;
 	FVector Direction = FVector::ForwardVector; // normalized
 	double ClientServerTimeSeconds = 0.0; // provenance, NOT a rewind timestamp
+
+	/** Untrusted client timing evidence, verified later by the SSR timing policy. */
+	TWeakObjectPtr<AActor> TimingTarget;
+	uint32 TimingStampMs = 0;
 
 	/** Server-owned receipt time and future historical-lookup policy. Never authorizes hits on its own. */
 	FEnclaveShotTimingContext Timing;
@@ -82,6 +93,25 @@ struct ENCLAVE_API FEnclaveGameplayAbilityTargetData_ShotIntent : public FGamepl
 		Ar << Shot.ClientServerTimeSeconds;
 		Ar << Shot.ShotSequence;
 		Ar << Shot.SpreadSeed;
+		// D11D-3D timing evidence: one bit when absent; actor + packed ms stamp when present.
+		uint8 HasTiming = Shot.TimingStampMs != 0 && Shot.TimingTarget.IsValid() ? 1 : 0;
+		Ar.SerializeBits(&HasTiming, 1);
+		if (HasTiming)
+		{
+			UObject* TimingObject = Shot.TimingTarget.Get();
+			const bool bTimingMapped = Map && Map->SerializeObject(Ar, AActor::StaticClass(), TimingObject);
+			Ar.SerializeIntPacked(Shot.TimingStampMs);
+			if (Ar.IsLoading())
+			{
+				Shot.TimingTarget = Cast<AActor>(TimingObject);
+				// Unresolvable evidence only drops the evidence, never the shot.
+				if (!bTimingMapped || !Shot.TimingTarget.IsValid())
+				{
+					Shot.TimingTarget = nullptr;
+					Shot.TimingStampMs = 0;
+				}
+			}
+		}
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 		// Same GAS TargetData RPC: no second packet stream or additional shot RPC.
 		uint8 HasSample = Shot.SSRGameplayClaim.Classification != 0 ? 1 : 0;

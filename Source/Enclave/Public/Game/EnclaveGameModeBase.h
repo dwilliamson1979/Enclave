@@ -6,6 +6,8 @@
 #include "GameFramework/GameModeBase.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Combat/EnclaveLagCompensationMode.h"
+#include "Combat/EnclaveSSRPolicyContracts.h"
+#include "Combat/EnclaveSSRTimingPolicy.h"
 #include "EnclaveGameModeBase.generated.h"
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FEnclaveWeaponHitDetectionModeChanged, EEnclaveWeaponHitDetectionMode);
@@ -24,9 +26,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Hit Detection")
 	EEnclaveWeaponHitDetectionMode GetWeaponHitDetectionMode() const { return WeaponHitDetectionMode; }
 
-	/** Effective server-only policy. SSR is not enabled until historical queries exist. */
+	/** Effective server-only policy. */
 	UFUNCTION(BlueprintPure, Category = "Combat|Lag Compensation")
 	EEnclaveLagCompensationMode GetLagCompensationMode() const { return LagCompensationMode; }
+
+	/** True when validated remote shots are registered against history (Capsule mode only). */
+	bool IsServerSideRewindActive() const
+	{
+		return LagCompensationMode == EEnclaveLagCompensationMode::ServerSideRewind &&
+			WeaponHitDetectionMode == EEnclaveWeaponHitDetectionMode::Capsule;
+	}
+
+	/** Server-only timing policy inputs for ResolveSSRTiming(). */
+	FEnclaveSSRTimingSettings GetSSRTimingSettings() const;
+
+	EEnclaveSSRUnavailableFallbackPolicy GetSSRUnavailableFallbackPolicy() const { return SSRUnavailableFallbackPolicy; }
+
+	/** Whether characters must replicate history stamps for clients to echo. */
+	bool RequiresClientSSRStamps() const
+	{
+		return IsServerSideRewindActive() && SSRTimingSource != EEnclaveSSRTimingSource::ServerAnchor;
+	}
 
 	UFUNCTION(BlueprintPure, Category = "Combat|Lag Compensation")
 	float GetMaxRewindAllowanceMs() const { return MaxRewindAllowanceMs; }
@@ -48,14 +68,23 @@ public:
 	UFUNCTION(Exec)
 	void EnclaveSetHitRegistrationMode(const FString& ModeName);
 
+	/** Development-only: switch SSR timing source live (ServerAnchor|EchoedStamp|Hybrid). */
+	UFUNCTION(Exec)
+	void EnclaveSetSSRTimingSource(const FString& SourceName);
+
 protected:
 	/**
 	 * Reads optional server travel/startup overrides before any players spawn.
 	 * Example: MapName?WeaponHitDetectionMode=SkeletalHitboxes
+	 * SSR: ?LagCompensation=ServerSideRewind ?SSRTimingSource=Hybrid|ServerAnchor|EchoedStamp
 	 */
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
 private:
+	/** Reads ?Key=EnumValueName from server options; invalid names are logged and ignored. */
+	template <typename TEnum>
+	static void ParseEnumOption(const FString& Options, const TCHAR* Key, TEnum& InOutValue);
+
 	FEnclaveWeaponHitDetectionModeChanged WeaponHitDetectionModeChanged;
 
 	/**
@@ -72,12 +101,40 @@ private:
 	EEnclaveWeaponHitDetectionMode WeaponHitDetectionMode = EEnclaveWeaponHitDetectionMode::Capsule;
 
 	/** Match/server temporal policy, independent of collision representation.
-	 * Currently only Disabled is executable: selecting SSR logs a warning and forces Disabled at InitGame.
+	 * ServerSideRewind only applies in Capsule mode; SkeletalHitboxes stays present-time.
+	 * Override with the URL option ?LagCompensation=ServerSideRewind|Disabled.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
 	EEnclaveLagCompensationMode LagCompensationMode = EEnclaveLagCompensationMode::Disabled;
 
-	/** Future SSR historical-time cap, in milliseconds. Does not affect current traces. */
+	/** How the rewind time is chosen. Hybrid is the supported default; the other
+	 * two are fallback/diagnostic modes. URL option ?SSRTimingSource=.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
+	EEnclaveSSRTimingSource SSRTimingSource = EEnclaveSSRTimingSource::Hybrid;
+
+	/** Signed offset from the server RTT anchor: target age = RTT + offset.
+	 * -50 ms measured best at ~60 and ~170 ms RTT on a local listen server (D11D-3D);
+	 * recalibrate on dedicated servers.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true", ClampMin = "-150.0", ClampMax = "100.0", Units = "ms"))
+	float SSRAnchorOffsetMs = -50.0f;
+
+	/** Hybrid: an echoed stamp may be this much younger than the anchor age. Bounds backtracking. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", ClampMax = "100.0", Units = "ms"))
+	float SSRStampEarlyToleranceMs = 40.0f;
+
+	/** Hybrid: an echoed stamp may be this much older than the anchor age. Bounds backtracking. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", ClampMax = "100.0", Units = "ms"))
+	float SSRStampLateToleranceMs = 60.0f;
+
+	/** What a valid shot does when no trustworthy historical answer exists.
+	 * Never applies to a definitive historical miss or a world-occluded hit.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
+	EEnclaveSSRUnavailableFallbackPolicy SSRUnavailableFallbackPolicy = EEnclaveSSRUnavailableFallbackPolicy::PresentTimeTrace;
+
+	/** Historical-time cap, in milliseconds. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", ClampMax = "500.0", UIMin = "0.0", UIMax = "500.0", Units = "ms"))
 	float MaxRewindAllowanceMs = 200.0f;
 };

@@ -19,12 +19,17 @@ public:
     void ParticipantUnpossessed(AEnclavePlayerController* Participant);
     bool IsExpectedShooter(const AEnclavePlayerController* Participant, int32 InTestId) const;
 private:
+    void TickAutoStart(float DeltaSeconds);
     int32 TestId = 0;
     int32 TestScenario = 0;
     float Elapsed = 0.f;
     int32 Phase = 0;
     bool bShooterReady = false;
     bool bTargetReady = false;
+    bool bAutoStarted = false;
+    bool bAutoStartConsumed = false;
+    float AutoStartPollSeconds = 0.f;
+    float AutoStartSettleSeconds = 0.f;
     TWeakObjectPtr<AEnclavePlayerController> HostController;
     TWeakObjectPtr<AEnclavePlayerController> ShooterController;
     TWeakObjectPtr<AEnclavePlayerController> TargetController;
