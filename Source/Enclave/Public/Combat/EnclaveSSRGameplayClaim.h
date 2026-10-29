@@ -10,7 +10,8 @@ class AActor;
  */
 struct FEnclaveSSRGameplayClaim
 {
-	// 0=no sample, 1=clear hit, 2=clear miss, 3=near miss (10cm geometric margin).
+	// 0=no sample, 1=clear hit, 2=clear miss, 3=near miss (10cm geometric margin),
+	// 4=clear hit geometrically but behind world geometry in the shooter's view.
 	uint8 Classification = 0;
 	// D1.1C scenario tag: 0=unassigned, 1=stationary, 2=strafe, 3=reverse, 4=crouch, 5=cover.
 	// Diagnostic-only untrusted label, never gameplay authority.

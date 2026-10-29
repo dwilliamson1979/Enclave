@@ -325,7 +325,8 @@ FEnclaveSSRSelectionDecision UEnclaveHitRegistrationSubsystem::SelectHistoricalH
 			"stampTarget=%s stampVerified=%d stampUsed=%d stampRejected=%d baseAgeMs=%.1f stampAgeMs=%.1f rttMs=%.1f "
 			"missing=%d",
 			static_cast<uint32>(Query.ShotSequence), *UEnum::GetValueAsString(Settings.Source),
-			static_cast<int32>(Decision.Selection), Decision.bSelectedHit && Assessment.Target.IsValid() ? 1 : 0,
+			static_cast<int32>(Decision.Selection),
+			Assessment.Policy.Outcome == EEnclaveSSRQueryOutcome::HistoricalHit && Assessment.Target.IsValid() ? 1 : 0,
 			*GetNameSafe(Assessment.Target.Get()), static_cast<int32>(Assessment.Policy.Outcome),
 			static_cast<int32>(Assessment.Policy.UnavailableReason), Assessment.Policy.bWorldOccluded ? 1 : 0,
 			*GetNameSafe(StampTarget), bStampVerified ? 1 : 0, Resolution.bUseStamp ? 1 : 0,
@@ -455,7 +456,7 @@ void UEnclaveHitRegistrationSubsystem::DebugCompareSSRGameplay(const FEnclaveHit
 	const bool bLiveOnClaimedTarget = bLiveHit && LiveHit.GetActor() == Target;
 	if (!World || !IsValid(Shooter) || !IsValid(Target) || Target == Shooter ||
 		Target->GetWorld() != World || Mode != EEnclaveWeaponHitDetectionMode::Capsule ||
-		Claim.Classification < 1 || Claim.Classification > 3)
+		Claim.Classification < 1 || Claim.Classification > 4)
 	{
 		// An invalid target/category cannot be scored as a valid test sample.
 		// Report it explicitly: the analysis gate must NOT silently drop it.

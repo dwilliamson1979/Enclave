@@ -91,6 +91,13 @@ def score_selection(labels, selections):
     c = collections.Counter()
     for key, label in labels.items():
         category = int(label['category'])
+        if category == 4:
+            # Behind a wall in the shooter's view: correct only if the target was not hit.
+            sel = selections.get(key)
+            if sel is not None:
+                c['occluded_n'] += 1
+                c['occluded_ok'] += not (sel.get('hit') == '1' and sel.get('target') == label.get('claimTarget'))
+            continue
         if category not in (1, 2):
             continue
         name = 'clear_hit' if category == 1 else 'clear_miss'
@@ -98,14 +105,19 @@ def score_selection(labels, selections):
         if sel is None:
             c['unmatched'] += 1
             continue
-        # With bystanders, the nearest character on the ray may legitimately be
-        # someone else; that is neither a correct nor a wrong verdict about the
-        # labeled target, so it is reported separately and left out of the rates.
+        # The label names the FIRST character on the shooter's ray (client view).
+        # Clear hit on X but the server hit Y: wrong (the shooter clearly saw X first).
+        # Clear miss on X and the server hit something behind X: X was missed, correct.
         claim = label.get('claimTarget')
-        if claim and sel.get('hit') == '1' and sel.get('target') not in (None, claim):
-            c['other_target'] += 1
-            continue
+        other = bool(claim) and sel.get('hit') == '1' and sel.get('target') not in (None, claim)
+        c['other_target'] += other
         c[name + '_n'] += 1
+        if other:
+            if category == 2 and sel.get('selection') == HISTORICAL:
+                c[name + '_ok'] += 1
+            elif sel.get('selection') != HISTORICAL:
+                c[name + '_fallback'] += 1
+            continue
         c['stamp_used'] += sel.get('stampUsed') == '1'
         c['stamp_rejected'] += sel.get('stampRejected') == '1'
         if sel.get('selection') != HISTORICAL:
@@ -175,6 +187,7 @@ def main():
             'presentTimeFallbacks': sel['clear_hit_fallback'] + sel['clear_miss_fallback'],
             'stampUsed': sel['stamp_used'], 'stampRejected': sel['stamp_rejected'], 'unmatched': sel['unmatched'],
             'otherTargetHits': sel['other_target'],
+            'occludedN': sel['occluded_n'], 'occludedPct': pct(sel['occluded_ok'], sel['occluded_n']),
         },
         'stampAcceptance': stamp_acceptance(selections) if selections else None,
         'netstats': [{'playerId': n.get('playerId'), 'serverOutBytesPerSec': float(n['serverOutBytesPerSec']),
@@ -193,7 +206,7 @@ def main():
         print(f"AUTHORITATIVE {a['source']}:  clear_hit {a['clearHitPct']}% (n={a['clearHitN']})  "
               f"clear_miss {a['clearMissPct']}% (n={a['clearMissN']})  fallbacks={a['presentTimeFallbacks']}  "
               f"stampUsed={a['stampUsed']} stampRejected={a['stampRejected']} unmatched={a['unmatched']} "
-              f"otherTargetHits={a['otherTargetHits']}")
+              f"otherTargetHits={a['otherTargetHits']} occluded {a['occludedPct']}% (n={a['occludedN']})")
     sa = summary['stampAcceptance']
     if sa:
         print(f"stamps: sent={sa['sent']} verified={sa['verified']} used={sa['used']} rejected={sa['rejected']} "

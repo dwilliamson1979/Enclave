@@ -27,6 +27,9 @@ public:
     bool IsExpectedShooter(const AEnclavePlayerController* Participant, int32 InTestId) const;
 private:
     void TickAutoStart(float DeltaSeconds);
+    /** Teleport participants to SSR.<Layout>.* markers (Tools/Scripts/SSR/create_ssr_test_map.py). */
+    bool PlaceParticipants(const FString& Layout);
+    void ConfigureParticipants();
     void LogNetStats(const TCHAR* Label);
     struct FNetSample
     {

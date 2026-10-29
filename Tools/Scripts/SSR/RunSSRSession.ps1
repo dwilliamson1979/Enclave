@@ -30,6 +30,9 @@ param(
     [ValidateRange(2, 12)][int]$Clients = 2,
     [int]$ServerTickRate = 0,
     [int]$Scenario = 2,
+    [string]$Map = "/Game/Maps/EnclaveMap",
+    # Test-map lane (see create_ssr_test_map.py); empty = participants stay where they spawn.
+    [string]$Layout = "",
     [int]$DurationSeconds = 120,
     [double]$SweepStepMs = 25,
     [double]$SweepStartMs = 0,
@@ -88,12 +91,13 @@ $serverCmds = @(
     "Enclave.Debug.SSRTest.DurationSeconds $DurationSeconds",
     "Enclave.Debug.SSRTest.AutoQuit 1",
     "Enclave.Debug.SSRTest.ExpectedClients $Clients",
+    "Enclave.Debug.SSRTest.Layout $Layout",
     "Enclave.Debug.SSRTest.AutoStart $Scenario"
 )
 if ($ExtraServerCmds -ne "") { $serverCmds += $ExtraServerCmds.Split(",") }
 $serverCmds = $serverCmds -join ","
 $serverLog = Join-Path $sessionDirectory "server.log"
-$mapUrl = "/Game/Maps/EnclaveMap?WeaponHitDetectionMode=Capsule?LagCompensation=${LagCompensation}?SSRTimingSource=${TimingSource}"
+$mapUrl = "${Map}?WeaponHitDetectionMode=Capsule?LagCompensation=${LagCompensation}?SSRTimingSource=${TimingSource}"
 # The project path must come first, then the map URL / server address.
 if ($Dedicated)
 {

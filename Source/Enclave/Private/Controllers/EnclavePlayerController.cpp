@@ -316,13 +316,28 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
 	Outer10.RadiusCm += MarginCm;
 	Outer10.HalfHeightCm += MarginCm;
 	double DistanceCm = 0.0;
+	double InnerEntryCm = 0.0;
 	FVector Point;
 	const bool bClearHit = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
-		ShotOrigin, RayEnd, Inner, DistanceCm, Point);
+		ShotOrigin, RayEnd, Inner, InnerEntryCm, Point);
 	const bool bWithin10Cm = FEnclaveHistoricalCapsuleIntersection::TryIntersectSegment(
 		ShotOrigin, RayEnd, Outer10, DistanceCm, Point);
+	// World geometry only (every character ignored), as seen from this client.
+	bool bWorldOccluded = false;
+	if (bClearHit)
+	{
+		FCollisionQueryParams WorldParams(SCENE_QUERY_STAT(EnclaveSSRClaimWorldOcclusion), true);
+		WorldParams.AddIgnoredActor(GetPawn());
+		for (TActorIterator<AEnclaveCharacter> It(GetWorld()); It; ++It)
+		{
+			WorldParams.AddIgnoredActor(*It);
+		}
+		FHitResult WorldHit;
+		bWorldOccluded = GetWorld()->LineTraceSingleByChannel(WorldHit, ShotOrigin, RayEnd, ECC_Weapon, WorldParams) &&
+			FVector::Dist(ShotOrigin, WorldHit.ImpactPoint) < InnerEntryCm;
+	}
 	// A clear miss intersects Outer40 (candidate selection) but NOT Outer10.
-	OutClaim.Classification = bClearHit ? 1 : (bWithin10Cm ? 3 : 2);
+	OutClaim.Classification = bWorldOccluded ? 4 : (bClearHit ? 1 : (bWithin10Cm ? 3 : 2));
 	OutClaim.Scenario = static_cast<uint8>(Scenario);
 	OutClaim.Target = Candidate;
     const FEnclaveSSRReceivedProxyUpdate& Authoritative = Candidate->GetLastReceivedSSRObservation();

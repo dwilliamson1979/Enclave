@@ -73,6 +73,9 @@ void UEnclaveSSRTestComponent::ClientEnclaveSSRTestConfigure_Implementation(int3
     {
         if (Scenario == 4) EnclaveDebugSSRCrouch(1);
         if (Scenario != 5) EnclaveDebugSSRStrafe(1);
+        // Bystanders move opposite to the target, so a crossing bystander passes
+        // through the line of fire instead of shadowing the target.
+        if (TestRole == 3) DebugSSRStrafeDirectionSign = -1;
     }
     ENCLAVE_LOG(LogEnclaveCombat, Log,
         "SSRTest CLIENT_CONFIG id=%d role=%d scenario=%d ready=%d pawn=%s target=%s (DEBUG ONLY)",

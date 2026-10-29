@@ -7,6 +7,8 @@
 #include "HAL/IConsoleManager.h"
 #include "GameFramework/PlayerState.h"
 #include "Engine/NetConnection.h"
+#include "Engine/TargetPoint.h"
+#include "EngineUtils.h"
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 // Unattended multi-process runs (Tools/Scripts/RunSSRSession.ps1): there is no
@@ -22,6 +24,10 @@ static TAutoConsoleVariable<bool> CVarSSRTestAutoQuit(
 static TAutoConsoleVariable<int32> CVarSSRTestExpectedClients(
 	TEXT("Enclave.Debug.SSRTest.ExpectedClients"), 2,
 	TEXT("Remote players AutoStart waits for (>= 2). Lowest PlayerId shoots, next is the target, the rest are bystanders. DEBUG ONLY."),
+	ECVF_Cheat);
+static TAutoConsoleVariable<FString> CVarSSRTestLayout(
+	TEXT("Enclave.Debug.SSRTest.Layout"), TEXT(""),
+	TEXT("Test-map layout (open, crossing, backstop, cover, halfcover, pillars, crowd): teleport participants to SSR.<Layout>.* markers before the session. Empty = stay where spawned. DEBUG ONLY."),
 	ECVF_Cheat);
 static TAutoConsoleVariable<float> CVarSSRTestDurationSeconds(
 	TEXT("Enclave.Debug.SSRTest.DurationSeconds"), 180.0f,
@@ -99,14 +105,12 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 	if (TestId <= 0) TestId = 1;
 	TestScenario = Scenario;
 	Elapsed = 0.0f;
-	Phase = 1;
 	bTargetReady = false;
 	bShooterReady = false;
 	ShooterController = Remotes[0];
 	TargetController = Remotes[1];
 	TargetPawn = SelectedTargetPawn;
 	SelectedTargetPawn->DebugSetSSRStrafeDamageSuppressed(true);
-	Remotes[1]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 2, Scenario, 1729, nullptr);
 	Bystanders.Reset();
 	for (int32 Index = 2; Index < Remotes.Num(); ++Index)
 	{
@@ -115,9 +119,24 @@ void UEnclaveSSRTestSubsystem::Start(int32 Scenario)
 		{
 			BystanderPawn->DebugSetSSRStrafeDamageSuppressed(true);
 		}
-		Remotes[Index]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 3, Scenario, 1729, nullptr);
 	}
-	Remotes[0]->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 1, Scenario, 1729, SelectedTargetPawn);
+	const FString Layout = CVarSSRTestLayout.GetValueOnGameThread();
+	if (Layout.IsEmpty())
+	{
+		ConfigureParticipants();
+	}
+	else if (PlaceParticipants(Layout))
+	{
+		// Clients capture their strafe origin and axis when configured, so let the
+		// teleport and the new control rotation replicate first.
+		Phase = 4;
+	}
+	else
+	{
+		Phase = 1; // Lets Stop() clean up protection and bystanders.
+		Stop(TEXT("layout_markers_missing"));
+		return;
+	}
 	LogNetStats(TEXT("start"));
 	ENCLAVE_LOG(LogEnclaveCombat, Log,
 		"SSRTest START id=%d scenario=%d shooterPlayerId=%d targetPlayerId=%d shooter=%s target=%s bystanders=%d (SHADOW ONLY)",
@@ -185,6 +204,10 @@ void UEnclaveSSRTestSubsystem::TickSession(float DeltaSeconds)
 	}
 	Elapsed += DeltaSeconds;
 	++SessionTicks;
+	if (Phase == 4 && Elapsed >= 1.0f)
+	{
+		ConfigureParticipants();
+	}
 	const float DurationSeconds = FMath::Clamp(CVarSSRTestDurationSeconds.GetValueOnGameThread(), 10.0f, 600.0f);
 	if (Elapsed >= DurationSeconds || !ShooterController.IsValid() ||
 		!TargetController.IsValid() || !TargetPawn.IsValid())
@@ -302,6 +325,86 @@ void UEnclaveSSRTestSubsystem::LogNetStats(const TCHAR* Label)
 	}
 #else
 	(void)Label;
+#endif
+}
+
+void UEnclaveSSRTestSubsystem::ConfigureParticipants()
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	Phase = 1;
+	if (AEnclavePlayerController* Target = TargetController.Get())
+	{
+		Target->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 2, TestScenario, 1729, nullptr);
+	}
+	for (const TWeakObjectPtr<AEnclavePlayerController>& Bystander : Bystanders)
+	{
+		if (AEnclavePlayerController* PC = Bystander.Get())
+		{
+			PC->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 3, TestScenario, 1729, nullptr);
+		}
+	}
+	if (AEnclavePlayerController* Shooter = ShooterController.Get())
+	{
+		Shooter->GetSSRTestComponent()->ClientEnclaveSSRTestConfigure(TestId, 1, TestScenario, 1729, TargetPawn.Get());
+	}
+#endif
+}
+
+bool UEnclaveSSRTestSubsystem::PlaceParticipants(const FString& Layout)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	TMap<FName, const ATargetPoint*> Markers;
+	for (TActorIterator<ATargetPoint> It(GetWorld()); It; ++It)
+	{
+		for (const FName& Tag : It->Tags)
+		{
+			Markers.Add(Tag, *It);
+		}
+	}
+	const auto Find = [&Markers](const FString& Tag) -> const ATargetPoint*
+	{
+		const ATargetPoint* const* Found = Markers.Find(FName(*Tag));
+		return Found ? *Found : nullptr;
+	};
+	const auto Place = [this](AEnclavePlayerController* PC, const ATargetPoint* Marker)
+	{
+		APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+		if (!IsValid(Pawn) || !Marker) return false;
+		const FRotator Facing(0.0f, Marker->GetActorRotation().Yaw, 0.0f);
+		// TeleportTo marks a history discontinuity on Enclave characters.
+		const bool bMoved = Pawn->TeleportTo(Marker->GetActorLocation(), Facing);
+		PC->ClientSetRotation(Facing);
+		PC->SetControlRotation(Facing);
+		return bMoved;
+	};
+
+	const ATargetPoint* ShooterMarker = Find(FString::Printf(TEXT("SSR.%s.Shooter"), *Layout));
+	const ATargetPoint* TargetMarker = Find(FString::Printf(TEXT("SSR.%s.Target"), *Layout));
+	if (!ShooterMarker || !TargetMarker)
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning, "SSRTest LAYOUT rejected layout=%s reason=missing_shooter_or_target_marker (DEBUG ONLY)", *Layout);
+		return false;
+	}
+	bool bPlaced = Place(ShooterController.Get(), ShooterMarker) && Place(TargetController.Get(), TargetMarker);
+	int32 InLayout = 0;
+	int32 Parked = 0;
+	for (int32 Index = 0; Index < Bystanders.Num(); ++Index)
+	{
+		const ATargetPoint* Marker = Find(FString::Printf(TEXT("SSR.%s.Bystander.%d"), *Layout, Index + 1));
+		if (Marker) { ++InLayout; }
+		else
+		{
+			// Bystanders the layout has no place for wait out of every lane.
+			Marker = Find(FString::Printf(TEXT("SSR.Holding.%d"), ++Parked));
+		}
+		bPlaced &= Place(Bystanders[Index].Get(), Marker);
+	}
+	ENCLAVE_LOG(LogEnclaveCombat, Log, "SSRTest LAYOUT layout=%s placed=%d bystandersInLayout=%d bystandersParked=%d (DEBUG ONLY)",
+		*Layout, bPlaced ? 1 : 0, InLayout, Parked);
+	return bPlaced;
+#else
+	(void)Layout;
+	return false;
 #endif
 }
 
