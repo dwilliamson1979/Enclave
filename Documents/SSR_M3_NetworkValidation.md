@@ -186,8 +186,39 @@ Labels are what the shooter sees: the first character on its ray. A clear hit on
 - **Nearest character wins:** crossing, backstop and crowd hits on characters other than the labeled one are consistent with someone else being first on the ray at the rewound time. The crowd lane holds 97.8% / 100% with 8 players.
 - Found and fixed along the way: the `SSRSelection` log reported a blocked shot as a hit on the character behind the wall (the authoritative hit result was always correct: the bullet stops at the wall).
 
-## Next in milestone 3
+## Test range under jitter and loss
 
-1. Repeat the lanes under jitter and loss (`RunSSRLayouts.ps1 -JitterMs 15`, `-LossPct 2`).
-2. Lag switching (bursty uplink), and crouch/teleport around the fallback.
-3. Then move on to milestone 4 (core game loop). Spawn selection must avoid occupied starts (EnclaveMap's three PlayerStarts stacked players).
+`RunSSRLayouts.ps1 -JitterMs 15` and `-LossPct 2` (same lanes and defaults as above):
+
+| Lane | ±15 ms jitter: hits / misses / behind cover not hit | 2% loss: hits / misses / behind cover not hit |
+|---|---|---|
+| open | 96.7 / 99.2 / – | 96.6 / 100 / – |
+| crossing | 98.3 / 98.3 / – | 96.4 / 100 / – |
+| backstop | 95.8 / 98.3 / – | 96.6 / 100 / – |
+| cover | 100 / 100 / 100 (n=56) | 100 / 100 / 100 (n=56) |
+| halfcover | 100 / 100 / 100 (n=78) | 100 / 100 / 100 (n=78) |
+| pillars | 98.5 / 100 / 100 (n=52) | 97.5 / 100 / 100 (n=41) |
+| crowd (8 clients) | 97.9 / 97.3 / – | 98.9 / 96.5 / – |
+
+No fallbacks in any lane. Jitter and loss cost a few points on moving targets; cover held in every case.
+
+## Edge cases (`RunSSREdgeCases.ps1`, open lane, mid condition)
+
+| Case | What happens | Clear hits / misses | Notes |
+|---|---|---|---|
+| baseline | – | 99.2 / 100 | |
+| crouch spam | target toggles crouch every 0.7 s while strafing (169 toggles) | 99.2 / 100 | Per-frame capsule size in history works |
+| teleport | server moves the target 150 cm sideways every 2 s (58 teleports) | 93.3 / 96.7 | 11 of 19 wrong shots within 0.25 s after a teleport: the client smooths the mesh across the jump while history has a clean break |
+| lag switch | shooter's outgoing lag 400 ms for 0.5 s every 3 s | decided shots: 15 of 73 clear hits landed; 7 of 70 clear misses hit; 69 present-time fallbacks | The cheater loses: bursts inflate the server's RTT estimate (median 178, max 276 ms), so every shot is rewound to the wrong time, and many exceed the 200 ms cap and fall back to present-time |
+
+- **Lag switching gives no advantage**; it collapses the cheater's hit rate to about 20%. The few false hits come from rewinding to the wrong time, not from an exploitable path.
+- **Teleports:** only respawn teleports exist today. If blink-style abilities are added, make simulated proxies snap rather than smooth on large position jumps (CharacterMovement network smoothing distances), and re-run this case.
+
+## Milestone 3 status
+
+Done: dedicated-server harness, network matrix, abuse cases, bandwidth (stamp slimming), tick rate (60 Hz), timing source (ServerAnchor), frame-pacing and Windows timer fixes, multi-client harness, test range with controlled layouts and occlusion labels, jitter/loss on the range, crouch/teleport/lag-switch edge cases, and diagnostic pruning.
+
+Carried forward:
+1. Re-measure the anchor offset and tick-rate costs on production-like server hardware with a realistic player count when available.
+2. Spawn selection that avoids occupied starts (milestone 4).
+3. Blink/teleport ability support, if added (see edge cases).

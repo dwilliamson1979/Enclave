@@ -40,6 +40,7 @@ param(
     [ValidateSet("Hybrid", "ServerAnchor", "EchoedStamp")][string]$TimingSource = "ServerAnchor",
     [string]$ExtraServerCmds = "",
     [string]$ExtraShooterCmds = "",
+    [string]$ExtraTargetCmds = "",
     # Cap client frame rate (0 = uncapped). Uncapped, the focused client took the shared
     # GPU and the background shooter fell to ~30 FPS, which skewed scoring.
     [int]$ClientMaxFps = 60,
@@ -136,6 +137,7 @@ foreach ($index in 1..$Clients)
     $clientCmds = @()
     if ($ClientMaxFps -gt 0) { $clientCmds += "t.MaxFPS $ClientMaxFps" }
     if ($index -eq 1 -and $ExtraShooterCmds -ne "") { $clientCmds += $ExtraShooterCmds.Split(",") }
+    if ($index -eq 2 -and $ExtraTargetCmds -ne "") { $clientCmds += $ExtraTargetCmds.Split(",") }
     if ($clientCmds.Count -gt 0) { $clientArgs += "-ExecCmds=`"$($clientCmds -join ",")`"" }
     $client = Start-Process -FilePath $editor -ArgumentList $clientArgs -PassThru
     if ($ClientPriority -ne "Normal") { try { $client.PriorityClass = $ClientPriority } catch { } }

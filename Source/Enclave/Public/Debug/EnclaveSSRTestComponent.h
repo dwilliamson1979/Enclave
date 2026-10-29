@@ -95,5 +95,11 @@ private:
     double ServerViewRequestTime = 0.0;
     int32 ClientTestId = 0;
     int32 ClientRole = 0;
+
+    // Milestone 3 edge cases (test sessions only).
+    void TickEdgeCases(float DeltaSeconds);
+    float EdgeCrouchElapsed = 0.0f;
+    float EdgeLagSwitchElapsed = 0.0f;
+    bool bEdgeLagSwitchBurst = false;
     TWeakObjectPtr<AEnclaveCharacter> ForcedTarget;
 };

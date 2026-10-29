@@ -29,6 +29,10 @@ static TAutoConsoleVariable<FString> CVarSSRTestLayout(
 	TEXT("Enclave.Debug.SSRTest.Layout"), TEXT(""),
 	TEXT("Test-map layout (open, crossing, backstop, cover, halfcover, pillars, crowd): teleport participants to SSR.<Layout>.* markers before the session. Empty = stay where spawned. DEBUG ONLY."),
 	ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarSSRTestTeleportPeriod(
+	TEXT("Enclave.Debug.SSRTest.TeleportPeriod"), 0.0f,
+	TEXT("Server: teleport the target 150 cm sideways (alternating) every N seconds while firing (0 = off). History-discontinuity test. DEBUG ONLY."),
+	ECVF_Cheat);
 static TAutoConsoleVariable<float> CVarSSRTestDurationSeconds(
 	TEXT("Enclave.Debug.SSRTest.DurationSeconds"), 180.0f,
 	TEXT("Listen server: SSR test session length before it stops itself [10,600]. DEBUG ONLY."),
@@ -225,6 +229,17 @@ void UEnclaveSSRTestSubsystem::TickSession(float DeltaSeconds)
         if (AEnclavePlayerController* Shooter = ShooterController.Get())
             if (UEnclaveSSRTestComponent* Component = Shooter->GetSSRTestComponent())
                 Component->TickServerViewReadiness(TestId);
+        const float TeleportPeriod = CVarSSRTestTeleportPeriod.GetValueOnGameThread();
+        AEnclaveCharacter* Target = TargetPawn.Get();
+        if (TeleportPeriod > 0.0f && IsValid(Target) && (EdgeTeleportElapsed += DeltaSeconds) >= TeleportPeriod)
+        {
+            EdgeTeleportElapsed = 0.0f;
+            EdgeTeleportSign = -EdgeTeleportSign;
+            const FVector Offset = Target->GetActorRightVector() * 150.0f * EdgeTeleportSign;
+            // TeleportTo marks the history discontinuity.
+            const bool bMoved = Target->TeleportTo(Target->GetActorLocation() + Offset, Target->GetActorRotation());
+            ENCLAVE_LOG(LogEnclaveCombat, Log, "SSREdge SERVER teleport=%d offsetCm=%.0f (DEBUG ONLY)", bMoved ? 1 : 0, 150.0f * EdgeTeleportSign);
+        }
     }
 	if (Phase == 2 && Elapsed >= 2.5f)
 	{

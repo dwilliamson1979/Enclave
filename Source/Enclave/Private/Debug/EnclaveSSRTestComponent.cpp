@@ -17,6 +17,25 @@
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 
 #include "HAL/IConsoleManager.h"
+#include "Engine/Engine.h"
+
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+// Milestone 3 edge cases, applied only during a coordinated test session.
+static TAutoConsoleVariable<float> CVarSSRTestCrouchTogglePeriod(
+	TEXT("Enclave.Debug.SSRTest.CrouchTogglePeriod"), 0.0f,
+	TEXT("Target client: toggle crouch every N seconds while strafing (0 = off). Capsule-height changes under rewind. DEBUG ONLY."),
+	ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarSSRTestLagSwitchPeriod(
+	TEXT("Enclave.Debug.SSRTest.LagSwitchPeriod"), 0.0f,
+	TEXT("Shooter client: every N seconds raise outgoing lag to LagSwitchBurstMs for LagSwitchBurstSeconds (0 = off). Emulates a lag switch. DEBUG ONLY."),
+	ECVF_Cheat);
+static TAutoConsoleVariable<int32> CVarSSRTestLagSwitchBurstMs(
+	TEXT("Enclave.Debug.SSRTest.LagSwitchBurstMs"), 400, TEXT("Outgoing lag during a lag-switch burst. DEBUG ONLY."), ECVF_Cheat);
+static TAutoConsoleVariable<float> CVarSSRTestLagSwitchBurstSeconds(
+	TEXT("Enclave.Debug.SSRTest.LagSwitchBurstSeconds"), 0.5f, TEXT("Length of a lag-switch burst. DEBUG ONLY."), ECVF_Cheat);
+static TAutoConsoleVariable<int32> CVarSSRTestLagSwitchBaseMs(
+	TEXT("Enclave.Debug.SSRTest.LagSwitchBaseMs"), 0, TEXT("Outgoing lag restored between bursts (the session's normal -PktLag). DEBUG ONLY."), ECVF_Cheat);
+#endif
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 namespace
@@ -791,6 +810,47 @@ void UEnclaveSSRTestComponent::LogSessionFps() const
 #endif
 }
 
+void UEnclaveSSRTestComponent::TickEdgeCases(float DeltaSeconds)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	AEnclavePlayerController* PC = Cast<AEnclavePlayerController>(GetOwner());
+	AEnclaveCharacter* Char = IsValid(PC) ? Cast<AEnclaveCharacter>(PC->GetPawn()) : nullptr;
+	if (!IsValid(Char)) return;
+
+	// Crouch spam: direct Crouch/UnCrouch, bypassing the crouch rig (which refuses
+	// to stand mid-strafe so that crouch samples stay clean).
+	const float CrouchPeriod = CVarSSRTestCrouchTogglePeriod.GetValueOnGameThread();
+	if (ClientRole == 2 && CrouchPeriod > 0.0f && bDebugSSRStrafeEnabled)
+	{
+		EdgeCrouchElapsed += DeltaSeconds;
+		if (EdgeCrouchElapsed >= CrouchPeriod)
+		{
+			EdgeCrouchElapsed = 0.0f;
+			const bool bCrouch = !Char->bIsCrouched;
+			if (bCrouch) { Char->Crouch(); } else { Char->UnCrouch(); }
+			ENCLAVE_LOG(LogEnclaveCombat, Log, "SSREdge CLIENT crouch=%d (DEBUG ONLY)", bCrouch ? 1 : 0);
+		}
+	}
+
+	// Lag switch: outgoing packets sent during a burst arrive BurstMs late.
+	const float LagPeriod = CVarSSRTestLagSwitchPeriod.GetValueOnGameThread();
+	if (ClientRole == 1 && LagPeriod > 0.0f && GEngine)
+	{
+		EdgeLagSwitchElapsed += DeltaSeconds;
+		const bool bBurst = FMath::Fmod(EdgeLagSwitchElapsed, LagPeriod) < CVarSSRTestLagSwitchBurstSeconds.GetValueOnGameThread();
+		if (bBurst != bEdgeLagSwitchBurst)
+		{
+			bEdgeLagSwitchBurst = bBurst;
+			const int32 LagMs = bBurst ? CVarSSRTestLagSwitchBurstMs.GetValueOnGameThread() : CVarSSRTestLagSwitchBaseMs.GetValueOnGameThread();
+			GEngine->Exec(GetWorld(), *FString::Printf(TEXT("NetEmulation.PktLag %d"), LagMs));
+			ENCLAVE_LOG(LogEnclaveCombat, Log, "SSREdge CLIENT lagSwitch=%d pktLagMs=%d (DEBUG ONLY)", bBurst ? 1 : 0, LagMs);
+		}
+	}
+#else
+	(void)DeltaSeconds;
+#endif
+}
+
 void UEnclaveSSRTestComponent::TickParticipant(float DeltaSeconds)
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE
@@ -798,6 +858,7 @@ void UEnclaveSSRTestComponent::TickParticipant(float DeltaSeconds)
 	if (!IsValid(PC)) return;
 	if (ClientTestId > 0 && PC->IsLocalController() && PC->GetNetMode() == NM_Client)
 	{
+		TickEdgeCases(DeltaSeconds);
 		++SessionFrames;
 		SessionFrameSeconds += DeltaSeconds;
 		SessionWorstFrameSeconds = FMath::Max(SessionWorstFrameSeconds, DeltaSeconds);

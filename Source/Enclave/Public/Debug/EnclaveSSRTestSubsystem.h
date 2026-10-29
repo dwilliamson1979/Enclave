@@ -39,6 +39,8 @@ private:
     };
     TArray<FNetSample> NetStart;
     int32 SessionTicks = 0;
+    float EdgeTeleportElapsed = 0.0f;
+    int32 EdgeTeleportSign = 1;
     bool IsServerWorld() const;
     int32 TestId = 0;
     int32 TestScenario = 0;
