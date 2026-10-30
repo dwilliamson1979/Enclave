@@ -3,25 +3,31 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/GameModeBase.h"
+#include "GameFramework/GameMode.h"
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Combat/EnclaveLagCompensationMode.h"
 #include "Combat/EnclaveSSRPolicyContracts.h"
 #include "Combat/EnclaveSSRTimingPolicy.h"
-#include "EnclaveGameModeBase.generated.h"
+#include "EnclaveGameMode.generated.h"
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FEnclaveWeaponHitDetectionModeChanged, EEnclaveWeaponHitDetectionMode);
 
 /**
- * Authoritative match rules for Enclave.
+ * Shared Enclave game mode: combat and hit-registration policy (hit detection
+ * mode, server-side rewind) for every map, and the default PlayerState,
+ * GameState and HUD classes. It has no match rules, so test maps such as the
+ * SSR test range use it directly. Match rules live in AEnclaveMatchGameMode.
+ *
+ * Development console commands for these settings are in
+ * Private/Debug/EnclaveGameModeDebugCommands.cpp.
  */
 UCLASS()
-class ENCLAVE_API AEnclaveGameModeBase : public AGameModeBase
+class ENCLAVE_API AEnclaveGameMode : public AGameMode
 {
 	GENERATED_BODY()
 
 public:
-	AEnclaveGameModeBase();
+	AEnclaveGameMode();
 
 	UFUNCTION(BlueprintPure, Category = "Combat|Hit Detection")
 	EEnclaveWeaponHitDetectionMode GetWeaponHitDetectionMode() const { return WeaponHitDetectionMode; }
@@ -64,13 +70,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat|Hit Detection")
 	void SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode NewMode);
 
-	/** Development-only behavior: this Exec entry point does nothing in Test/Shipping. */
-	UFUNCTION(Exec)
-	void EnclaveSetHitRegistrationMode(const FString& ModeName);
-
-	/** Development-only: switch SSR timing source live (ServerAnchor|EchoedStamp|Hybrid). */
-	UFUNCTION(Exec)
-	void EnclaveSetSSRTimingSource(const FString& SourceName);
+	/** Authority-only. Locked after match start in Shipping and Test. */
+	UFUNCTION(BlueprintCallable, Category = "Combat|Lag Compensation")
+	void SetSSRTimingSource(EEnclaveSSRTimingSource TimingSource);
 
 protected:
 	/**

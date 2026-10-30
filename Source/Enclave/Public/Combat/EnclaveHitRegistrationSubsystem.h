@@ -11,7 +11,7 @@
 #include "EnclaveHitRegistrationSubsystem.generated.h"
 
 class AActor;
-class AEnclaveGameModeBase;
+class AEnclaveGameMode;
 struct FEnclaveShotIntent;
 struct FEnclaveValidatedShotRay;
 
@@ -87,5 +87,5 @@ private:
 	 * present-time trace for PresentTimeUnavailableFallback.
 	 */
 	FEnclaveSSRSelectionDecision SelectHistoricalHit(const FEnclaveHitscanQuery& Query,
-		const AEnclaveGameModeBase& GameMode, FHitResult& OutHit) const;
+		const AEnclaveGameMode& GameMode, FHitResult& OutHit) const;
 };

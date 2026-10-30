@@ -5,7 +5,7 @@
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Combat/EnclaveHistoricalHitQuery.h"
 #include "Engine/World.h"
-#include "Game/EnclaveGameModeBase.h"
+#include "Game/EnclaveGameMode.h"
 #include "GameFramework/GameStateBase.h"
 
 namespace
@@ -33,7 +33,7 @@ FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCa
         return Unavailable(EEnclaveSSRUnavailableReason::InvalidQueryContext);
     }
 
-    const AEnclaveGameModeBase* GameMode = ServerWorld->GetAuthGameMode<AEnclaveGameModeBase>();
+    const AEnclaveGameMode* GameMode = ServerWorld->GetAuthGameMode<AEnclaveGameMode>();
     if (!IsValid(GameMode))
     {
         return Unavailable(EEnclaveSSRUnavailableReason::InvalidQueryContext);

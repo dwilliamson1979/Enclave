@@ -30,7 +30,7 @@
 #include "Equipment/Items/EnclaveItem.h"
 #include "GameplayTags/EnclaveEquipmentSlotTags.h"
 #include "Collision/EnclaveCollisionChannels.h"
-#include "Game/EnclaveGameModeBase.h"
+#include "Game/EnclaveGameMode.h"
 #include "Combat/EnclaveSSRTimingPolicy.h"
 
 #include "Engine/Engine.h"
@@ -458,11 +458,11 @@ void AEnclaveCharacter::BeginPlay()
 
 	if (HasAuthority())
 	{
-		AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
+		AEnclaveGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameMode>() : nullptr;
 		EEnclaveWeaponHitDetectionMode HitDetectionMode = IsValid(GameMode) ? GameMode->GetWeaponHitDetectionMode() : EEnclaveWeaponHitDetectionMode::Capsule;
 
 		if (!IsValid(GameMode))
-			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s could not resolve AEnclaveGameModeBase; defaulting Weapon collision policy to Capsule.", *GetName());
+			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s could not resolve AEnclaveGameMode; defaulting Weapon collision policy to Capsule.", *GetName());
 		else
 			GameMode->OnWeaponHitDetectionModeChanged().AddUObject(this, &AEnclaveCharacter::HandleOnWeaponHitDetectionModeChanged);
 
@@ -509,7 +509,7 @@ void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (HasAuthority())
 	{
-		if (AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr)
+		if (AEnclaveGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameMode>() : nullptr)
 		{
 			GameMode->OnWeaponHitDetectionModeChanged().RemoveAll(this);
 		}
@@ -601,7 +601,7 @@ void AEnclaveCharacter::PreReplication(IRepChangedPropertyTracker& ChangedProper
 		IConsoleManager::Get().FindConsoleVariable(TEXT("Enclave.Debug.SSRReplicateStamps"));
 	const bool bReplicateSSRStamps = !ReplicateStamps || ReplicateStamps->GetBool();
 #else
-	const AEnclaveGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameModeBase>() : nullptr;
+	const AEnclaveGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameMode>() : nullptr;
 	const bool bReplicateSSRStamps = GameMode && GameMode->RequiresClientSSRStamps();
 #endif
 	DOREPLIFETIME_ACTIVE_OVERRIDE_FAST(AEnclaveCharacter, SSRServerCapsuleObservation, bReplicateSSRStamps);

@@ -2,7 +2,7 @@
 
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
 
-#include "Game/EnclaveGameModeBase.h"
+#include "Game/EnclaveGameMode.h"
 #include "Combat/EnclaveShotIntent.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/EnclaveHistoricalHitQuery.h"
@@ -176,7 +176,7 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 			}
 		}
 	}
-	if (const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>())
+	if (const AEnclaveGameMode* GameMode = World->GetAuthGameMode<AEnclaveGameMode>())
 	{
 		OutValidatedRay.Timing.MaxRewindSeconds = GameMode->GetMaxRewindSeconds();
 	}
@@ -197,7 +197,7 @@ bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuer
 
 	// Character collision policy and strategy selection MUST use the same
 	// authoritative GameMode state. Missing GameMode is a safe Capsule fallback.
-	const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>();
+	const AEnclaveGameMode* GameMode = World->GetAuthGameMode<AEnclaveGameMode>();
 	const EEnclaveWeaponHitDetectionMode Mode = GameMode
 		? GameMode->GetWeaponHitDetectionMode()
 		: EEnclaveWeaponHitDetectionMode::Capsule;
@@ -253,7 +253,7 @@ FHitResult MakeHistoricalHitResult(const FEnclaveHitscanQuery& Query, const FEnc
 }
 
 FEnclaveSSRSelectionDecision UEnclaveHitRegistrationSubsystem::SelectHistoricalHit(const FEnclaveHitscanQuery& Query,
-	const AEnclaveGameModeBase& GameMode, FHitResult& OutHit) const
+	const AEnclaveGameMode& GameMode, FHitResult& OutHit) const
 {
 	FEnclaveSSRSelectionDecision Decision;
 	UWorld* World = GetWorld();

@@ -5,7 +5,7 @@
 
 #include "Characters/EnclaveCharacter.h"
 #include "Components/CapsuleComponent.h"
-#include "Game/EnclaveGameModeBase.h"
+#include "Game/EnclaveGameMode.h"
 #include "GameFramework/GameStateBase.h"
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 #include "Debug/EnclaveDebug.h"
@@ -204,7 +204,7 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 	{
 		// Keep pre-death history for the remaining rewind window, never sample corpse geometry.
 		if (DeathTimeSeconds <= 0.0) MarkDeath(GameState->GetServerWorldTimeSeconds());
-		const AEnclaveGameModeBase* DeathGameMode = World->GetAuthGameMode<AEnclaveGameModeBase>();
+		const AEnclaveGameMode* DeathGameMode = World->GetAuthGameMode<AEnclaveGameMode>();
 		if (IsValid(DeathGameMode))
 			TrimExpiredFrames(GameState->GetServerWorldTimeSeconds(), DeathGameMode->GetMaxRewindSeconds());
 		else InvalidateHistory();
@@ -237,7 +237,7 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 		return;
 	}
 
-	const AEnclaveGameModeBase* GameMode = World->GetAuthGameMode<AEnclaveGameModeBase>();
+	const AEnclaveGameMode* GameMode = World->GetAuthGameMode<AEnclaveGameMode>();
 	if (!IsValid(GameMode))
 	{
 		// No authoritative rewind policy. Do not retain history under a guessed cap.

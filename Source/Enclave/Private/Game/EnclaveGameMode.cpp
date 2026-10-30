@@ -1,20 +1,22 @@
 // Copyright Lightcarrier Studios
 
-#include "Game/EnclaveGameModeBase.h"
+#include "Game/EnclaveGameMode.h"
 
 #include "Kismet/GameplayStatics.h"
 
 #include "Debug/EnclaveDebug.h"
 #include "Player/EnclavePlayerState.h"
+#include "Game/EnclaveGameState.h"
 #include "UI/EnclaveHUD.h"
 
-AEnclaveGameModeBase::AEnclaveGameModeBase()
+AEnclaveGameMode::AEnclaveGameMode()
 {
 	PlayerStateClass = AEnclavePlayerState::StaticClass();
+	GameStateClass = AEnclaveGameState::StaticClass();
 	HUDClass = AEnclaveHUD::StaticClass();
 }
 
-void AEnclaveGameModeBase::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+void AEnclaveGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
 
@@ -67,7 +69,7 @@ void AEnclaveGameModeBase::InitGame(const FString& MapName, const FString& Optio
 }
 
 template <typename TEnum>
-void AEnclaveGameModeBase::ParseEnumOption(const FString& Options, const TCHAR* Key, TEnum& InOutValue)
+void AEnclaveGameMode::ParseEnumOption(const FString& Options, const TCHAR* Key, TEnum& InOutValue)
 {
 	const FString Value = UGameplayStatics::ParseOption(Options, Key);
 	if (Value.IsEmpty())
@@ -83,7 +85,7 @@ void AEnclaveGameModeBase::ParseEnumOption(const FString& Options, const TCHAR* 
 	InOutValue = static_cast<TEnum>(Parsed);
 }
 
-FEnclaveSSRTimingSettings AEnclaveGameModeBase::GetSSRTimingSettings() const
+FEnclaveSSRTimingSettings AEnclaveGameMode::GetSSRTimingSettings() const
 {
 	FEnclaveSSRTimingSettings Settings;
 	Settings.Source = SSRTimingSource;
@@ -93,24 +95,24 @@ FEnclaveSSRTimingSettings AEnclaveGameModeBase::GetSSRTimingSettings() const
 	return Settings;
 }
 
-void AEnclaveGameModeBase::EnclaveSetSSRTimingSource(const FString& SourceName)
+void AEnclaveGameMode::SetSSRTimingSource(EEnclaveSSRTimingSource TimingSource)
 {
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	const int64 Parsed = StaticEnum<EEnclaveSSRTimingSource>()->GetValueByNameString(SourceName);
-	if (Parsed == INDEX_NONE)
+	if (!HasAuthority()) { return; }
+	if (SSRTimingSource == TimingSource) { return; }
+
+#if UE_BUILD_SHIPPING || UE_BUILD_TEST
+	if (HasMatchStarted())
 	{
-		UE_LOG(LogEnclaveCombat, Warning, TEXT("Usage: EnclaveSetSSRTimingSource ServerAnchor|EchoedStamp|Hybrid"));
+		UE_LOG(LogEnclaveCombat, Warning, TEXT("Cannot change SSR Timing Source after match start in production builds."));
 		return;
 	}
-	SSRTimingSource = static_cast<EEnclaveSSRTimingSource>(Parsed);
-	UE_LOG(LogEnclaveCombat, Log, TEXT("Active SSR timing source: %s"), *UEnum::GetValueAsString(SSRTimingSource));
-#else
-	// The reflected Exec function remains declared for UHT compatibility, but cannot change match rules.
-	(void)SourceName;
 #endif
+
+	SSRTimingSource = TimingSource;
+	UE_LOG(LogEnclaveCombat, Log, TEXT("Active SSR timing source: %s"), *UEnum::GetValueAsString(SSRTimingSource));
 }
 
-void AEnclaveGameModeBase::SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode NewMode)
+void AEnclaveGameMode::SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode NewMode)
 {
 	if (!HasAuthority()) { return; }
 
@@ -142,25 +144,4 @@ void AEnclaveGameModeBase::SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionM
 	// FUTURE: replicate selected policy via GameState for HUD / spectators.
 	// FUTURE: invalidate/reseed rewind history when switching geometry.
 	// Shipping/Test builds lock this policy after match start.
-}
-
-void AEnclaveGameModeBase::EnclaveSetHitRegistrationMode(const FString& ModeName)
-{
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	if (ModeName.Equals(TEXT("Capsule"), ESearchCase::IgnoreCase))
-	{
-		SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode::Capsule);
-	}
-	else if (ModeName.Equals(TEXT("SkeletalHitboxes"), ESearchCase::IgnoreCase))
-	{
-		SetWeaponHitDetectionMode(EEnclaveWeaponHitDetectionMode::SkeletalHitboxes);
-	}
-	else
-	{
-		UE_LOG(LogEnclaveCombat, Warning, TEXT("Usage: EnclaveSetHitRegistrationMode Capsule|SkeletalHitboxes"));
-	}
-#else
-	// The reflected Exec function remains declared for UHT compatibility, but cannot change match rules.
-	(void)ModeName;
-#endif
 }

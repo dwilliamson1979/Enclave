@@ -4,7 +4,7 @@
 
 ## Decision
 
-The rewind time comes from `ResolveSSRTiming()` (`Combat/EnclaveSSRTimingPolicy.h`). It supports three server-only sources, selected by `AEnclaveGameModeBase::SSRTimingSource` or `?SSRTimingSource=`:
+The rewind time comes from `ResolveSSRTiming()` (`Combat/EnclaveSSRTimingPolicy.h`). It supports three server-only sources, selected by `AEnclaveGameMode::SSRTimingSource` or `?SSRTimingSource=`:
 
 | Source | Rewind time | Status |
 |---|---|---|
@@ -49,7 +49,7 @@ EchoedStamp falls back on every shot whose local ray missed: all clear misses, a
 | Property | Default | Meaning |
 |---|---|---|
 | `LagCompensationMode` / `?LagCompensation=` | Disabled | `ServerSideRewind` enables D11D-4 in Capsule mode |
-| `SSRTimingSource` / `?SSRTimingSource=` | ServerAnchor (was Hybrid; see M3) | See above. Dev builds can also switch live with `EnclaveSetSSRTimingSource` |
+| `SSRTimingSource` / `?SSRTimingSource=` | ServerAnchor (was Hybrid; see M3) | See above. Dev builds can also switch live with the console command `Enclave.Debug.SetSSRTimingSource` |
 | `SSRAnchorOffsetMs` | −25 (was −50; see `SSR_M3_NetworkValidation.md`) | target age = RTT + offset, clamped to [−150, 100] |
 | `SSRStampEarlyToleranceMs` / `SSRStampLateToleranceMs` | 40 / 60 | Hybrid: how much younger / older than the anchor age an accepted stamp may be |
 | `SSRUnavailableFallbackPolicy` | PresentTimeTrace | What happens when no trustworthy historical answer exists (C4D proposal) |
