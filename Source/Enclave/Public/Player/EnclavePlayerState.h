@@ -9,6 +9,9 @@
 
 class UAbilitySystemComponent;
 class UEnclaveAttributeSet;
+class AEnclavePlayerState;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveTeamChangedSignature, AEnclavePlayerState*, PlayerState, uint8, NewTeamId);
 
 /**
  * Owns the player's persistent Gameplay Ability System state for the whole
@@ -26,12 +29,39 @@ class ENCLAVE_API AEnclavePlayerState : public APlayerState, public IAbilitySyst
 	GENERATED_BODY()
 
 public:
+
+	//statics
+	static constexpr uint8 NoTeam = 255;
+
 	AEnclavePlayerState();
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	UEnclaveAttributeSet* GetEnclaveAttributeSet() const { return AttributeSet; }
+
+	UFUNCTION(BlueprintPure, Category = "Match")
+	uint8 GetTeamId() const { return TeamId; }
+	void SetTeamId(uint8 NewTeamId);
+
+	void AddKill();
+	UFUNCTION(BlueprintPure, Category = "Match")
+	int32 GetKills() const { return Kills; }
+
+	void AddDeath();
+	UFUNCTION(BlueprintPure, Category = "Match")
+	int32 GetDeaths() const { return Deaths; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Match")
+	FOnEnclaveTeamChangedSignature OnTeamChanged;
+
+	virtual void Reset() override;
+
+protected:
+	
+	virtual void CopyProperties(APlayerState* PlayerState) override;
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
@@ -39,4 +69,16 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UEnclaveAttributeSet> AttributeSet;
+
+	UPROPERTY(Replicated)
+	int32 Kills = 0;
+
+	UPROPERTY(Replicated)
+	int32 Deaths = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_TeamId)
+	uint8 TeamId = NoTeam;
+
+	UFUNCTION()
+	void OnRep_TeamId();
 };
