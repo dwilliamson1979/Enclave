@@ -16,7 +16,7 @@ participants to these markers before a session starts.
 import unreal
 
 MAP_PATH = "/Game/Maps/Test/SSR_TestRange"
-GAME_MODE = "/Game/Enclave/Game/GameModes/BP_EnclaveGameModeBase.BP_EnclaveGameModeBase_C"
+GAME_MODE = "/Game/Enclave/Game/GameModes/BP_EnclaveGameMode.BP_EnclaveGameMode_C"
 CUBE = "/Engine/BasicShapes/Cube.Cube"  # 100 cm cube, simple collision, blocks all channels
 STAND_Z = 100.0  # capsule center above the floor
 LANE_SPACING = 2000.0

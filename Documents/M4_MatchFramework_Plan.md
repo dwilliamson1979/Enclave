@@ -49,13 +49,13 @@ APlayerState (engine)
 Decisions:
 
 - **Rename `AEnclaveGameModeBase` to `AEnclaveGameMode` and reparent it from
-  `AGameModeBase` to `AGameMode`.** A `ClassRedirects` entry in `DefaultEngine.ini`
-  carries existing assets over. This
+  `AGameModeBase` to `AGameMode`.** The Blueprint was renamed to
+  `BP_EnclaveGameMode`, and the maps resaved. This
   gives us Unreal's built-in match states (WaitingToStart, InProgress,
   WaitingPostMatch) and requires a GameState derived from `AGameState`. Lyra's
   Experience system is more flexible but much heavier than Enclave needs now.
 - **Test maps keep the base mode.** `SSR_TestRange` stays on
-  `BP_EnclaveGameModeBase` (a child of `AEnclaveGameMode`), which has no match rules, so the SSR harness is
+  `BP_EnclaveGameMode` (a child of `AEnclaveGameMode`), which has no match rules, so the SSR harness is
   unaffected by respawns, teams or match end.
 - **The framework never knows about mode-specific objects.** Flags and control
   points (later) are actors that report to the GameMode through an interface.
