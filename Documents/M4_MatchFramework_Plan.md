@@ -1,8 +1,9 @@
 # Milestone 4: Match Framework (TDM and Deathmatch)
 
-Status: in progress. Done so far: U1 and U2 (commit 97a6082), and the rename of
+Status: in progress. Done so far: U1 and U2 (commit 97a6082); the rename of
 AEnclaveGameModeBase to AEnclaveGameMode on AGameMode, with its debug commands moved
-out of the class.
+out of the class; AEnclaveMatchGameMode with FEnclaveMatchSettings (C1 started); and
+the SSR settings moved from the GameMode into UEnclaveCombatPolicyComponent.
 
 ## Goal
 
@@ -34,7 +35,7 @@ respawn, spawn selection, and every HUD element except the reticle.
 
 ```
 AGameMode (engine: match-state machine)
-  AEnclaveGameMode                combat config: SSR, hit registration (was AEnclaveGameModeBase)
+  AEnclaveGameMode                owns UEnclaveCombatPolicyComponent (SSR, hit registration)
     AEnclaveMatchGameMode         match framework: phases, timer, deaths, respawn, spawns
       AEnclaveGameMode_Deathmatch     rules only: no teams, first to N kills
       AEnclaveGameMode_TeamDeathmatch rules only: 2 teams, team score to N

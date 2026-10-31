@@ -4,7 +4,7 @@
 
 ## Decision
 
-The rewind time comes from `ResolveSSRTiming()` (`Combat/EnclaveSSRTimingPolicy.h`). It supports three server-only sources, selected by `AEnclaveGameMode::SSRTimingSource` or `?SSRTimingSource=`:
+The rewind time comes from `ResolveSSRTiming()` (`Combat/EnclaveSSRTimingPolicy.h`). It supports three server-only sources, selected by `UEnclaveCombatPolicyComponent::SSRTimingSource` (on `AEnclaveGameMode`) or `?SSRTimingSource=`:
 
 | Source | Rewind time | Status |
 |---|---|---|

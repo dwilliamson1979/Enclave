@@ -20,7 +20,7 @@ constexpr ECollisionChannel ECC_Weapon = ECC_GameTraceChannel1;
  * Capsule is the forgiving model. SkeletalHitboxes uses the third-person
  * skeletal mesh's Physics Asset so FHitResult::BoneName can identify the
  * struck body region. The active value is a match/server rule owned by
- * AEnclaveGameMode, never by an individual weapon.
+ * UEnclaveCombatPolicyComponent (on AEnclaveGameMode), never by an individual weapon.
  */
 UENUM(BlueprintType)
 enum class EEnclaveWeaponHitDetectionMode : uint8

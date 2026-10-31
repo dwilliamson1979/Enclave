@@ -5,7 +5,7 @@
 
 #include "Characters/EnclaveCharacter.h"
 #include "Components/CapsuleComponent.h"
-#include "Game/EnclaveGameMode.h"
+#include "Combat/Components/EnclaveCombatPolicyComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 #include "Debug/EnclaveDebug.h"
@@ -204,9 +204,9 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 	{
 		// Keep pre-death history for the remaining rewind window, never sample corpse geometry.
 		if (DeathTimeSeconds <= 0.0) MarkDeath(GameState->GetServerWorldTimeSeconds());
-		const AEnclaveGameMode* DeathGameMode = World->GetAuthGameMode<AEnclaveGameMode>();
-		if (IsValid(DeathGameMode))
-			TrimExpiredFrames(GameState->GetServerWorldTimeSeconds(), DeathGameMode->GetMaxRewindSeconds());
+		const UEnclaveCombatPolicyComponent* DeathCombatPolicy = UEnclaveCombatPolicyComponent::Get(World);
+		if (IsValid(DeathCombatPolicy))
+			TrimExpiredFrames(GameState->GetServerWorldTimeSeconds(), DeathCombatPolicy->GetMaxRewindSeconds());
 		else InvalidateHistory();
 		return;
 	}
@@ -237,8 +237,8 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 		return;
 	}
 
-	const AEnclaveGameMode* GameMode = World->GetAuthGameMode<AEnclaveGameMode>();
-	if (!IsValid(GameMode))
+	const UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(World);
+	if (!IsValid(CombatPolicy))
 	{
 		// No authoritative rewind policy. Do not retain history under a guessed cap.
 		InvalidateHistory();
@@ -308,7 +308,7 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 	CapsuleFrameRecorded.Broadcast(Frames.Last());
 	bBreakBeforeNextCapture = false;
 
-	TrimExpiredFrames(Next.ServerTimeSeconds, GameMode->GetMaxRewindSeconds());
+	TrimExpiredFrames(Next.ServerTimeSeconds, CombatPolicy->GetMaxRewindSeconds());
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	if (CVarDebugSSRHistory.GetValueOnGameThread() != 0 &&

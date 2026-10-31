@@ -2,7 +2,7 @@
 
 #include "Combat/EnclaveHitRegistrationSubsystem.h"
 
-#include "Game/EnclaveGameMode.h"
+#include "Combat/Components/EnclaveCombatPolicyComponent.h"
 #include "Combat/EnclaveShotIntent.h"
 #include "Combat/EnclaveHistoricalCapsuleIntersection.h"
 #include "Combat/EnclaveHistoricalHitQuery.h"
@@ -176,9 +176,9 @@ bool UEnclaveHitRegistrationSubsystem::ValidateClientShotIntent(const FEnclaveSh
 			}
 		}
 	}
-	if (const AEnclaveGameMode* GameMode = World->GetAuthGameMode<AEnclaveGameMode>())
+	if (const UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(World))
 	{
-		OutValidatedRay.Timing.MaxRewindSeconds = GameMode->GetMaxRewindSeconds();
+		OutValidatedRay.Timing.MaxRewindSeconds = CombatPolicy->GetMaxRewindSeconds();
 	}
 	// The C4 patrol trajectory inverse fit is debug-only and does not resolve
 	// trustworthy presentation timing. Keep authoritative traces present-time.
@@ -196,19 +196,19 @@ bool UEnclaveHitRegistrationSubsystem::RegisterHitscan(const FEnclaveHitscanQuer
 	}
 
 	// Character collision policy and strategy selection MUST use the same
-	// authoritative GameMode state. Missing GameMode is a safe Capsule fallback.
-	const AEnclaveGameMode* GameMode = World->GetAuthGameMode<AEnclaveGameMode>();
-	const EEnclaveWeaponHitDetectionMode Mode = GameMode
-		? GameMode->GetWeaponHitDetectionMode()
+	// authoritative combat policy. A missing policy is a safe Capsule fallback.
+	const UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(World);
+	const EEnclaveWeaponHitDetectionMode Mode = CombatPolicy
+		? CombatPolicy->GetWeaponHitDetectionMode()
 		: EEnclaveWeaponHitDetectionMode::Capsule;
 
 	// Listen-host, AI and other authority-local shots have no validated client
 	// timing and stay present-time, as does every shot while SSR is inactive.
 	FEnclaveSSRSelectionDecision Decision;
 	Decision.Selection = EEnclaveSSRSelection::PresentTimeByMatchPolicy;
-	if (GameMode && GameMode->IsServerSideRewindActive() && Query.bHasValidatedClientTiming)
+	if (CombatPolicy && CombatPolicy->IsServerSideRewindActive() && Query.bHasValidatedClientTiming)
 	{
-		Decision = SelectHistoricalHit(Query, *GameMode, OutHit);
+		Decision = SelectHistoricalHit(Query, *CombatPolicy, OutHit);
 	}
 
 	bool bHit = false;
@@ -253,13 +253,13 @@ FHitResult MakeHistoricalHitResult(const FEnclaveHitscanQuery& Query, const FEnc
 }
 
 FEnclaveSSRSelectionDecision UEnclaveHitRegistrationSubsystem::SelectHistoricalHit(const FEnclaveHitscanQuery& Query,
-	const AEnclaveGameMode& GameMode, FHitResult& OutHit) const
+	const UEnclaveCombatPolicyComponent& CombatPolicy, FHitResult& OutHit) const
 {
 	FEnclaveSSRSelectionDecision Decision;
 	UWorld* World = GetWorld();
 	AActor* Shooter = Query.Instigator.Get();
 	const FEnclaveShotTimingContext& Timing = Query.ValidatedClientTiming;
-	const FEnclaveSSRTimingSettings Settings = GameMode.GetSSRTimingSettings();
+	const FEnclaveSSRTimingSettings Settings = CombatPolicy.GetSSRTimingSettings();
 
 	// Echoed evidence counts only if it names a frame this server recorded for
 	// that exact target. It never names the hit target: the trace still does.
@@ -310,7 +310,7 @@ FEnclaveSSRSelectionDecision UEnclaveHitRegistrationSubsystem::SelectHistoricalH
 		break;
 	default:
 		Decision.UnavailableReason = Assessment.Policy.UnavailableReason;
-		Decision.Selection = GameMode.GetSSRUnavailableFallbackPolicy() == EEnclaveSSRUnavailableFallbackPolicy::RejectHit
+		Decision.Selection = CombatPolicy.GetSSRUnavailableFallbackPolicy() == EEnclaveSSRUnavailableFallbackPolicy::RejectHit
 			? EEnclaveSSRSelection::NoHitUnavailable
 			: EEnclaveSSRSelection::PresentTimeUnavailableFallback;
 		break;

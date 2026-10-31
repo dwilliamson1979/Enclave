@@ -1,6 +1,7 @@
 // Copyright Lightcarrier Studios
 
-// Development console commands that change AEnclaveGameMode policy on the server.
+// Development console commands that change the combat policy
+// (UEnclaveCombatPolicyComponent) on the server.
 // The whole file compiles out of Test and Shipping builds.
 
 #include "Debug/EnclaveDebug.h"   // defines ENCLAVE_INCLUDE_DEBUG_CODE; include it before the #if
@@ -9,7 +10,7 @@
 
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
-#include "Game/EnclaveGameMode.h"
+#include "Combat/Components/EnclaveCombatPolicyComponent.h"
 
 namespace
 {
@@ -32,8 +33,8 @@ namespace
 
 	void SetSSRTimingSource(const TArray<FString>& Args, UWorld* World)
 	{
-		AEnclaveGameMode* GameMode = World ? World->GetAuthGameMode<AEnclaveGameMode>() : nullptr;
-		if (!GameMode)
+		UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(World);
+		if (!CombatPolicy)
 		{
 			UE_LOG(LogEnclaveCombat, Warning, TEXT("Enclave.Debug.SetSSRTimingSource: run this on the server."));
 			return;
@@ -46,13 +47,13 @@ namespace
 			return;
 		}
 
-		GameMode->SetSSRTimingSource(Source);
+		CombatPolicy->SetSSRTimingSource(Source);
 	}
 
 	void SetHitRegistrationMode(const TArray<FString>& Args, UWorld* World)
 	{
-		AEnclaveGameMode* GameMode = World ? World->GetAuthGameMode<AEnclaveGameMode>() : nullptr;
-		if (!GameMode)
+		UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(World);
+		if (!CombatPolicy)
 		{
 			UE_LOG(LogEnclaveCombat, Warning, TEXT("Enclave.Debug.SetHitRegistrationMode: run this on the server."));
 			return;
@@ -65,7 +66,7 @@ namespace
 			return;
 		}
 
-		GameMode->SetWeaponHitDetectionMode(HitDetectionMode);
+		CombatPolicy->SetWeaponHitDetectionMode(HitDetectionMode);
 	}
 
 	FAutoConsoleCommandWithWorldAndArgs SetSSRTimingSourceCommand(

@@ -5,7 +5,7 @@
 #include "Collision/EnclaveCollisionChannels.h"
 #include "Combat/EnclaveHistoricalHitQuery.h"
 #include "Engine/World.h"
-#include "Game/EnclaveGameMode.h"
+#include "Combat/Components/EnclaveCombatPolicyComponent.h"
 #include "GameFramework/GameStateBase.h"
 
 namespace
@@ -33,12 +33,12 @@ FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCa
         return Unavailable(EEnclaveSSRUnavailableReason::InvalidQueryContext);
     }
 
-    const AEnclaveGameMode* GameMode = ServerWorld->GetAuthGameMode<AEnclaveGameMode>();
-    if (!IsValid(GameMode))
+    const UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(ServerWorld);
+    if (!IsValid(CombatPolicy))
     {
         return Unavailable(EEnclaveSSRUnavailableReason::InvalidQueryContext);
     }
-    if (GameMode->GetWeaponHitDetectionMode() != EEnclaveWeaponHitDetectionMode::Capsule)
+    if (CombatPolicy->GetWeaponHitDetectionMode() != EEnclaveWeaponHitDetectionMode::Capsule)
     {
         return Unavailable(EEnclaveSSRUnavailableReason::UnsupportedGeometry);
     }
@@ -49,7 +49,7 @@ FEnclaveServerHistoricalAssessment FEnclaveServerHistoricalEvaluator::EvaluateCa
         !FMath::IsFinite(ValidatedTiming.ServerReceiptTimeSeconds) ||
         !FMath::IsFinite(ValidatedTiming.MaxRewindSeconds) ||
         ValidatedTiming.MaxRewindSeconds <= 0.0 ||
-        ValidatedTiming.MaxRewindSeconds > GameMode->GetMaxRewindSeconds() ||
+        ValidatedTiming.MaxRewindSeconds > CombatPolicy->GetMaxRewindSeconds() ||
         ValidatedTiming.ServerReceiptTimeSeconds <= 0.0)
     {
         return Unavailable(EEnclaveSSRUnavailableReason::ServerTimingUnavailable);

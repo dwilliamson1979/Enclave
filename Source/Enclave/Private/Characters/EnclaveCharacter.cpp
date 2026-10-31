@@ -30,7 +30,7 @@
 #include "Equipment/Items/EnclaveItem.h"
 #include "GameplayTags/EnclaveEquipmentSlotTags.h"
 #include "Collision/EnclaveCollisionChannels.h"
-#include "Game/EnclaveGameMode.h"
+#include "Combat/Components/EnclaveCombatPolicyComponent.h"
 #include "Combat/EnclaveSSRTimingPolicy.h"
 
 #include "Engine/Engine.h"
@@ -458,13 +458,13 @@ void AEnclaveCharacter::BeginPlay()
 
 	if (HasAuthority())
 	{
-		AEnclaveGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameMode>() : nullptr;
-		EEnclaveWeaponHitDetectionMode HitDetectionMode = IsValid(GameMode) ? GameMode->GetWeaponHitDetectionMode() : EEnclaveWeaponHitDetectionMode::Capsule;
+		UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(GetWorld());
+		EEnclaveWeaponHitDetectionMode HitDetectionMode = IsValid(CombatPolicy) ? CombatPolicy->GetWeaponHitDetectionMode() : EEnclaveWeaponHitDetectionMode::Capsule;
 
-		if (!IsValid(GameMode))
-			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s could not resolve AEnclaveGameMode; defaulting Weapon collision policy to Capsule.", *GetName());
+		if (!IsValid(CombatPolicy))
+			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s found no combat policy on the game mode; defaulting Weapon collision policy to Capsule.", *GetName());
 		else
-			GameMode->OnWeaponHitDetectionModeChanged().AddUObject(this, &AEnclaveCharacter::HandleOnWeaponHitDetectionModeChanged);
+			CombatPolicy->OnWeaponHitDetectionModeChanged().AddUObject(this, &AEnclaveCharacter::HandleOnWeaponHitDetectionModeChanged);
 
 		ApplyWeaponHitDetectionCollisionPolicy(HitDetectionMode);
 	}
@@ -509,9 +509,9 @@ void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (HasAuthority())
 	{
-		if (AEnclaveGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameMode>() : nullptr)
+		if (UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(GetWorld()))
 		{
-			GameMode->OnWeaponHitDetectionModeChanged().RemoveAll(this);
+			CombatPolicy->OnWeaponHitDetectionModeChanged().RemoveAll(this);
 		}
 	}
 
@@ -601,8 +601,8 @@ void AEnclaveCharacter::PreReplication(IRepChangedPropertyTracker& ChangedProper
 		IConsoleManager::Get().FindConsoleVariable(TEXT("Enclave.Debug.SSRReplicateStamps"));
 	const bool bReplicateSSRStamps = !ReplicateStamps || ReplicateStamps->GetBool();
 #else
-	const AEnclaveGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameMode>() : nullptr;
-	const bool bReplicateSSRStamps = GameMode && GameMode->RequiresClientSSRStamps();
+	const UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(GetWorld());
+	const bool bReplicateSSRStamps = CombatPolicy && CombatPolicy->RequiresClientSSRStamps();
 #endif
 	DOREPLIFETIME_ACTIVE_OVERRIDE_FAST(AEnclaveCharacter, SSRServerCapsuleObservation, bReplicateSSRStamps);
 }
