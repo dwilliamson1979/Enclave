@@ -6,6 +6,9 @@
 #include "Components/ActorComponent.h"
 #include "EnclaveTargetHistoryComponent.generated.h"
 
+class UEnclaveAvatarLifecycleComponent;
+enum class EEnclaveAvatarLifecycleState : uint8;
+
 /**
  * One server-observed capsule snapshot. Times use the same authoritative
  * GameState server-world-time domain as FEnclaveShotTimingContext.
@@ -88,7 +91,16 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+	/** Owner's lifecycle events: death marks the boundary, a revive starts a fresh history. */
+	void HandleOwnerLifecycleStateChanged(EEnclaveAvatarLifecycleState OldState, EEnclaveAvatarLifecycleState NewState);
+
 	FOnCapsuleFrameRecorded CapsuleFrameRecorded;
+
+	/** Authority only: the owner's lifecycle component, bound in BeginPlay. */
+	TWeakObjectPtr<UEnclaveAvatarLifecycleComponent> OwnerLifecycle;
+
+	/** Set from lifecycle events. Survives InvalidateHistory so a corpse is never sampled. */
+	bool bOwnerDead = false;
 
 	// The small bounded array is never replicated and contains no UObject references.
 	TArray<FEnclaveTargetCapsuleFrame> Frames;

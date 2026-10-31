@@ -50,19 +50,19 @@ namespace
 		CombatPolicy->SetSSRTimingSource(Source);
 	}
 
-	void SetHitRegistrationMode(const TArray<FString>& Args, UWorld* World)
+	void SetWeaponHitDetectionMode(const TArray<FString>& Args, UWorld* World)
 	{
 		UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(World);
 		if (!CombatPolicy)
 		{
-			UE_LOG(LogEnclaveCombat, Warning, TEXT("Enclave.Debug.SetHitRegistrationMode: run this on the server."));
+			UE_LOG(LogEnclaveCombat, Warning, TEXT("Enclave.Debug.SetWeaponHitDetectionMode: run this on the server."));
 			return;
 		}
 
 		EEnclaveWeaponHitDetectionMode HitDetectionMode;
 		if (!ParseEnumArg(Args, HitDetectionMode))
 		{
-			UE_LOG(LogEnclaveCombat, Warning, TEXT("Usage: Enclave.Debug.SetHitRegistrationMode Capsule|SkeletalHitboxes"));
+			UE_LOG(LogEnclaveCombat, Warning, TEXT("Usage: Enclave.Debug.SetWeaponHitDetectionMode Capsule|SkeletalHitboxes"));
 			return;
 		}
 
@@ -74,10 +74,10 @@ namespace
 		TEXT("Server only. ServerAnchor|EchoedStamp|Hybrid"),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetSSRTimingSource));
 
-	FAutoConsoleCommandWithWorldAndArgs SetHitRegistrationModeCommand(
-		TEXT("Enclave.Debug.SetHitRegistrationMode"),
+	FAutoConsoleCommandWithWorldAndArgs SetWeaponHitDetectionModeCommand(
+		TEXT("Enclave.Debug.SetWeaponHitDetectionMode"),
 		TEXT("Server only. Capsule|SkeletalHitboxes"),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetHitRegistrationMode));
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetWeaponHitDetectionMode));
 }
 
 #endif // ENCLAVE_INCLUDE_DEBUG_CODE

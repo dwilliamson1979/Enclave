@@ -14,7 +14,6 @@
 #include "Abilities/Effects/EnclaveGameplayEffectScopePolicy.h"
 #include "GameplayTags/EnclaveAbilityTags.h"
 #include "Health/Components/EnclaveHealthComponent.h"
-#include "Combat/Components/EnclaveTargetHistoryComponent.h"
 
 UEnclaveAvatarLifecycleComponent::UEnclaveAvatarLifecycleComponent()
 {
@@ -118,16 +117,8 @@ void UEnclaveAvatarLifecycleComponent::EnterDeadState(const FEnclaveDamageReques
 		return;
 	}
 
-	// Retain a bounded pre-death rewind window for legitimate trade kills.
-	// Historical queries at/after this authoritative death time exclude the corpse.
-	if (UEnclaveTargetHistoryComponent* TargetHistory = Owner->FindComponentByClass<UEnclaveTargetHistoryComponent>())
-	{
-		const AGameStateBase* GameState = Owner->GetWorld() ? Owner->GetWorld()->GetGameState() : nullptr;
-		if (IsValid(GameState)) TargetHistory->MarkDeath(GameState->GetServerWorldTimeSeconds());
-		else TargetHistory->InvalidateHistory();
-	}
-
-	// Body identity is avatar-owned and survives ASC unbinding.
+	// Body identity is avatar-owned and survives ASC unbinding. Listeners such
+	// as the SSR target history react to OnLifecycleStateChanged here.
 	SetLifecycleState(EEnclaveAvatarLifecycleState::Dead);
 
 	// End this body's transient GAS state immediately. Run the sweep before
@@ -181,6 +172,8 @@ void UEnclaveAvatarLifecycleComponent::HandleLifecycleStateChanged(EEnclaveAvata
 	{
 		ApplyDeadMovementPolicy();
 	}
+
+	LifecycleStateChanged.Broadcast(OldState, NewState);
 }
 
 void UEnclaveAvatarLifecycleComponent::ApplyDeadMovementPolicy()

@@ -147,14 +147,14 @@ void UEnclaveCombatPolicyComponent::SetWeaponHitDetectionMode(EEnclaveWeaponHitD
 #if UE_BUILD_SHIPPING || UE_BUILD_TEST
 	if (HasOwnerMatchStarted())
 	{
-		UE_LOG(LogEnclaveCombat, Warning, TEXT("Cannot change hit registration mode after match start in production builds."));
+		UE_LOG(LogEnclaveCombat, Warning, TEXT("Cannot change weapon hit detection mode after match start in production builds."));
 		return;
 	}
 #endif
 	if (NewMode != EEnclaveWeaponHitDetectionMode::Capsule &&
 		NewMode != EEnclaveWeaponHitDetectionMode::SkeletalHitboxes)
 	{
-		UE_LOG(LogEnclaveCombat, Warning, TEXT("Rejected unsupported hit registration mode."));
+		UE_LOG(LogEnclaveCombat, Warning, TEXT("Rejected unsupported weapon hit detection mode."));
 		return;
 	}
 	if (WeaponHitDetectionMode == NewMode) { return; }
@@ -163,7 +163,7 @@ void UEnclaveCombatPolicyComponent::SetWeaponHitDetectionMode(EEnclaveWeaponHitD
 	// On the game thread, finish collision-policy transition before the next
 	// authoritative shot trace. Existing pawns must transition as well as new ones.
 	WeaponHitDetectionModeChanged.Broadcast(WeaponHitDetectionMode);
-	UE_LOG(LogEnclaveCombat, Log, TEXT("Active hit registration mode: %s"),
+	UE_LOG(LogEnclaveCombat, Log, TEXT("Active weapon hit detection mode: %s"),
 		GetEnclaveWeaponHitDetectionModeName(WeaponHitDetectionMode));
 
 	// FUTURE: replicate selected policy via GameState for HUD / spectators.

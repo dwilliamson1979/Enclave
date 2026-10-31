@@ -3,8 +3,8 @@
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
 #include "Combat/EnclaveSSRTimingPolicy.h"
 
-#include "Characters/EnclaveCharacter.h"
 #include "Components/CapsuleComponent.h"
+#include "GameFramework/Character.h"
 #include "Combat/Components/EnclaveCombatPolicyComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
@@ -70,12 +70,56 @@ void UEnclaveTargetHistoryComponent::BeginPlay()
 	}
 
 	Frames.Reserve(48);
+
+	if (UEnclaveAvatarLifecycleComponent* Lifecycle = GetOwner()->FindComponentByClass<UEnclaveAvatarLifecycleComponent>())
+	{
+		OwnerLifecycle = Lifecycle;
+		bOwnerDead = Lifecycle->IsDead();
+		Lifecycle->OnLifecycleStateChanged().AddUObject(this, &UEnclaveTargetHistoryComponent::HandleOwnerLifecycleStateChanged);
+	}
 }
 
 void UEnclaveTargetHistoryComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UEnclaveAvatarLifecycleComponent* Lifecycle = OwnerLifecycle.Get())
+	{
+		Lifecycle->OnLifecycleStateChanged().RemoveAll(this);
+	}
+	OwnerLifecycle.Reset();
+
 	InvalidateHistory();
 	Super::EndPlay(EndPlayReason);
+}
+
+void UEnclaveTargetHistoryComponent::HandleOwnerLifecycleStateChanged(EEnclaveAvatarLifecycleState OldState, EEnclaveAvatarLifecycleState NewState)
+{
+	if (!IsValid(GetOwner()) || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	if (NewState == EEnclaveAvatarLifecycleState::Dead)
+	{
+		bOwnerDead = true;
+		// Retain a bounded pre-death rewind window for legitimate trade kills.
+		// Historical queries at/after this authoritative death time exclude the corpse.
+		// A missing GameState passes 0, which MarkDeath treats as invalid and clears
+		// the history; TickComponent then re-marks death on the next valid tick.
+		const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+		MarkDeath(IsValid(GameState) ? GameState->GetServerWorldTimeSeconds() : 0.0);
+	}
+	else if (OldState == EEnclaveAvatarLifecycleState::Dead)
+	{
+		bOwnerDead = false;
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+		if (CVarDebugSSRHistory.GetValueOnGameThread() != 0)
+			ENCLAVE_LOG(LogEnclaveCombat, Log,
+				"SSRHistoryLifecycle SERVER actor=%s event=revived historyReset=1 priorDeathStamp=%.6f",
+				*GetNameSafe(GetOwner()), DeathTimeSeconds);
+#endif
+		// A resurrected avatar is a fresh life and cannot inherit older capsule samples.
+		InvalidateHistory();
+	}
 }
 
 void UEnclaveTargetHistoryComponent::InvalidateHistory()
@@ -189,18 +233,16 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	const AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	const UWorld* World = GetWorld();
 	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
 	const UCapsuleComponent* Capsule = IsValid(Character) ? Character->GetCapsuleComponent() : nullptr;
-	const UEnclaveAvatarLifecycleComponent* Lifecycle = IsValid(Character)
-		? Character->FindComponentByClass<UEnclaveAvatarLifecycleComponent>() : nullptr;
 	if (!IsValid(Character) || !Character->HasAuthority() || !IsValid(GameState) || !IsValid(Capsule))
 	{
 		InvalidateHistory();
 		return;
 	}
-	if (IsValid(Lifecycle) && Lifecycle->IsDead())
+	if (bOwnerDead)
 	{
 		// Keep pre-death history for the remaining rewind window, never sample corpse geometry.
 		if (DeathTimeSeconds <= 0.0) MarkDeath(GameState->GetServerWorldTimeSeconds());
@@ -210,17 +252,7 @@ void UEnclaveTargetHistoryComponent::TickComponent(float DeltaTime, ELevelTick T
 		else InvalidateHistory();
 		return;
 	}
-	if (DeathTimeSeconds > 0.0)
-	{
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-        if (CVarDebugSSRHistory.GetValueOnGameThread() != 0)
-            ENCLAVE_LOG(LogEnclaveCombat, Log,
-                "SSRHistoryLifecycle SERVER actor=%s event=revived historyReset=1 priorDeathStamp=%.6f",
-                *GetNameSafe(GetOwner()), DeathTimeSeconds);
-#endif
-		// A resurrected avatar is a fresh life and cannot inherit older capsule samples.
-		InvalidateHistory();
-	}
+	// Revives are handled by HandleOwnerLifecycleStateChanged, which clears the history.
 
 	FEnclaveTargetCapsuleFrame Next;
 	Next.ServerTimeSeconds = GameState->GetServerWorldTimeSeconds();
@@ -329,7 +361,7 @@ bool UEnclaveTargetHistoryComponent::TryGetCapsuleAtTime(double ServerTimeSecond
 	FEnclaveTargetCapsuleFrame& OutFrame) const
 {
 	OutFrame = FEnclaveTargetCapsuleFrame();
-	const AEnclaveCharacter* Character = Cast<AEnclaveCharacter>(GetOwner());
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	if (!IsValid(Character) || !Character->HasAuthority() || WasDeadAtTime(ServerTimeSeconds) ||
 		!FMath::IsFinite(ServerTimeSeconds) || Frames.IsEmpty() ||
 		ServerTimeSeconds < Frames[0].ServerTimeSeconds)

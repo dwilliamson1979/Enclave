@@ -21,6 +21,7 @@ enum class EEnclaveAvatarLifecycleState : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnclaveAvatarDiedSignature, UEnclaveAvatarLifecycleComponent*, LifecycleComponent, FEnclaveDamageRequest, DamageRequest);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FEnclaveAvatarLifecycleStateChanged, EEnclaveAvatarLifecycleState /*OldState*/, EEnclaveAvatarLifecycleState /*NewState*/);
 
 /**
  * Avatar-scoped bridge from health depletion into semantic lifecycle state.
@@ -62,6 +63,13 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Lifecycle")
 	FEnclaveAvatarDiedSignature OnAvatarDied;
 
+	/**
+	 * Fires on every state change: on the server when the state is set, and on
+	 * clients when it replicates. On death the server broadcasts it before the
+	 * avatar-lifetime effect sweep and before OnAvatarDied.
+	 */
+	FEnclaveAvatarLifecycleStateChanged& OnLifecycleStateChanged() { return LifecycleStateChanged; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -81,6 +89,8 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_LifecycleState)
 	EEnclaveAvatarLifecycleState LifecycleState = EEnclaveAvatarLifecycleState::Alive;
+
+	FEnclaveAvatarLifecycleStateChanged LifecycleStateChanged;
 
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 	TWeakObjectPtr<UEnclaveHealthComponent> HealthComponent;
