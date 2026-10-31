@@ -124,6 +124,8 @@ private:
 	/** Server-owned lifetime for an optional external/intrinsic item; Equipment never spawns it. */
 	void InitializePersistentItem();
 	void InitializeStowedItem();
+	/** Server: spawns StartingSlottedItems / StartingInventoryItems into an empty Inventory and selects the first starting item. */
+	void GrantStartingLoadout();
 
 	/** Initializes all avatar components that opt into the ASC-consumer contract. */
 	void InitializeAbilitySystemConsumers(UAbilitySystemComponent* AbilitySystemComponent);

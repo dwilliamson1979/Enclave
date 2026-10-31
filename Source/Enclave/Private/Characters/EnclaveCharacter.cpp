@@ -142,6 +142,7 @@ void AEnclaveCharacter::DebugLogViewGeometryForShot(int32 PredictionKey, const F
 void AEnclaveCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+
 	if (HasAuthority() && IsValid(TargetHistoryComp))
 	{
 		TargetHistoryComp->InvalidateHistory(); // New controller/avatar ownership boundary.
@@ -149,6 +150,7 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 
 	// Server-side: PlayerState is already valid by this point.
 	InitializeAbilityActorInfo();
+
 	if (!IsValid(EquipmentComp))
 	{
 		return;
@@ -158,6 +160,15 @@ void AEnclaveCharacter::PossessedBy(AController* NewController)
 	EquipmentComp->SetItemSource(InventoryComp);
 	InitializePersistentItem();
 	InitializeStowedItem();
+	GrantStartingLoadout();
+}
+
+void AEnclaveCharacter::GrantStartingLoadout()
+{
+	if (!IsValid(EquipmentComp))
+	{
+		return;
+	}
 
 	// Create regular source-owned items and assign only explicitly named slots.
 	// Unassigned ordinary inventory items never participate in Next/Previous.
