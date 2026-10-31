@@ -130,7 +130,12 @@ FEnclaveSSRClientTimingEvidence CaptureClientSSRTimingEvidence(UWorld* World,
 	{
 		return Evidence;
 	}
-	const FEnclaveSSRReceivedProxyUpdate& Observation = Target->GetLastReceivedSSRObservation();
+	const UEnclaveHitTargetComponent* HitTarget = Target->GetHitTargetComponent();
+	if (!IsValid(HitTarget))
+	{
+		return Evidence;
+	}
+	const FEnclaveSSRReceivedProxyUpdate& Observation = HitTarget->GetLastReceivedSSRObservation();
 	const double Elapsed = World->GetTimeSeconds() - Observation.ClientReceiveWorldSeconds;
 	const uint32 StampMs = EnclaveSSRTimingPolicy::QuantizeServerTimeMs(Observation.ServerStamp);
 #if ENCLAVE_INCLUDE_DEBUG_CODE
@@ -141,7 +146,7 @@ FEnclaveSSRClientTimingEvidence CaptureClientSSRTimingEvidence(UWorld* World,
 		double FaultStamp = 0.0;
 		if (Fault == 1)
 		{
-			for (const double Received : Target->DebugGetReceivedSSRStamps())
+			for (const double Received : HitTarget->DebugGetReceivedSSRStamps())
 			{
 				if (Received <= Observation.ServerStamp - FaultSeconds) { FaultStamp = Received; }
 			}

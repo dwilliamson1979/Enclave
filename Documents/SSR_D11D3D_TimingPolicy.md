@@ -57,7 +57,7 @@ EchoedStamp falls back on every shot whose local ray missed: all clear misses, a
 
 ## Wire format and bandwidth
 
-- **Down (server → clients):** `AEnclaveCharacter::SSRServerCapsuleObservation` is now a packed whole-millisecond stamp, an estimated 3–4 bytes per character update, down from an estimated ~20 bytes with a `double` plus capsule geometry (not yet measured with a network profiler). The geometry is serialized only in builds with `ENCLAVE_INCLUDE_DEBUG_CODE`, and both endpoints must be the same build configuration. In non-debug builds the property is switched off (`DOREPLIFETIME_ACTIVE_OVERRIDE_FAST`) unless SSR is active with a source that reads stamps.
+- **Down (server → clients):** `UEnclaveHitTargetComponent::SSRServerCapsuleObservation` (moved from `AEnclaveCharacter` on 2026-10-31) is now a packed whole-millisecond stamp, an estimated 3–4 bytes per character update, down from an estimated ~20 bytes with a `double` plus capsule geometry (not yet measured with a network profiler). The geometry is serialized only in builds with `ENCLAVE_INCLUDE_DEBUG_CODE`, and both endpoints must be the same build configuration. In non-debug builds the property is switched off (`DOREPLIFETIME_ACTIVE_OVERRIDE_FAST`) unless SSR is active with a source that reads stamps.
 - **Up (shot):** inside the existing GAS `FEnclaveGameplayAbilityTargetData_ShotIntent`, 1 bit when absent, or one actor reference plus a packed stamp when present. No new RPC.
 - **Client capture:** `CaptureClientSSRTimingEvidence()` runs one Weapon-channel line trace per shot. A stamp is only sent when the first blocking hit is a simulated-proxy character whose stamp arrived no more than 80 ms ago.
 

@@ -340,7 +340,8 @@ bool AEnclavePlayerController::DebugBuildSSRGameplayClaim(int32 PredictionKey, c
 	OutClaim.Classification = bWorldOccluded ? 4 : (bClearHit ? 1 : (bWithin10Cm ? 3 : 2));
 	OutClaim.Scenario = static_cast<uint8>(Scenario);
 	OutClaim.Target = Candidate;
-    const FEnclaveSSRReceivedProxyUpdate& Authoritative = Candidate->GetLastReceivedSSRObservation();
+    // HitTargetComp is created in the character's constructor, so it is always present.
+    const FEnclaveSSRReceivedProxyUpdate& Authoritative = Candidate->GetHitTargetComponent()->GetLastReceivedSSRObservation();
     const double ObservationAgeMs = (GetWorld()->GetTimeSeconds() - Authoritative.ClientReceiveWorldSeconds) * 1000.0;
 	if (Authoritative.ReceiveCount > 0)
 	{

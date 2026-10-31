@@ -11,6 +11,7 @@
 #include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Collision/EnclaveCollisionChannels.h"
+#include "Combat/Components/EnclaveHitTargetComponent.h"
 #include "Debug/EnclaveDebug.h"
 #include "GameplayTagContainer.h"
 #include "EnclaveCharacter.generated.h"
@@ -43,39 +44,6 @@ struct FEnclaveStartingSlottedItem
 	FGameplayTag SlotTag;
 };
 
-/** Server-authored stamp of a single authoritative history frame, echoed back by
- * shooters as SSR timing evidence. It does not replace FRepMovement.
- * Wire cost: a packed whole-millisecond stamp (3-4 bytes), identical in every build
- * so that bandwidth measured in Development matches Shipping.
- */
-USTRUCT()
-struct FEnclaveSSRServerCapsuleObservation
-{
-	GENERATED_BODY()
-
-	/** GameState server world time of the recorded frame, rounded to whole ms. */
-	UPROPERTY() uint32 ServerTimeMs = 0;
-
-	bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
-};
-
-template<>
-struct TStructOpsTypeTraits<FEnclaveSSRServerCapsuleObservation> : TStructOpsTypeTraitsBase2<FEnclaveSSRServerCapsuleObservation>
-{
-	enum { WithNetSerializer = true };
-};
-
-/** Last received authoritative observation; local arrival time is not a network clock. */
-struct FEnclaveSSRReceivedProxyUpdate
-{
-	double ServerStamp = 0.0;
-	FVector ReplicatedLocation = FVector::ZeroVector;
-	FVector ReplicatedVelocity = FVector::ZeroVector;
-	FVector CapsuleAtReceive = FVector::ZeroVector;
-	double ClientReceiveWorldSeconds = -1.0;
-	uint32 ReceiveCount = 0;
-};
-
 UCLASS()
 class ENCLAVE_API AEnclaveCharacter : public ACharacter, public IEnclaveInputReceiverInterface, public IEnclaveInputConfigProviderInterface, public IEnclaveAvatarInputPolicyInterface, public IAbilitySystemInterface, public IEnclaveAnimDataProviderInterface
 {
@@ -86,18 +54,12 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnRep_ReplicatedMovement() override;
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
-	/** Called when the history component publishes an authoritative sample. */
-	void HandleSSRHistoryFrameRecorded(const struct FEnclaveTargetCapsuleFrame& Frame);
-	const FEnclaveSSRReceivedProxyUpdate& GetLastReceivedSSRObservation() const { return LastReceivedSSRObservation; }
+
+	/** Hit-registration target: collision policy and SSR timing stamps. Created in the constructor. */
+	UEnclaveHitTargetComponent* GetHitTargetComponent() const { return HitTargetComp; }
 
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	const FEnclaveSSRReceivedProxyUpdate& DebugGetLastReceivedProxyUpdate() const { return DebugLastReceivedProxyUpdate; }
-	/** Simulated proxies: server stamps received in the last second, oldest first (abuse tests). */
-	const TArray<double>& DebugGetReceivedSSRStamps() const { return DebugReceivedSSRStamps; }
-
-
 
 	// Server-only, transient D1.1B test protection. This is never replicated and
 	// is enabled only while the local-authority debug strafe rig is active.
@@ -152,25 +114,9 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	// A single replicated struct carries one coherent authoritative history sample.
-	UPROPERTY(ReplicatedUsing=OnRep_SSRServerCapsuleObservation, Transient)
-	FEnclaveSSRServerCapsuleObservation SSRServerCapsuleObservation;
-
-	UFUNCTION()
-	void OnRep_SSRServerCapsuleObservation();
-
-	FEnclaveSSRReceivedProxyUpdate LastReceivedSSRObservation;
-
-	// Authority only: the capsule last published as a stamp. A character that has not
-	// moved keeps its old stamp, so idle characters do not replicate every tick.
-	FVector LastStampedCenter = FVector::ZeroVector;
-	float LastStampedRadiusCm = 0.0f;
-	float LastStampedHalfHeightCm = 0.0f;
-
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 	// Updated by OnRep_ReplicatedMovement on simulated proxies only.
 	FEnclaveSSRReceivedProxyUpdate DebugLastReceivedProxyUpdate;
-	TArray<double> DebugReceivedSSRStamps;
 	bool bDebugSSRStrafeDamageSuppressed = false;
 #endif
 	/** Shared by PossessedBy (server) and OnRep_PlayerState (client) - both must call this independently. */
@@ -187,15 +133,6 @@ private:
 
 	/** Applies persistent-ASC effect lifetime policy exactly once before this Pawn binds as avatar. */
 	void InitializeAvatarEffectScopeIfNeeded(UAbilitySystemComponent* AbilitySystemComponent);
-
-	/** Responds to authoritative match hit-detection policy changes. */
-	void HandleOnWeaponHitDetectionModeChanged(EEnclaveWeaponHitDetectionMode NewMode);
-	/** Applies the selected policy to this character's collision components. Authority only. */
-	void ApplyWeaponHitDetectionCollisionPolicy(EEnclaveWeaponHitDetectionMode Mode);
-
-	// Preserve the configured animation tick behavior when temporarily forcing skeletal hitboxes.
-	EVisibilityBasedAnimTickOption SavedThirdPersonAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
-	bool bSavedThirdPersonAnimTickOption = false;
 
 	// BlueprintReadOnly so BP_EnclaveCharacter's graph can reach it (e.g. to
 	// test Link Anim Class Layers before the equip-driven C++ path exists).
@@ -260,6 +197,10 @@ private:
 	/** Nonreplicated, server-only Stage C2 collision capsule history. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveTargetHistoryComponent> TargetHistoryComp = nullptr;
+
+	/** Applies the match's hit detection mode to this character and publishes SSR timing stamps. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveHitTargetComponent> HitTargetComp = nullptr;
 
 	/** Non-owning cache of the PlayerState-owned ASC currently initialized for this avatar. */
 	TWeakObjectPtr<UAbilitySystemComponent> CachedAbilitySystemComponent;

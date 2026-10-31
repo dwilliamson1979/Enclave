@@ -30,12 +30,9 @@
 #include "Equipment/Items/EnclaveItem.h"
 #include "GameplayTags/EnclaveEquipmentSlotTags.h"
 #include "Collision/EnclaveCollisionChannels.h"
-#include "Combat/Components/EnclaveCombatPolicyComponent.h"
-#include "Combat/EnclaveSSRTimingPolicy.h"
 
 #include "Engine/Engine.h"
 #include "Engine/World.h"
-#include "Net/UnrealNetwork.h"
 #include "Debug/EnclaveDebug.h"
 #include "HAL/IConsoleManager.h"
 
@@ -86,6 +83,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	GetMesh()->SetReceivesDecals(false);
 
 	InputRouterComp = CreateDefaultSubobject<UEnclaveInputRouterComponent>(TEXT("InputRouterComp"));
+
 	ViewComp = CreateDefaultSubobject<UEnclaveViewComponent>(TEXT("ViewComp"));
 	ViewComp->SetViewCamera(CameraComp);
 	ViewComp->SetFirstPersonMesh(FirstPersonMesh);
@@ -102,6 +100,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	HealthComp = CreateDefaultSubobject<UEnclaveGASHealthComponent>(TEXT("HealthComp"));
 	LifecycleComp = CreateDefaultSubobject<UEnclaveAvatarLifecycleComponent>(TEXT("LifecycleComp"));
 	TargetHistoryComp = CreateDefaultSubobject<UEnclaveTargetHistoryComponent>(TEXT("TargetHistoryComp"));
+	HitTargetComp = CreateDefaultSubobject<UEnclaveHitTargetComponent>(TEXT("HitTargetComp"));
 }
 
 FVector AEnclaveCharacter::GetPawnViewLocation() const
@@ -451,24 +450,6 @@ void AEnclaveCharacter::BeginPlay()
 		EquipmentComp->SetItemSource(InventoryComp);
 	}
 
-	if (HasAuthority() && IsValid(TargetHistoryComp))
-	{
-		TargetHistoryComp->OnCapsuleFrameRecorded().AddUObject(this, &AEnclaveCharacter::HandleSSRHistoryFrameRecorded);
-	}
-
-	if (HasAuthority())
-	{
-		UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(GetWorld());
-		EEnclaveWeaponHitDetectionMode HitDetectionMode = IsValid(CombatPolicy) ? CombatPolicy->GetWeaponHitDetectionMode() : EEnclaveWeaponHitDetectionMode::Capsule;
-
-		if (!IsValid(CombatPolicy))
-			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s found no combat policy on the game mode; defaulting Weapon collision policy to Capsule.", *GetName());
-		else
-			CombatPolicy->OnWeaponHitDetectionModeChanged().AddUObject(this, &AEnclaveCharacter::HandleOnWeaponHitDetectionModeChanged);
-
-		ApplyWeaponHitDetectionCollisionPolicy(HitDetectionMode);
-	}
-
 	if (InputRouterComp)
 	{
 		InputRouterComp->RegisterInputHandler(Cast<UEnclaveCharacterMovementComponent>(GetCharacterMovement()));
@@ -479,11 +460,6 @@ void AEnclaveCharacter::BeginPlay()
 
 void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (IsValid(TargetHistoryComp))
-	{
-		TargetHistoryComp->OnCapsuleFrameRecorded().RemoveAll(this);
-	}
-
 	if (HasAuthority())
 	{
 		// Revoke GAS item grants before destroying the externally owned item.
@@ -507,150 +483,7 @@ void AEnclaveCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// observed locally. Consumer uninitialization is intentionally idempotent.
 	UninitializeAbilitySystemConsumers();
 
-	if (HasAuthority())
-	{
-		if (UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(GetWorld()))
-		{
-			CombatPolicy->OnWeaponHitDetectionModeChanged().RemoveAll(this);
-		}
-	}
-
 	Super::EndPlay(EndPlayReason);
-}
-
-void AEnclaveCharacter::HandleOnWeaponHitDetectionModeChanged(EEnclaveWeaponHitDetectionMode NewMode)
-{
-	ApplyWeaponHitDetectionCollisionPolicy(NewMode);
-}
-
-void AEnclaveCharacter::ApplyWeaponHitDetectionCollisionPolicy(EEnclaveWeaponHitDetectionMode Mode)
-{
-	if (!HasAuthority()) { return; }
-	if (IsValid(TargetHistoryComp))
-	{
-		TargetHistoryComp->InvalidateHistory(); // Never span a collision-policy transition.
-	}
-
-	UCapsuleComponent* Capsule = GetCapsuleComponent();
-	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();
-
-	if (!IsValid(Capsule) || !IsValid(ThirdPersonMesh)) { return; }
-
-	switch (Mode)
-	{
-	case EEnclaveWeaponHitDetectionMode::SkeletalHitboxes:
-		// Movement still uses the capsule. Only Weapon queries ignore it and
-		// continue to the third-person mesh's Physics Asset bodies.
-		Capsule->SetCollisionResponseToChannel(ECC_Weapon, ECR_Ignore);
-		ThirdPersonMesh->SetCollisionResponseToChannel(ECC_Weapon, ECR_Block);
-
-		// A dedicated server has no rendering to force bone refreshes. Weapon
-		// traces depend on current Physics Asset body transforms, so skeletal
-		// hitbox mode explicitly keeps the authoritative body pose current.
-		if (!bSavedThirdPersonAnimTickOption)
-		{
-			SavedThirdPersonAnimTickOption = ThirdPersonMesh->VisibilityBasedAnimTickOption;
-			bSavedThirdPersonAnimTickOption = true;
-		}
-		ThirdPersonMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-
-		if (!ThirdPersonMesh->GetPhysicsAsset())
-		{
-			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s is using SkeletalHitboxes but its third-person mesh has no Physics Asset; Weapon traces cannot hit skeletal bodies.", *GetName());
-		}
-
-		if (ThirdPersonMesh->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
-		{
-			ENCLAVE_LOG(LogEnclaveCharacter, Warning, "%s is using SkeletalHitboxes but its third-person mesh collision is disabled; configure the CharacterMesh collision profile for query collision.", *GetName());
-		}
-		break;
-
-	case EEnclaveWeaponHitDetectionMode::Capsule:
-	default:
-		Capsule->SetCollisionResponseToChannel(ECC_Weapon, ECR_Block);
-		ThirdPersonMesh->SetCollisionResponseToChannel(ECC_Weapon, ECR_Ignore);
-		if (bSavedThirdPersonAnimTickOption)
-		{
-			ThirdPersonMesh->VisibilityBasedAnimTickOption = SavedThirdPersonAnimTickOption;
-			bSavedThirdPersonAnimTickOption = false;
-		}
-		break;
-	}
-}
-
-// Called every frame
-void AEnclaveCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME_CONDITION(AEnclaveCharacter, SSRServerCapsuleObservation, COND_SimulatedOnly);
-}
-
-bool FEnclaveSSRServerCapsuleObservation::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
-{
-	Ar.SerializeIntPacked(ServerTimeMs);
-	bOutSuccess = !Ar.IsError();
-	return true;
-}
-
-void AEnclaveCharacter::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker)
-{
-	Super::PreReplication(ChangedPropertyTracker);
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	// Shadow diagnostics read stamps in every mode; the cvar exists for bandwidth A/B runs.
-	static const IConsoleVariable* ReplicateStamps =
-		IConsoleManager::Get().FindConsoleVariable(TEXT("Enclave.Debug.SSRReplicateStamps"));
-	const bool bReplicateSSRStamps = !ReplicateStamps || ReplicateStamps->GetBool();
-#else
-	const UEnclaveCombatPolicyComponent* CombatPolicy = UEnclaveCombatPolicyComponent::Get(GetWorld());
-	const bool bReplicateSSRStamps = CombatPolicy && CombatPolicy->RequiresClientSSRStamps();
-#endif
-	DOREPLIFETIME_ACTIVE_OVERRIDE_FAST(AEnclaveCharacter, SSRServerCapsuleObservation, bReplicateSSRStamps);
-}
-
-void AEnclaveCharacter::HandleSSRHistoryFrameRecorded(const FEnclaveTargetCapsuleFrame& Frame)
-{
-	if (!HasAuthority() || !FMath::IsFinite(Frame.ServerTimeSeconds))
-	{
-		return;
-	}
-	// Only publish a new stamp when the capsule changed: an unchanged pose needs no
-	// new timing evidence, and an unchanged property lets idle characters go quiet.
-	constexpr double MinMoveCm = 0.5;
-	const bool bChanged = SSRServerCapsuleObservation.ServerTimeMs == 0 || Frame.bBreakBefore ||
-		FVector::DistSquared(Frame.Center, LastStampedCenter) > MinMoveCm * MinMoveCm ||
-		!FMath::IsNearlyEqual(Frame.RadiusCm, LastStampedRadiusCm, 0.5f) ||
-		!FMath::IsNearlyEqual(Frame.HalfHeightCm, LastStampedHalfHeightCm, 0.5f);
-	if (!bChanged)
-	{
-		return;
-	}
-	SSRServerCapsuleObservation.ServerTimeMs = EnclaveSSRTimingPolicy::QuantizeServerTimeMs(Frame.ServerTimeSeconds);
-	LastStampedCenter = Frame.Center;
-	LastStampedRadiusCm = Frame.RadiusCm;
-	LastStampedHalfHeightCm = Frame.HalfHeightCm;
-}
-
-void AEnclaveCharacter::OnRep_SSRServerCapsuleObservation()
-{
-	if (GetLocalRole() != ROLE_SimulatedProxy || !GetWorld())
-	{
-		return;
-	}
-	FEnclaveSSRReceivedProxyUpdate& Update = LastReceivedSSRObservation;
-	Update.ServerStamp = EnclaveSSRTimingPolicy::DequantizeServerTimeMs(SSRServerCapsuleObservation.ServerTimeMs);
-	// The stamp carries no geometry; diagnostics compare against the proxy at receipt.
-	Update.ReplicatedLocation = GetActorLocation();
-	Update.ReplicatedVelocity = FVector::ZeroVector;
-	Update.CapsuleAtReceive = GetActorLocation();
-	Update.ClientReceiveWorldSeconds = GetWorld()->GetTimeSeconds();
-	++Update.ReceiveCount;
-#if ENCLAVE_INCLUDE_DEBUG_CODE
-	DebugReceivedSSRStamps.Add(Update.ServerStamp);
-	while (DebugReceivedSSRStamps.Num() > 0 && DebugReceivedSSRStamps[0] < Update.ServerStamp - 1.0)
-	{
-		DebugReceivedSSRStamps.RemoveAt(0);
-	}
-#endif
 }
 
 void AEnclaveCharacter::OnRep_ReplicatedMovement()
