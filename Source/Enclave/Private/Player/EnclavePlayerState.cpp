@@ -7,6 +7,8 @@
 
 #include "Net/UnrealNetwork.h"
 
+#include "Debug/EnclaveDebug.h"
+
 AEnclavePlayerState::AEnclavePlayerState()
 {
 	AbilitySystemComponent = CreateDefaultSubobject<UEnclaveAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -35,7 +37,7 @@ void AEnclavePlayerState::SetTeamId(uint8 NewTeamId)
 {
 	if(!HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("SetTeamId called on non-authority PlayerState. This should only be called on the server."));
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("SetTeamId called on non-authority PlayerState. This should only be called on the server."));
 		return;
 	}
 
@@ -52,7 +54,7 @@ void AEnclavePlayerState::AddKill()
 {
 	if(!HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AddKill called on non-authority PlayerState. This should only be called on the server."));
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("AddKill called on non-authority PlayerState. This should only be called on the server."));
 		return;
 	}
 
@@ -63,7 +65,7 @@ void AEnclavePlayerState::AddDeath()
 {
 	if(!HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AddDeath called on non-authority PlayerState. This should only be called on the server."));
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("AddDeath called on non-authority PlayerState. This should only be called on the server."));
 		return;
 	}
 

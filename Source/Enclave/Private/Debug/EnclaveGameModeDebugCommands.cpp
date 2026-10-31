@@ -49,11 +49,6 @@ namespace
 		GameMode->SetSSRTimingSource(Source);
 	}
 
-	FAutoConsoleCommandWithWorldAndArgs SetSSRTimingSourceCommand(
-		TEXT("Enclave.Debug.SetSSRTimingSource"),
-		TEXT("Server only. ServerAnchor|EchoedStamp|Hybrid"),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetSSRTimingSource));
-
 	void SetHitRegistrationMode(const TArray<FString>& Args, UWorld* World)
 	{
 		AEnclaveGameMode* GameMode = World ? World->GetAuthGameMode<AEnclaveGameMode>() : nullptr;
@@ -72,6 +67,11 @@ namespace
 
 		GameMode->SetWeaponHitDetectionMode(HitDetectionMode);
 	}
+
+	FAutoConsoleCommandWithWorldAndArgs SetSSRTimingSourceCommand(
+		TEXT("Enclave.Debug.SetSSRTimingSource"),
+		TEXT("Server only. ServerAnchor|EchoedStamp|Hybrid"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetSSRTimingSource));
 
 	FAutoConsoleCommandWithWorldAndArgs SetHitRegistrationModeCommand(
 		TEXT("Enclave.Debug.SetHitRegistrationMode"),

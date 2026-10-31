@@ -44,6 +44,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveEquipment, Log, All);
 DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveInventory, Log, All);
 DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveCombat, Log, All);
 DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveReplication, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(LogEnclaveMatch, Log, All);
 
 // ENCLAVE_LOG(LogEnclaveWeapon, Log, "Ammo=%d Owner=%s", Ammo, *GetNameSafe(GetOwner()));
 // Format must be a string literal (it is wrapped in TEXT()).

@@ -60,7 +60,8 @@ Decisions:
 - **The framework never knows about mode-specific objects.** Flags and control
   points (later) are actors that report to the GameMode through an interface.
 - **Settings are data with URL overrides**, the same as `?LagCompensation=`:
-  `?ScoreLimit=`, `?TimeLimit=`, `?RespawnDelay=`, `?WarmupSeconds=`. Testing a
+  `?ScoreLimit=`, `?TimeLimit=`, `?RespawnDelay=`, `?Warmup=`, `?MinPlayers=`,
+  `?PostMatch=` (all times in seconds; see `FEnclaveMatchSettings`). Testing a
   3-kill match takes a flag, not a rebuild.
 
 ### What happens on a kill (all on the server)

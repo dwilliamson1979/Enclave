@@ -39,8 +39,7 @@ public:
 	/** True when validated remote shots are registered against history (Capsule mode only). */
 	bool IsServerSideRewindActive() const
 	{
-		return LagCompensationMode == EEnclaveLagCompensationMode::ServerSideRewind &&
-			WeaponHitDetectionMode == EEnclaveWeaponHitDetectionMode::Capsule;
+		return LagCompensationMode == EEnclaveLagCompensationMode::ServerSideRewind && WeaponHitDetectionMode == EEnclaveWeaponHitDetectionMode::Capsule;
 	}
 
 	/** Server-only timing policy inputs for ResolveSSRTiming(). */

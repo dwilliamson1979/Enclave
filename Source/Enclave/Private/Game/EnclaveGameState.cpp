@@ -1,14 +1,16 @@
 // Copyright Lightcarrier Studios
 
-
 #include "Game/EnclaveGameState.h"
+
 #include "Net/UnrealNetwork.h"
+
+#include "Debug/EnclaveDebug.h"
 
 void AEnclaveGameState::InitTeamScores(int32 NumTeams)
 {
 	if(!HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("InitTeamScores called on non-authority GameState. This should only be called on the server."));
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("InitTeamScores called on non-authority GameState. This should only be called on the server."));
 		return;
 	}
 
@@ -35,13 +37,13 @@ void AEnclaveGameState::AddTeamScore(uint8 TeamId, int32 Delta)
 {
 	if(!HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AddTeamScore called on non-authority GameState. This should only be called on the server."));
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("AddTeamScore called on non-authority GameState. This should only be called on the server."));
 		return;
 	}
 
 	if(!TeamScores.IsValidIndex(TeamId))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AddTeamScore called with invalid TeamId: %d"), TeamId);
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("AddTeamScore called with invalid TeamId: %d"), TeamId);
 		return;
 	}
 
@@ -52,7 +54,7 @@ void AEnclaveGameState::SetMatchEndServerTime(double ServerTime)
 {
 	if(!HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("SetMatchEndServerTime called on non-authority GameState. This should only be called on the server."));
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("SetMatchEndServerTime called on non-authority GameState. This should only be called on the server."));
 		return;
 	}
 
@@ -63,7 +65,7 @@ void AEnclaveGameState::SetWinner(uint8 TeamId, APlayerState* Player)
 {
 	if(!HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("SetWinner called on non-authority GameState. This should only be called on the server."));
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("SetWinner called on non-authority GameState. This should only be called on the server."));
 		return;
 	}
 

@@ -15,6 +15,7 @@ DEFINE_LOG_CATEGORY(LogEnclaveEquipment);
 DEFINE_LOG_CATEGORY(LogEnclaveInventory);
 DEFINE_LOG_CATEGORY(LogEnclaveCombat);
 DEFINE_LOG_CATEGORY(LogEnclaveReplication);
+DEFINE_LOG_CATEGORY(LogEnclaveMatch);
 
 namespace EnclaveDebug
 {
