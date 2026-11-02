@@ -7,12 +7,16 @@
 #include "Game/EnclaveMatchSettings.h"
 #include "EnclaveMatchGameMode.generated.h"
 
-class AEnclaveGameState;
+class AEnclaveMatchGameState;
 
 /**
  * Match framework shared by every mode: phases (warmup, in progress, post-match),
  * the time limit, death handling, respawn and restart. It has no rules of its
- * own; each mode (TDM, DM, ...) is a subclass that overrides the rule hooks.
+ * own; each mode is a subclass that overrides the rule hooks.
+ *
+ * It holds only what every match has, so it knows nothing about teams or about
+ * who won. Modes derive from AEnclaveSoloMatchGameMode (free-for-all) or
+ * AEnclaveTeamMatchGameMode, which own their results. Uses AEnclaveMatchGameState.
  *
  * Phases come from AGameMode's match state machine: this class answers
  * ReadyToStartMatch / ReadyToEndMatch and reacts to the Handle* events.
@@ -23,6 +27,8 @@ class ENCLAVE_API AEnclaveMatchGameMode : public AEnclaveGameMode
 	GENERATED_BODY()
 
 public:
+	AEnclaveMatchGameMode();
+
 	const FEnclaveMatchSettings& GetMatchSettings() const { return MatchSettings; }
 
 protected:
@@ -36,13 +42,20 @@ protected:
 	 */
 	virtual bool ReadyToStartMatch_Implementation() override;
 
+	/**
+	 * Warmup is over: sets the time limit and then calls Super, which spawns
+	 * every player. Subclasses that add their own match state (results, team
+	 * scores) set it up before calling Super.
+	 */
+	virtual void HandleMatchHasStarted() override;
+
 	/** Defaults for this mode. Subclasses set their own in their constructor. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match")
 	FEnclaveMatchSettings MatchSettings;
 
 private:
 	/** Cancels a running warmup countdown, if any. */
-	void CancelWarmup(AEnclaveGameState& EnclaveGameState);
+	void CancelWarmup(AEnclaveMatchGameState& MatchGameState);
 
 	/** Server time the warmup ends. Unset while there aren't enough players. */
 	TOptional<double> WarmupEndServerTime;

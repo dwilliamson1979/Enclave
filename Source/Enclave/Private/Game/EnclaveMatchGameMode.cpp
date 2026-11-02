@@ -3,7 +3,12 @@
 #include "Game/EnclaveMatchGameMode.h"
 
 #include "Debug/EnclaveDebug.h"
-#include "Game/EnclaveGameState.h"
+#include "Game/EnclaveMatchGameState.h"
+
+AEnclaveMatchGameMode::AEnclaveMatchGameMode()
+{
+	GameStateClass = AEnclaveMatchGameState::StaticClass();
+}
 
 void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
@@ -15,8 +20,8 @@ void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Opti
 
 bool AEnclaveMatchGameMode::ReadyToStartMatch_Implementation()
 {
-	AEnclaveGameState* EnclaveGameState = GetGameState<AEnclaveGameState>();
-	if (!ensureMsgf(EnclaveGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveGameState; the match can't start.")))
+	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
+	if (!ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the match can't start.")))
 	{
 		return false;
 	}
@@ -29,17 +34,17 @@ bool AEnclaveMatchGameMode::ReadyToStartMatch_Implementation()
 		&& GetNumPlayers() >= MatchSettings.MinPlayersToStart;
 	if (!bEnoughPlayers)
 	{
-		CancelWarmup(*EnclaveGameState);
+		CancelWarmup(*MatchGameState);
 		return false;
 	}
 
 	// The server clock that clients also see, so the HUD countdown matches.
-	const double Now = EnclaveGameState->GetServerWorldTimeSeconds();
+	const double Now = MatchGameState->GetServerWorldTimeSeconds();
 
 	if (!WarmupEndServerTime.IsSet())
 	{
 		WarmupEndServerTime = Now + MatchSettings.WarmupSeconds;
-		EnclaveGameState->SetPhaseEndServerTime(*WarmupEndServerTime);
+		MatchGameState->SetPhaseEndServerTime(*WarmupEndServerTime);
 		UE_LOG(LogEnclaveMatch, Log, TEXT("Warmup started: %d players, match starts in %d s."),
 			GetNumPlayers(), MatchSettings.WarmupSeconds);
 	}
@@ -47,7 +52,28 @@ bool AEnclaveMatchGameMode::ReadyToStartMatch_Implementation()
 	return Now >= *WarmupEndServerTime;
 }
 
-void AEnclaveMatchGameMode::CancelWarmup(AEnclaveGameState& EnclaveGameState)
+void AEnclaveMatchGameMode::HandleMatchHasStarted()
+{
+	// The warmup is over; don't leave its end time behind as stale state.
+	WarmupEndServerTime.Reset();
+
+	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
+	if (ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the time limit was not set.")))
+	{
+		// The phase end now means the time limit (0 = none, so the HUD shows no timer).
+		const double Now = MatchGameState->GetServerWorldTimeSeconds();
+		const double MatchEnd = MatchSettings.TimeLimitSeconds > 0 ? Now + MatchSettings.TimeLimitSeconds : 0.0;
+		MatchGameState->SetPhaseEndServerTime(MatchEnd);
+	}
+
+	UE_LOG(LogEnclaveMatch, Log, TEXT("Match started: %d players, time limit %d s, score limit %d."),
+		GetNumPlayers(), MatchSettings.TimeLimitSeconds, MatchSettings.ScoreLimit);
+
+	// Last: Super spawns every player, and they must spawn into a fresh match.
+	Super::HandleMatchHasStarted();
+}
+
+void AEnclaveMatchGameMode::CancelWarmup(AEnclaveMatchGameState& MatchGameState)
 {
 	// Called every frame while waiting, so only act (and log) on a change.
 	if (!WarmupEndServerTime.IsSet())
@@ -56,7 +82,7 @@ void AEnclaveMatchGameMode::CancelWarmup(AEnclaveGameState& EnclaveGameState)
 	}
 
 	WarmupEndServerTime.Reset();
-	EnclaveGameState.SetPhaseEndServerTime(0.0);
+	MatchGameState.SetPhaseEndServerTime(0.0);
 	UE_LOG(LogEnclaveMatch, Log, TEXT("Warmup cancelled: %d of %d players."),
 		GetNumPlayers(), MatchSettings.MinPlayersToStart);
 }

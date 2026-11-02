@@ -18,7 +18,7 @@ struct ENCLAVE_API FEnclaveMatchSettings
 {
 	GENERATED_BODY()
 
-	/** Kills (DM) or team kills (TDM) needed to win. 0 = no score limit. ?ScoreLimit= */
+	/** Score needed to win; the mode decides what scores. 0 = no score limit. ?ScoreLimit= */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0"))
 	int32 ScoreLimit = 50;
 

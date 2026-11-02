@@ -35,13 +35,18 @@ respawn, spawn selection, and every HUD element except the reticle.
 
 ```
 AGameMode (engine: match-state machine)
-  AEnclaveGameMode                owns UEnclaveCombatPolicyComponent (SSR, hit registration)
-    AEnclaveMatchGameMode         match framework: phases, timer, deaths, respawn, spawns
-      AEnclaveGameMode_Deathmatch     rules only: no teams, first to N kills
-      AEnclaveGameMode_TeamDeathmatch rules only: 2 teams, team score to N
+  AEnclaveGameMode                    every map: player classes, UEnclaveCombatPolicyComponent (SSR, hit registration)
+    AEnclaveMatchGameMode             a contest: phases, timer, deaths, respawn, spawns; no teams, no result
+      AEnclaveSoloMatchGameMode       free-for-all: everyone NoTeam; individual result and win check
+        AEnclaveDeathmatchGameMode    rules only: +1 per kill, first to N
+      AEnclaveTeamMatchGameMode       teams: count, team scores, assignment and balancing, friendly fire; team win check
+        AEnclaveTeamDeathmatchGameMode rules only: +1 team score per kill, first to N
 
-AGameState (engine)
-  AEnclaveGameState               replicated: team scores, match end time, winner
+AGameState (engine)                   one level per GameMode level; each GameMode sets GameStateClass to its own
+  AEnclaveGameState                   every map: nothing beyond AGameState yet
+    AEnclaveMatchGameState            phase end time, kill event
+      AEnclaveSoloGameState           WinningPlayer
+      AEnclaveTeamGameState           TeamScores, WinningTeam
 
 APlayerState (engine)
   AEnclavePlayerState             (exists) + team ID, kills, deaths
@@ -55,6 +60,20 @@ Decisions:
   gives us Unreal's built-in match states (WaitingToStart, InProgress,
   WaitingPostMatch) and requires a GameState derived from `AGameState`. Lyra's
   Experience system is more flexible but much heavier than Enclave needs now.
+- **The match base knows nothing about teams; team modes share
+  `AEnclaveTeamMatchGameMode`.** A player's `TeamId` is general (`NoTeam` means
+  "on no side, an enemy to everyone", the same convention as the engine's
+  `FGenericTeamId`), but team count, scores, assignment, balancing and friendly
+  fire are team rules. Each team override sets up team state before calling
+  `Super`, because the base spawns players.
+- **A field or rule belongs at the level where every mode below it has that
+  concept.** The result is a player in free-for-all and a team in team modes,
+  so neither belongs in the match base: `AEnclaveSoloMatchGameMode` and
+  `AEnclaveTeamMatchGameMode` each own theirs, and the GameState tree mirrors
+  the GameMode tree level for level. Mode-specific levels below them
+  (`AEnclaveDeathmatchGameState` and so on) are added only when a mode has
+  replicated state of its own; DM and TDM use the solo and team GameStates
+  directly.
 - **Test maps keep the base mode.** `SSR_TestRange` stays on
   `BP_EnclaveGameMode` (a child of `AEnclaveGameMode`), which has no match rules, so the SSR harness is
   unaffected by respawns, teams or match end.
@@ -94,19 +113,30 @@ int32 GetDeaths() const; void AddDeath();  // authority only
 FOnEnclaveTeamChanged OnTeamChanged;       // fires on server and clients (OnRep)
 // Score: use APlayerState::SetScore/GetScore, which already exists and is replicated.
 
-// AEnclaveGameState  (U2)
-int32 GetTeamScore(uint8 TeamId) const;
-void  AddTeamScore(uint8 TeamId, int32 Delta);           // authority only
+// AEnclaveMatchGameState  (U2, split by C1)
 double GetPhaseEndServerTime() const;  // warmup or time-limit end; compare with GetServerWorldTimeSeconds(); 0 = no end
 void  SetPhaseEndServerTime(double ServerTime);          // authority only
-uint8 GetWinningTeam() const;  APlayerState* GetWinningPlayer() const;
-void  SetWinner(uint8 TeamId, APlayerState* Player);     // authority only
 void  MulticastKill(APlayerState* Killer, APlayerState* Victim);  // unreliable multicast, feed only
 
+// AEnclaveSoloGameState  (null winner in WaitingPostMatch = draw)
+APlayerState* GetWinningPlayer() const;
+void  SetWinningPlayer(APlayerState* Player);            // authority only
+
+// AEnclaveTeamGameState  (NoTeam winner in WaitingPostMatch = draw)
+void  InitTeams(int32 NumTeams);                         // authority only; zeroed scores, no winner
+int32 GetNumTeams() const;
+int32 GetTeamScore(uint8 TeamId) const;
+void  AddTeamScore(uint8 TeamId, int32 Delta);           // authority only
+uint8 GetWinningTeam() const;
+void  SetWinningTeam(uint8 TeamId);                      // authority only
+
+// AEnclaveTeamMatchGameMode  (C1 creates it; team assignment lands here)
+int32 GetNumTeams() const;                               // EditDefaultsOnly NumTeams, default 2; teams are 0..N-1
+virtual uint8 ChooseTeamForPlayer(AController* Player);  // default: the smaller team
+
 // AEnclaveMatchGameMode virtual hooks, overridden by modes (C1 defines them, U3/U4 implement)
-virtual uint8 ChooseTeamForPlayer(AController* Player);  // DM: NoTeam
 virtual void  ScoreKill(AEnclavePlayerState* Killer, AEnclavePlayerState* Victim);
-virtual bool  CheckWinCondition();                       // calls SetWinner when true
+virtual bool  CheckWinCondition();                       // sets the solo or team winner when true
 virtual bool  CanDamage(AController* Instigator, AController* Victim) const;  // friendly fire
 ```
 
@@ -121,10 +151,10 @@ most: replication, authority and the GameMode/GameState split.
 | ID | Item | Owner | Notes |
 |---|---|---|---|
 | U1 | PlayerState team, kills and deaths | **You** | `Replicated` / `ReplicatedUsing`, `GetLifetimeReplicatedProps`, authority checks, OnRep event. Small and self-contained, so a good first piece. |
-| U2 | `AEnclaveGameState` | **You** | Replicated team scores, end time and winner; the kill multicast. Set `GameStateClass` in the GameMode. |
+| U2 | `AEnclaveGameState` | **You** | Replicated team scores, end time and winner; the kill multicast. Set `GameStateClass` in the GameMode. (Later split by C1 into match, solo and team GameStates.) |
 | C1 | Reparent to `AGameMode` and add the `AEnclaveMatchGameMode` skeleton | Claude | Phases, warmup and timer, death binding, respawn timer, URL options, virtual hooks with defaults |
-| U3 | TDM rules | **You** | Team assignment (balance to the smaller team), `ScoreKill`, `CheckWinCondition`, `CanDamage` |
-| U4 | DM rules | **You** | Short once TDM exists. It shows the base class really is mode-agnostic. |
+| U3 | Team base rules, then TDM rules | **You** | In `AEnclaveTeamMatchGameMode`: team balancing (the smaller team), `CanDamage` (friendly fire) and the team win check. In TDM: `ScoreKill` |
+| U4 | Solo base rules, then DM rules | **You** | In `AEnclaveSoloMatchGameMode`: the individual win check. In DM: `ScoreKill`. Short once TDM exists. |
 | C2 | Spawn selection | Claude | `AEnclavePlayerStart` with an optional team; reject occupied starts; prefer starts far from living enemies. Written as a pure scoring function with unit tests. |
 | C3 | Friendly-fire gate | Claude | `ApplyDamage` asks the match GameMode's `CanDamage`. Self-damage is still allowed. |
 | C4 | HUD C++ base and data plumbing | Claude | Widget base classes that read GameState and PlayerState: score and timer bar, elimination feed, Tab scoreboard, death/respawn countdown, end-of-match screen, health and ammo |

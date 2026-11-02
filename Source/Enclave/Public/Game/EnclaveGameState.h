@@ -4,72 +4,25 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameState.h"
-#include "Player/EnclavePlayerState.h"
 #include "EnclaveGameState.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveKillSignature, APlayerState*, Killer, APlayerState*, Victim);
-
 /**
- * Replicated, match-wide facts every client can read: team scores, the match
- * end time and the result, plus the kill event that feeds the elimination feed.
+ * Root GameState for every Enclave map, used with AEnclaveGameMode (the SSR test
+ * range uses it directly). It holds only what every map needs, which is nothing
+ * beyond AGameState yet.
  *
- * It stores and replicates only; the match GameMode makes every decision and
- * is the only writer (the setters are authority-only). Per-player facts such
- * as team, kills and deaths live on AEnclavePlayerState. The match phase is the
- * inherited AGameState::MatchState, so it is not duplicated here.
+ * The GameState tree mirrors the GameMode tree one level for one level, and each
+ * GameMode sets GameStateClass to its own level:
  *
- * PhaseEndServerTime is when the current phase ends, on the server clock: the
- * warmup countdown during WaitingToStart, the time limit during InProgress, and
- * 0 when the phase has no end (not enough players yet, or no time limit). The
- * HUD reads MatchState to choose its label and computes the remaining time as
- * GetPhaseEndServerTime() - GetServerWorldTimeSeconds(), so the timer
- * replicates once per phase rather than every second.
+ *   AEnclaveGameState            AEnclaveGameMode            every map
+ *     AEnclaveMatchGameState       AEnclaveMatchGameMode       a contest
+ *       AEnclaveSoloGameState        AEnclaveSoloMatchGameMode   free-for-all
+ *       AEnclaveTeamGameState        AEnclaveTeamMatchGameMode   teams
+ *
+ * A field belongs at the level where every mode below it has that concept.
  */
 UCLASS()
 class ENCLAVE_API AEnclaveGameState : public AGameState
 {
 	GENERATED_BODY()
-
-public:
-
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
-	void InitTeamScores(int32 NumTeams);
-
-	UFUNCTION(BlueprintPure, Category = "Match")
-	int32 GetTeamScore(uint8 TeamId) const;
-	void  AddTeamScore(uint8 TeamId, int32 Delta);
-
-	UFUNCTION(BlueprintPure, Category = "Match")
-	double GetPhaseEndServerTime() const { return PhaseEndServerTime; }
-	void SetPhaseEndServerTime(double ServerTime);
-
-	UFUNCTION(BlueprintPure, Category = "Match")
-	uint8 GetWinningTeam() const { return WinningTeam; }
-	UFUNCTION(BlueprintPure, Category = "Match")
-	APlayerState* GetWinningPlayer() const { return WinningPlayer; }
-
-	void SetWinner(uint8 TeamId, APlayerState* Player);
-
-	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastKill(APlayerState* Killer, APlayerState* Victim);
-
-	UPROPERTY(BlueprintAssignable, Category = "Match")
-	FOnEnclaveKillSignature OnKill;
-
-private:
-
-	//We are assuming that team IDs are sequential and start at 0.
-	UPROPERTY(Replicated)
-	TArray<int32> TeamScores;
-
-	UPROPERTY(Replicated)
-	double PhaseEndServerTime = 0.0;
-
-	UPROPERTY(Replicated)
-	uint8 WinningTeam = AEnclavePlayerState::NoTeam;
-
-	UPROPERTY(Replicated)
-	TObjectPtr<APlayerState> WinningPlayer;
-	
 };
