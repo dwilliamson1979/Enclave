@@ -7,6 +7,8 @@
 #include "Game/EnclaveMatchSettings.h"
 #include "EnclaveMatchGameMode.generated.h"
 
+class AEnclaveGameState;
+
 /**
  * Match framework shared by every mode: phases (warmup, in progress, post-match),
  * the time limit, death handling, respawn and restart. It has no rules of its
@@ -27,9 +29,21 @@ protected:
 	/** Applies match URL options on top of the defaults. See FEnclaveMatchSettings. */
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
+	/**
+	 * Polled every frame while WaitingToStart. Runs the warmup countdown once
+	 * MinPlayersToStart are in, cancels it if the count drops below that, and
+	 * returns true when the countdown has finished.
+	 */
 	virtual bool ReadyToStartMatch_Implementation() override;
 
 	/** Defaults for this mode. Subclasses set their own in their constructor. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match")
 	FEnclaveMatchSettings MatchSettings;
+
+private:
+	/** Cancels a running warmup countdown, if any. */
+	void CancelWarmup(AEnclaveGameState& EnclaveGameState);
+
+	/** Server time the warmup ends. Unset while there aren't enough players. */
+	TOptional<double> WarmupEndServerTime;
 };

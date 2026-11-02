@@ -50,15 +50,15 @@ void AEnclaveGameState::AddTeamScore(uint8 TeamId, int32 Delta)
 	TeamScores[TeamId] += Delta;
 }
 
-void AEnclaveGameState::SetMatchEndServerTime(double ServerTime)
+void AEnclaveGameState::SetPhaseEndServerTime(double ServerTime)
 {
 	if(!HasAuthority())
 	{
-		UE_LOG(LogEnclaveMatch, Warning, TEXT("SetMatchEndServerTime called on non-authority GameState. This should only be called on the server."));
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("SetPhaseEndServerTime called on non-authority GameState. This should only be called on the server."));
 		return;
 	}
 
-	MatchEndServerTime = ServerTime;
+	PhaseEndServerTime = ServerTime;
 }
 
 void AEnclaveGameState::SetWinner(uint8 TeamId, APlayerState* Player)
@@ -83,7 +83,7 @@ void AEnclaveGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AEnclaveGameState, TeamScores);
-	DOREPLIFETIME(AEnclaveGameState, MatchEndServerTime);
+	DOREPLIFETIME(AEnclaveGameState, PhaseEndServerTime);
 	DOREPLIFETIME(AEnclaveGameState, WinningTeam);
 	DOREPLIFETIME(AEnclaveGameState, WinningPlayer);
 }

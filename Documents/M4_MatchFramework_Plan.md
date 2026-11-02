@@ -97,8 +97,8 @@ FOnEnclaveTeamChanged OnTeamChanged;       // fires on server and clients (OnRep
 // AEnclaveGameState  (U2)
 int32 GetTeamScore(uint8 TeamId) const;
 void  AddTeamScore(uint8 TeamId, int32 Delta);           // authority only
-double GetMatchEndServerTime() const;  // compare with GetServerWorldTimeSeconds()
-void  SetMatchEndServerTime(double ServerTime);          // authority only
+double GetPhaseEndServerTime() const;  // warmup or time-limit end; compare with GetServerWorldTimeSeconds(); 0 = no end
+void  SetPhaseEndServerTime(double ServerTime);          // authority only
 uint8 GetWinningTeam() const;  APlayerState* GetWinningPlayer() const;
 void  SetWinner(uint8 TeamId, APlayerState* Player);     // authority only
 void  MulticastKill(APlayerState* Killer, APlayerState* Victim);  // unreliable multicast, feed only

@@ -18,9 +18,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveKillSignature, APlayerSta
  * as team, kills and deaths live on AEnclavePlayerState. The match phase is the
  * inherited AGameState::MatchState, so it is not duplicated here.
  *
- * Remaining time is computed on each client as
- * GetMatchEndServerTime() - GetServerWorldTimeSeconds(), so the timer replicates
- * once rather than every second.
+ * PhaseEndServerTime is when the current phase ends, on the server clock: the
+ * warmup countdown during WaitingToStart, the time limit during InProgress, and
+ * 0 when the phase has no end (not enough players yet, or no time limit). The
+ * HUD reads MatchState to choose its label and computes the remaining time as
+ * GetPhaseEndServerTime() - GetServerWorldTimeSeconds(), so the timer
+ * replicates once per phase rather than every second.
  */
 UCLASS()
 class ENCLAVE_API AEnclaveGameState : public AGameState
@@ -38,8 +41,8 @@ public:
 	void  AddTeamScore(uint8 TeamId, int32 Delta);
 
 	UFUNCTION(BlueprintPure, Category = "Match")
-	double GetMatchEndServerTime() const { return MatchEndServerTime; }
-	void SetMatchEndServerTime(double ServerTime);
+	double GetPhaseEndServerTime() const { return PhaseEndServerTime; }
+	void SetPhaseEndServerTime(double ServerTime);
 
 	UFUNCTION(BlueprintPure, Category = "Match")
 	uint8 GetWinningTeam() const { return WinningTeam; }
@@ -61,7 +64,7 @@ private:
 	TArray<int32> TeamScores;
 
 	UPROPERTY(Replicated)
-	double MatchEndServerTime = 0.0;
+	double PhaseEndServerTime = 0.0;
 
 	UPROPERTY(Replicated)
 	uint8 WinningTeam = AEnclavePlayerState::NoTeam;
