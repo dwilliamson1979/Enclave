@@ -40,8 +40,8 @@ times in a row with clean logs.
 |---|---|---|
 | U1 | PlayerState kills, deaths, team | Done; split into match and team PlayerStates in C1 |
 | U2 | GameState scores, phase end, winner, kill event | Done; split into match, solo and team GameStates in C1 |
-| C1 | Match GameMode skeleton | **In progress**: moments 1-5 done, moment 6 next (below) |
-| U3 | Team base rules, then TDM | Not started |
+| C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
+| U3 | Team base rules, then TDM | **Next** |
 | U4 | Solo base rules, then DM | Not started |
 | C2 | Spawn selection | Not started |
 | C3 | Friendly-fire gate (via `IsHostileTo`) | Not started |
@@ -61,8 +61,12 @@ C1 is built in six moments, with the user sketching each:
    PlayerState split. Done, `a952971`.
 5. A death (kill credit, `ScoreKill`, kill event, respawn through
    `AEnclaveGameMode::RespawnPlayer`). Done, `5bfe731`.
-6. **Next:** match end and restart (`ReadyToEndMatch` polls the win check;
-   `HandleMatchHasEnded` waits `PostMatchSeconds`, then `RestartGame`).
+6. Match end and restart (`ReadyToEndMatch` works out the time limit and polls
+   the mode's `CheckWinCondition`; `HandleMatchHasEnded` shows the post-match
+   countdown, then `RestartGame`). Done.
+
+Open from moment 6: freezing players after the match ends (suggested with C4's
+end screen), and whether a match with no score or time limit should warn.
 
 Nothing has run as a real match yet: there is no concrete DM or TDM mode,
 Blueprint or map. The first playable match comes with U3 or U4.
@@ -92,5 +96,7 @@ Fixed only when chosen; none block M4.
 - Two SSR diagnostics remain on the character (`DebugLogViewGeometryForShot`,
   the `OnRep_ReplicatedMovement` body); they move to the hit target component
   in Lag Compensation v2.
+- Unverified: whether `RestartGame` (`?Restart`) keeps the server's URL
+  options, such as `?ScoreLimit=3`. Check in the first real match.
 - `EnclaveDebugRespawn` should be rechecked in the SSR test range now that item
   teardown happens in `AEnclaveCharacter::UnPossessed`.

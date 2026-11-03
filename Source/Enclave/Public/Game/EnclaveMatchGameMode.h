@@ -57,7 +57,14 @@ protected:
 	 */
 	virtual void HandleMatchHasStarted() override;
 
+	/**
+	 * Polled every frame while InProgress, so a match has one way to end, whatever
+	 * changed (a kill, an objective, a player leaving, added time). Works out
+	 * whether the time limit is reached and asks the mode's CheckWinCondition.
+	 */
 	virtual bool ReadyToEndMatch_Implementation() override;
+
+	/** Shows the post-match countdown, then restarts the map after PostMatchSeconds. */
 	virtual void HandleMatchHasEnded() override;
 
 	/** Defaults for this mode. Subclasses set their own in their constructor. */
@@ -70,8 +77,19 @@ protected:
 	 * with no player responsible (Attacker null). Use Attacker->IsHostileTo(Victim)
 	 * to tell a real kill apart. Victim is never null.
 	 */
-	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim) PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );
-	virtual void CheckWinCondition(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim) PURE_VIRTUAL(AEnclaveMatchGameMode::CheckWinCondition, );
+	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim)
+		PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );
+
+	/**
+	 * Polled every frame while the match is in progress (see ReadyToEndMatch).
+	 * Returns true when the match is over, and sets the result before returning:
+	 * the winner once someone reaches MatchSettings.ScoreLimit (0 = no score
+	 * limit); otherwise, if bTimeLimitReached, the leader, or no winner for a tie
+	 * (a draw). Implemented once per branch (solo, team), because whose score
+	 * counts is the branch's concept. Keep it cheap: it runs every frame.
+	 */
+	virtual bool CheckWinCondition(bool bTimeLimitReached)
+		PURE_VIRTUAL(AEnclaveMatchGameMode::CheckWinCondition, return false;);
 
 private:
 	/** Server: credits the death and kill, scores it, announces it, and schedules the respawn. */

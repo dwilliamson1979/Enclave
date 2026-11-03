@@ -1,7 +1,6 @@
 # Milestone 4: Match Framework (TDM and Deathmatch)
 
-Status: in progress. U1 and U2 are done; C1 (the match GameMode) is done through
-moment 5 of 6. Item-by-item status is in [ProjectStatus.md](ProjectStatus.md).
+Status: in progress. U1, U2 and C1 (the match GameMode) are done; U3 is next. Item-by-item status is in [ProjectStatus.md](ProjectStatus.md).
 
 ## Goal
 
@@ -163,7 +162,9 @@ virtual void  RespawnPlayer(AController* Controller);   // unpossess, destroy, R
 // AEnclaveMatchGameMode virtual hooks, overridden by modes (C1 defines them, U3/U4 implement)
 virtual void  ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim)
     PURE_VIRTUAL(...);  // every death in progress; Attacker may be null, the victim or a teammate
-virtual bool  CheckWinCondition();                       // sets the solo or team winner when true
+virtual bool  CheckWinCondition(bool bTimeLimitReached)
+    PURE_VIRTUAL(...);  // polled every frame in progress; sets the result (winner, or none = draw) when true
+// Implemented once per branch (solo: player score; team: team score), not per mode.
 virtual bool  CanDamage(AController* Instigator, AController* Victim) const;  // friendly fire
 ```
 

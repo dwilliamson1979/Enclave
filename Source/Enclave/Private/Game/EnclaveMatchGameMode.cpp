@@ -78,75 +78,50 @@ void AEnclaveMatchGameMode::HandleMatchHasStarted()
 
 bool AEnclaveMatchGameMode::ReadyToEndMatch_Implementation()
 {
-	//This seems entirely unnecessary to me.
-	//Checking this every tick? Why not check only when a player dies or the time limit is reached? This is a waste of CPU cycles.
-	//Perhaps time limit would need to be checked every tick or could we set a timer to check it every second? I don't know. But checking every tick seems like a waste of CPU cycles.
-	//Perhaps we could have a timer that checks every second if the time limit has been reached and if so, end the match by calling TimeLimitReached(). That would be more efficient than checking every tick (I think).
-	//What about modes that go into  overtime or have ways of adding additional time to the match? Simply add/reset the timer?
-	//We would have to check if the match is already over in the timer callback as well.
-	//We could do a score limit check function every time a kill is added as well.
-	
-	//Check for score limit and/or time limit.
+	// Polled rather than checked on events: one place decides the end, whatever
+	// changed. A few comparisons per frame; negligible.
 	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
 	if (!ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the match can't end.")))
 	{
 		return false;
 	}
 
-	// Score limit reached?
-	if (MatchSettings.ScoreLimit > 0)
-	{
-		for (APlayerState* PlayerState : MatchGameState->PlayerArray)
-		{
-			AEnclaveMatchPlayerState* MatchPlayerState = Cast<AEnclaveMatchPlayerState>(PlayerState);
-			if (IsValid(MatchPlayerState) && MatchPlayerState->GetScore() >= MatchSettings.ScoreLimit)
-			{
-				return true;
-			}
-		}
-	}
+	// Every match has a time limit (0 = none), so the base owns it. Who won is
+	// the branch's question. Adding time later only moves PhaseEndServerTime.
+	const double PhaseEnd = MatchGameState->GetPhaseEndServerTime();
+	const bool bTimeLimitReached = MatchSettings.TimeLimitSeconds > 0
+		&& PhaseEnd > 0.0
+		&& MatchGameState->GetServerWorldTimeSeconds() >= PhaseEnd;
 
-	// Time limit reached?
-	if (MatchSettings.TimeLimitSeconds > 0)
-	{
-		const double Now = MatchGameState->GetServerWorldTimeSeconds();
-		const double PhaseEnd = MatchGameState->GetPhaseEndServerTime();
-		if (PhaseEnd > 0.0 && Now >= PhaseEnd)
-		{
-			return true;
-		}
-	}
-
-	return false;
+	return CheckWinCondition(bTimeLimitReached);
 }
 
 void AEnclaveMatchGameMode::HandleMatchHasEnded()
 {
 	Super::HandleMatchHasEnded();
 
+	UE_LOG(LogEnclaveMatch, Log, TEXT("Match ended; next match in %d s."), MatchSettings.PostMatchSeconds);
+
+	// The phase end now means "next match starts" (0 = restarting now). Without a
+	// GameState the HUD has no countdown, but the server must still restart.
 	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
-	if (!ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the match has ended, but no gamestate can be found.")))
+	if (ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the post-match countdown was not set.")))
 	{
-		return;
+		const double Now = MatchGameState->GetServerWorldTimeSeconds();
+		const double NextMatch = MatchSettings.PostMatchSeconds > 0 ? Now + MatchSettings.PostMatchSeconds : 0.0;
+		MatchGameState->SetPhaseEndServerTime(NextMatch);
 	}
 
-	const double Now = MatchGameState->GetServerWorldTimeSeconds();
-	const double PhaseEndTime = MatchSettings.PostMatchSeconds > 0 ? Now + MatchSettings.PostMatchSeconds : 0.0;
-	MatchGameState->SetPhaseEndServerTime(PhaseEndTime);
-
-	if (PhaseEndTime <= 0.0)
+	// A timer with a delay of 0 never fires, so restart directly.
+	if (MatchSettings.PostMatchSeconds <= 0)
 	{
 		RestartGame();
 		return;
 	}
 
+	// The travel discards this GameMode and its timers, so a local handle is enough.
 	FTimerHandle PostMatchTimer;
-	GetWorldTimerManager().SetTimer(PostMatchTimer,
-		FTimerDelegate::CreateLambda([this]()
-			{
-				RestartGame();
-			}),
-		MatchSettings.PostMatchSeconds, false);
+	GetWorldTimerManager().SetTimer(PostMatchTimer, this, &ThisClass::RestartGame, MatchSettings.PostMatchSeconds, false);
 }
 
 void AEnclaveMatchGameMode::CancelWarmup(AEnclaveMatchGameState& MatchGameState)
