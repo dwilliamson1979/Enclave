@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-03 (HEAD `5bfe731`, branch `ClaudeEdits`).
+Last updated 2026-11-03, after C1 moment 6 (branch `ClaudeEdits`).
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
 exists, what is in progress, and what comes next. Details live in the linked
