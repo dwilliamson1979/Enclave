@@ -1,9 +1,7 @@
 # Milestone 4: Match Framework (TDM and Deathmatch)
 
-Status: in progress. Done so far: U1 and U2 (commit 97a6082); the rename of
-AEnclaveGameModeBase to AEnclaveGameMode on AGameMode, with its debug commands moved
-out of the class; AEnclaveMatchGameMode with FEnclaveMatchSettings (C1 started); and
-the SSR settings moved from the GameMode into UEnclaveCombatPolicyComponent.
+Status: in progress. U1 and U2 are done; C1 (the match GameMode) is done through
+moment 5 of 6. Item-by-item status is in [ProjectStatus.md](ProjectStatus.md).
 
 ## Goal
 
@@ -22,7 +20,7 @@ Shipping DM alongside TDM is deliberate. A second mode keeps TDM-only assumption
 |---|---|---|
 | Death event with killer context | `UEnclaveAvatarLifecycleComponent::OnAvatarDied` (server), carrying `FEnclaveDamageRequest.SourceActor` | The match GameMode binds to it to credit kills |
 | ASC survives respawn | `AEnclavePlayerState` owns the ASC; the character is the avatar | Respawn creates a new pawn; abilities and player-scoped effects persist |
-| Respawn cleanup path | `AEnclavePlayerController::PerformDebugRespawn` (clear wielded item, destroy inventory, unpossess, destroy, `RestartPlayer`) | Promote to the real respawn path, without the debug-only guard |
+| Respawn cleanup path | Was `AEnclavePlayerController::PerformDebugRespawn` | Done in C1: `AEnclaveGameMode::RespawnPlayer` (unpossess, destroy, `RestartPlayer`); the character drops its items in `UnPossessed`. The debug command calls it too. |
 | Starting loadout | `AEnclaveCharacter` `StartingSlottedItems` / `StartingInventoryItems` | Each respawn gets the loadout automatically |
 | Single damage entry point | `UEnclaveDamageStatics::ApplyDamage` | One place to apply the friendly-fire rule |
 | HUD art | `Content/UI/Hud/Art` (elimination feed, ammo counter, accolades) | Use for the HUD widgets |
@@ -35,9 +33,9 @@ respawn, spawn selection, and every HUD element except the reticle.
 
 ```
 AGameMode (engine: match-state machine)
-  AEnclaveGameMode                    every map: player classes, UEnclaveCombatPolicyComponent (SSR, hit registration)
+  AEnclaveGameMode                    every map: player classes, UEnclaveCombatPolicyComponent (SSR, hit registration), RespawnPlayer
     AEnclaveMatchGameMode             a contest: phases, timer, deaths, respawn, spawns; no teams, no result
-      AEnclaveSoloMatchGameMode       free-for-all: everyone NoTeam; individual result and win check
+      AEnclaveSoloMatchGameMode       free-for-all: no teams at all; individual result and win check
         AEnclaveDeathmatchGameMode    rules only: +1 per kill, first to N
       AEnclaveTeamMatchGameMode       teams: count, team scores, assignment and balancing, friendly fire; team win check
         AEnclaveTeamDeathmatchGameMode rules only: +1 team score per kill, first to N
@@ -96,16 +94,23 @@ Decisions:
 ### What happens on a kill (all on the server)
 
 1. Health reaches zero, and the lifecycle component broadcasts `OnAvatarDied`.
-2. `AEnclaveMatchGameMode` bound to it when it spawned the pawn. It resolves the
-   victim and killer controllers. The killer is `SourceActor`'s controller,
-   null for environment damage, and the victim for self-damage.
-3. The base class records stats (`AddDeath` for the victim, `AddKill` for a
-   valid killer), then calls the mode's `ScoreKill`.
-4. The base class calls `CheckWinCondition`. If it reports a winner, the match
-   moves to WaitingPostMatch.
-5. Otherwise the base class schedules a respawn after `RespawnDelay`, choosing
-   the start with `ChoosePlayerStart`.
-6. The GameState multicasts a kill event, which feeds the elimination feed.
+2. `AEnclaveMatchGameMode::HandleAvatarDied` receives it: the match bound to it
+   in `SetPlayerDefaults`, which runs for every pawn `RestartPlayer` spawns.
+   Deaths outside InProgress are ignored, and so are deaths without a victim
+   `AEnclaveMatchPlayerState`.
+3. Stats: `AddDeath` for the victim. `AddKill` for the attacker (the
+   PlayerState of `SourceActor`'s pawn) only if `Attacker->IsHostileTo(Victim)`,
+   so suicides, team kills and environment deaths get no kill.
+4. `ScoreKill(Attacker, Victim)`, the mode's hook, sees every death, so a mode
+   can also penalize suicides or team kills.
+5. The GameState multicasts the kill event, which feeds the elimination feed.
+6. A timer of `RespawnDelay` calls `AEnclaveGameMode::RespawnPlayer` if the
+   player is still connected and the match is still in progress. The body stays
+   until then. (C2 will choose the start with `ChoosePlayerStart`.)
+
+The death handler never checks for a win. The engine polls
+`ReadyToEndMatch` every frame while InProgress, which calls the mode's
+`CheckWinCondition` (C1 moment 6), so a match has one way to end.
 
 ### Contract (agreed signatures)
 
@@ -152,8 +157,12 @@ virtual uint8 ChooseTeamForPlayer(const AController* Player) const;  // default:
 // a player who already has a valid team (reconnect, seamless travel) keeps it.
 // Solo modes have no team field at all (AEnclaveMatchPlayerState).
 
+// AEnclaveGameMode  (every map)
+virtual void  RespawnPlayer(AController* Controller);   // unpossess, destroy, RestartPlayer; no rules
+
 // AEnclaveMatchGameMode virtual hooks, overridden by modes (C1 defines them, U3/U4 implement)
-virtual void  ScoreKill(AEnclavePlayerState* Killer, AEnclavePlayerState* Victim);
+virtual void  ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim)
+    PURE_VIRTUAL(...);  // every death in progress; Attacker may be null, the victim or a teammate
 virtual bool  CheckWinCondition();                       // sets the solo or team winner when true
 virtual bool  CanDamage(AController* Instigator, AController* Victim) const;  // friendly fire
 ```
