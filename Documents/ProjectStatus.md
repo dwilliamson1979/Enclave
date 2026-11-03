@@ -65,8 +65,9 @@ C1 is built in six moments, with the user sketching each:
    the mode's `CheckWinCondition`; `HandleMatchHasEnded` shows the post-match
    countdown, then `RestartGame`). Done.
 
-Open from moment 6: freezing players after the match ends (suggested with C4's
-end screen), and whether a match with no score or time limit should warn.
+Decided after moment 6: a match with no score limit and no time limit logs a
+warning in `InitGame` but is allowed. Freezing players at the end of a match is
+done with C4's end screen (see the plan's C4 row).
 
 Nothing has run as a real match yet: there is no concrete DM or TDM mode,
 Blueprint or map. The first playable match comes with U3 or U4.

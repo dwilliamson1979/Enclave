@@ -19,6 +19,15 @@ void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Opti
 
 	MatchSettings.ApplyOptions(Options);
 	UE_LOG(LogEnclaveMatch, Log, TEXT("Match settings: %s"), *MatchSettings.ToString());
+
+	// Operator input (URL or Blueprint), so warn rather than refuse: an endless
+	// practice server is legitimate. ApplyOptions checks values one at a time;
+	// this is a combination.
+	if (MatchSettings.ScoreLimit == 0 && MatchSettings.TimeLimitSeconds == 0)
+	{
+		UE_LOG(LogEnclaveMatch, Warning,
+			TEXT("No score limit and no time limit: the match only ends if the mode has its own end rule."));
+	}
 }
 
 bool AEnclaveMatchGameMode::ReadyToStartMatch_Implementation()
