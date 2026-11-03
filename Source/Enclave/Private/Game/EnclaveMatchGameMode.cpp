@@ -4,10 +4,12 @@
 
 #include "Debug/EnclaveDebug.h"
 #include "Game/EnclaveMatchGameState.h"
+#include "Player/EnclaveMatchPlayerState.h"
 
 AEnclaveMatchGameMode::AEnclaveMatchGameMode()
 {
 	GameStateClass = AEnclaveMatchGameState::StaticClass();
+	PlayerStateClass = AEnclaveMatchPlayerState::StaticClass();
 }
 
 void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)

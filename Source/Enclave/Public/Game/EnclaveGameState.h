@@ -12,7 +12,8 @@
  * beyond AGameState yet.
  *
  * The GameState tree mirrors the GameMode tree one level for one level, and each
- * GameMode sets GameStateClass to its own level:
+ * GameMode sets GameStateClass to its own level (the PlayerState tree does the
+ * same; see AEnclavePlayerState):
  *
  *   AEnclaveGameState            AEnclaveGameMode            every map
  *     AEnclaveMatchGameState       AEnclaveMatchGameMode       a contest

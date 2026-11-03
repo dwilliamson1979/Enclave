@@ -15,7 +15,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveKillSignature, APlayerSta
  *
  * It stores and replicates only; the match GameMode makes every decision and
  * is the only writer (the setters are authority-only). Per-player facts such
- * as team, kills and deaths live on AEnclavePlayerState. The match phase is the
+ * as kills, deaths and team live on the PlayerState. The match phase is the
  * inherited AGameState::MatchState, so it is not duplicated here.
  *
  * PhaseEndServerTime is when the current phase ends, on the server clock: the

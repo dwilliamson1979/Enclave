@@ -14,9 +14,9 @@ void AEnclaveTeamGameState::InitTeams(int32 NumTeams)
 		return;
 	}
 
-	WinningTeam = AEnclavePlayerState::NoTeam;
+	WinningTeam = AEnclaveTeamPlayerState::NoTeam;
 
-	if (!ensureMsgf(NumTeams > 0 && NumTeams < AEnclavePlayerState::NoTeam, TEXT("InitTeams: invalid team count %d"), NumTeams))
+	if (!ensureMsgf(NumTeams > 0 && NumTeams < AEnclaveTeamPlayerState::NoTeam, TEXT("InitTeams: invalid team count %d"), NumTeams))
 	{
 		TeamScores.Reset();   // no teams: scoring visibly stops working instead of quietly limping along
 		return;
@@ -60,7 +60,7 @@ void AEnclaveTeamGameState::SetWinningTeam(uint8 TeamId)
 		return;
 	}
 
-	if(!ensureMsgf(TeamId == AEnclavePlayerState::NoTeam || TeamScores.IsValidIndex(TeamId), TEXT("SetWinningTeam: invalid TeamId %d"), TeamId))
+	if(!ensureMsgf(TeamId == AEnclaveTeamPlayerState::NoTeam || TeamScores.IsValidIndex(TeamId), TEXT("SetWinningTeam: invalid TeamId %d"), TeamId))
 	{
 		return;
 	}

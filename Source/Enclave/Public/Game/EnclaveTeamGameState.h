@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Game/EnclaveMatchGameState.h"
-#include "Player/EnclavePlayerState.h"
+#include "Player/EnclaveTeamPlayerState.h"
 #include "EnclaveTeamGameState.generated.h"
 
 /**
@@ -46,5 +46,5 @@ private:
 	TArray<int32> TeamScores;
 
 	UPROPERTY(Replicated)
-	uint8 WinningTeam = AEnclavePlayerState::NoTeam;
+	uint8 WinningTeam = AEnclaveTeamPlayerState::NoTeam;
 };

@@ -48,8 +48,10 @@ AGameState (engine)                   one level per GameMode level; each GameMod
       AEnclaveSoloGameState           WinningPlayer
       AEnclaveTeamGameState           TeamScores, WinningTeam
 
-APlayerState (engine)
-  AEnclavePlayerState             (exists) + team ID, kills, deaths
+APlayerState (engine)                 the same mirror; each GameMode sets PlayerStateClass to its own
+  AEnclavePlayerState                 every map: ASC, IsHostileTo (default: anyone else)
+    AEnclaveMatchPlayerState          kills, deaths (solo modes use it directly)
+      AEnclaveTeamPlayerState         TeamId, OnTeamChanged; IsHostileTo: not the same team
 ```
 
 Decisions:
@@ -61,11 +63,18 @@ Decisions:
   WaitingPostMatch) and requires a GameState derived from `AGameState`. Lyra's
   Experience system is more flexible but much heavier than Enclave needs now.
 - **The match base knows nothing about teams; team modes share
-  `AEnclaveTeamMatchGameMode`.** A player's `TeamId` is general (`NoTeam` means
-  "on no side, an enemy to everyone", the same convention as the engine's
-  `FGenericTeamId`), but team count, scores, assignment, balancing and friendly
-  fire are team rules. Each team override sets up team state before calling
-  `Super`, because the base spawns players.
+  `AEnclaveTeamMatchGameMode`.** Team count, scores, assignment, balancing,
+  friendly fire and the player's `TeamId` are team rules and team data. Each
+  team override sets up team state before calling `Super`, because the base
+  spawns players.
+- **Every mode asks "is this player my enemy?", never "is this player on my
+  team?".** `AEnclavePlayerState::IsHostileTo` is virtual: anyone else by
+  default, other teams in `AEnclaveTeamPlayerState`. Friendly fire, spawn
+  selection, friend/enemy colors and (later) bots use it, so they work in every
+  mode. A free-for-all can't be modelled as "everyone on `NoTeam`": the engine's
+  default attitude solver (`FGenericTeamId`, `AIInterfaces.cpp`) treats two
+  equal IDs as friendly, so two `NoTeam` players would be friends. Bots in
+  free-for-all modes will need a custom solver that calls `IsHostileTo`.
 - **A field or rule belongs at the level where every mode below it has that
   concept.** The result is a player in free-for-all and a team in team modes,
   so neither belongs in the match base: `AEnclaveSoloMatchGameMode` and
@@ -104,14 +113,20 @@ These are fixed up front so the work can happen in parallel. Names can change in
 review.
 
 ```cpp
-// AEnclavePlayerState  (U1)
-static constexpr uint8 NoTeam = 255;
-uint8 GetTeamId() const;
-void  SetTeamId(uint8 NewTeamId);          // authority only
+// AEnclavePlayerState  (every map)
+virtual bool IsHostileTo(const APlayerState* Other) const;  // default: anyone else
+
+// AEnclaveMatchPlayerState  (U1, split by C1)
 int32 GetKills() const;  void AddKill();   // authority only
 int32 GetDeaths() const; void AddDeath();  // authority only
-FOnEnclaveTeamChanged OnTeamChanged;       // fires on server and clients (OnRep)
 // Score: use APlayerState::SetScore/GetScore, which already exists and is replicated.
+
+// AEnclaveTeamPlayerState  (U1, split by C1)
+static constexpr uint8 NoTeam = 255;       // not on a team yet (spectator, unassigned)
+uint8 GetTeamId() const;
+void  SetTeamId(uint8 NewTeamId);          // authority only
+FOnEnclaveTeamChanged OnTeamChanged;       // fires on server and clients (OnRep)
+// IsHostileTo: hostile unless on the same team
 
 // AEnclaveMatchGameState  (U2, split by C1)
 double GetPhaseEndServerTime() const;  // warmup or time-limit end; compare with GetServerWorldTimeSeconds(); 0 = no end
@@ -130,9 +145,12 @@ void  AddTeamScore(uint8 TeamId, int32 Delta);           // authority only
 uint8 GetWinningTeam() const;
 void  SetWinningTeam(uint8 TeamId);                      // authority only
 
-// AEnclaveTeamMatchGameMode  (C1 creates it; team assignment lands here)
+// AEnclaveTeamMatchGameMode  (C1)
 int32 GetNumTeams() const;                               // EditDefaultsOnly NumTeams, default 2; teams are 0..N-1
-virtual uint8 ChooseTeamForPlayer(AController* Player);  // default: the smaller team
+virtual uint8 ChooseTeamForPlayer(const AController* Player) const;  // default: the smallest team, ties to the lowest ID
+// Assigned in HandleStartingNewPlayer before Super (every join path ends there);
+// a player who already has a valid team (reconnect, seamless travel) keeps it.
+// Solo modes have no team field at all (AEnclaveMatchPlayerState).
 
 // AEnclaveMatchGameMode virtual hooks, overridden by modes (C1 defines them, U3/U4 implement)
 virtual void  ScoreKill(AEnclavePlayerState* Killer, AEnclavePlayerState* Victim);
@@ -150,7 +168,7 @@ most: replication, authority and the GameMode/GameState split.
 
 | ID | Item | Owner | Notes |
 |---|---|---|---|
-| U1 | PlayerState team, kills and deaths | **You** | `Replicated` / `ReplicatedUsing`, `GetLifetimeReplicatedProps`, authority checks, OnRep event. Small and self-contained, so a good first piece. |
+| U1 | PlayerState team, kills and deaths | **You** | `Replicated` / `ReplicatedUsing`, `GetLifetimeReplicatedProps`, authority checks, OnRep event. Small and self-contained, so a good first piece. (Later split by C1 into match and team PlayerStates.) |
 | U2 | `AEnclaveGameState` | **You** | Replicated team scores, end time and winner; the kill multicast. Set `GameStateClass` in the GameMode. (Later split by C1 into match, solo and team GameStates.) |
 | C1 | Reparent to `AGameMode` and add the `AEnclaveMatchGameMode` skeleton | Claude | Phases, warmup and timer, death binding, respawn timer, URL options, virtual hooks with defaults |
 | U3 | Team base rules, then TDM rules | **You** | In `AEnclaveTeamMatchGameMode`: team balancing (the smaller team), `CanDamage` (friendly fire) and the team win check. In TDM: `ScoreKill` |

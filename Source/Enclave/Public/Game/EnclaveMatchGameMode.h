@@ -16,7 +16,8 @@ class AEnclaveMatchGameState;
  *
  * It holds only what every match has, so it knows nothing about teams or about
  * who won. Modes derive from AEnclaveSoloMatchGameMode (free-for-all) or
- * AEnclaveTeamMatchGameMode, which own their results. Uses AEnclaveMatchGameState.
+ * AEnclaveTeamMatchGameMode, which own their results. Uses AEnclaveMatchGameState
+ * and AEnclaveMatchPlayerState.
  *
  * Phases come from AGameMode's match state machine: this class answers
  * ReadyToStartMatch / ReadyToEndMatch and reacts to the Handle* events.
