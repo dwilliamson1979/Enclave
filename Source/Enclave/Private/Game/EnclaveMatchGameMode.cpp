@@ -76,6 +76,79 @@ void AEnclaveMatchGameMode::HandleMatchHasStarted()
 	Super::HandleMatchHasStarted();
 }
 
+bool AEnclaveMatchGameMode::ReadyToEndMatch_Implementation()
+{
+	//This seems entirely unnecessary to me.
+	//Checking this every tick? Why not check only when a player dies or the time limit is reached? This is a waste of CPU cycles.
+	//Perhaps time limit would need to be checked every tick or could we set a timer to check it every second? I don't know. But checking every tick seems like a waste of CPU cycles.
+	//Perhaps we could have a timer that checks every second if the time limit has been reached and if so, end the match by calling TimeLimitReached(). That would be more efficient than checking every tick (I think).
+	//What about modes that go into  overtime or have ways of adding additional time to the match? Simply add/reset the timer?
+	//We would have to check if the match is already over in the timer callback as well.
+	//We could do a score limit check function every time a kill is added as well.
+	
+	//Check for score limit and/or time limit.
+	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
+	if (!ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the match can't end.")))
+	{
+		return false;
+	}
+
+	// Score limit reached?
+	if (MatchSettings.ScoreLimit > 0)
+	{
+		for (APlayerState* PlayerState : MatchGameState->PlayerArray)
+		{
+			AEnclaveMatchPlayerState* MatchPlayerState = Cast<AEnclaveMatchPlayerState>(PlayerState);
+			if (IsValid(MatchPlayerState) && MatchPlayerState->GetScore() >= MatchSettings.ScoreLimit)
+			{
+				return true;
+			}
+		}
+	}
+
+	// Time limit reached?
+	if (MatchSettings.TimeLimitSeconds > 0)
+	{
+		const double Now = MatchGameState->GetServerWorldTimeSeconds();
+		const double PhaseEnd = MatchGameState->GetPhaseEndServerTime();
+		if (PhaseEnd > 0.0 && Now >= PhaseEnd)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void AEnclaveMatchGameMode::HandleMatchHasEnded()
+{
+	Super::HandleMatchHasEnded();
+
+	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
+	if (!ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the match has ended, but no gamestate can be found.")))
+	{
+		return;
+	}
+
+	const double Now = MatchGameState->GetServerWorldTimeSeconds();
+	const double PhaseEndTime = MatchSettings.PostMatchSeconds > 0 ? Now + MatchSettings.PostMatchSeconds : 0.0;
+	MatchGameState->SetPhaseEndServerTime(PhaseEndTime);
+
+	if (PhaseEndTime <= 0.0)
+	{
+		RestartGame();
+		return;
+	}
+
+	FTimerHandle PostMatchTimer;
+	GetWorldTimerManager().SetTimer(PostMatchTimer,
+		FTimerDelegate::CreateLambda([this]()
+			{
+				RestartGame();
+			}),
+		MatchSettings.PostMatchSeconds, false);
+}
+
 void AEnclaveMatchGameMode::CancelWarmup(AEnclaveMatchGameState& MatchGameState)
 {
 	// Called every frame while waiting, so only act (and log) on a change.

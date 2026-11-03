@@ -57,6 +57,9 @@ protected:
 	 */
 	virtual void HandleMatchHasStarted() override;
 
+	virtual bool ReadyToEndMatch_Implementation() override;
+	virtual void HandleMatchHasEnded() override;
+
 	/** Defaults for this mode. Subclasses set their own in their constructor. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match")
 	FEnclaveMatchSettings MatchSettings;
@@ -67,8 +70,8 @@ protected:
 	 * with no player responsible (Attacker null). Use Attacker->IsHostileTo(Victim)
 	 * to tell a real kill apart. Victim is never null.
 	 */
-	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim)
-		PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );
+	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim) PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );
+	virtual void CheckWinCondition(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim) PURE_VIRTUAL(AEnclaveMatchGameMode::CheckWinCondition, );
 
 private:
 	/** Server: credits the death and kill, scores it, announces it, and schedules the respawn. */
