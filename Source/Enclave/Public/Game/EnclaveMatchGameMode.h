@@ -10,6 +10,7 @@
 
 class AEnclaveMatchGameState;
 class AEnclaveMatchPlayerState;
+class AEnclaveMatchPlayerState;
 class UEnclaveAvatarLifecycleComponent;
 
 /**
@@ -35,9 +36,8 @@ public:
 
 	const FEnclaveMatchSettings& GetMatchSettings() const { return MatchSettings; }
 
+	/** Binds the match's death handling to every pawn RestartPlayer spawns. */
 	virtual void SetPlayerDefaults(APawn* Pawn) override;
-
-	
 
 protected:
 	/** Applies match URL options on top of the defaults. See FEnclaveMatchSettings. */
@@ -61,14 +61,23 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Match")
 	FEnclaveMatchSettings MatchSettings;
 
+	/**
+	 * Awards score for a death. Called for every death while the match is in
+	 * progress, including suicides (Attacker == Victim), team kills and deaths
+	 * with no player responsible (Attacker null). Use Attacker->IsHostileTo(Victim)
+	 * to tell a real kill apart. Victim is never null.
+	 */
+	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim)
+		PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );
+
+private:
+	/** Server: credits the death and kill, scores it, announces it, and schedules the respawn. */
 	UFUNCTION()
 	void HandleAvatarDied(UEnclaveAvatarLifecycleComponent* LifecycleComp, FEnclaveDamageRequest DamageRequest);
 
-	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim) PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );
+	/** Respawn timer callback: respawns the player if they are still here and the match is still in progress. */
+	void RespawnAfterDeath(TWeakObjectPtr<AController> Controller);
 
-	virtual void RespawnPlayer(TWeakObjectPtr<AController> Controller);
-
-private:
 	/** Cancels a running warmup countdown, if any. */
 	void CancelWarmup(AEnclaveMatchGameState& MatchGameState);
 

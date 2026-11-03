@@ -304,6 +304,21 @@ void AEnclaveCharacter::InitializeStowedItem()
 
 void AEnclaveCharacter::UnPossessed()
 {
+	if (HasAuthority())
+	{
+		// The counterpart of GrantStartingLoadout: the outgoing body drops its
+		// items. Before Super, while the PlayerState-owned ASC is still reachable,
+		// so the item-granted abilities and effects are revoked.
+		if (IsValid(EquipmentComp))
+		{
+			EquipmentComp->ClearCurrentWieldedItem();
+		}
+		if (IsValid(InventoryComp))
+		{
+			InventoryComp->DestroyAllItems();
+		}
+	}
+
 	if (HasAuthority() && IsValid(TargetHistoryComp))
 	{
 		TargetHistoryComp->InvalidateHistory();

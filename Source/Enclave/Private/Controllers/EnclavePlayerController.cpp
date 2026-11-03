@@ -33,7 +33,7 @@
 #include "HAL/PlatformTime.h"
 #endif
 
-#include "GameFramework/GameModeBase.h"
+#include "Game/EnclaveGameMode.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
@@ -599,36 +599,18 @@ void AEnclavePlayerController::PerformDebugRespawn()
 	}
 
 	APawn* PreviousPawn = GetPawn();
-	AGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode() : nullptr;
+	AEnclaveGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AEnclaveGameMode>() : nullptr;
 
 	if (!GameMode)
 	{
-		ENCLAVE_LOG(LogEnclaveCharacter, Warning, "EnclaveDebugRespawn failed: no authoritative GameMode.");
+		ENCLAVE_LOG(LogEnclaveCharacter, Warning, "EnclaveDebugRespawn failed: no authoritative AEnclaveGameMode.");
 		return;
 	}
 
 	ENCLAVE_LOG(LogEnclaveCharacter, Log, "EnclaveDebugRespawn: recreating pawn %s while preserving PlayerState %s.", *GetNameSafe(PreviousPawn), *GetNameSafe(PlayerState.Get()));
 
-	if (PreviousPawn)
-	{
-		// Exercise the same explicit lifecycle boundary the real Death path will use.
-		// Do this before UnPossess so the old Pawn can still resolve the persistent
-		// PlayerState-owned ASC while revoking its item-granted specs/effects.
-		if (UEnclaveEquipmentComponent* Equipment = PreviousPawn->FindComponentByClass<UEnclaveEquipmentComponent>())
-		{
-			Equipment->ClearCurrentWieldedItem();
-		}
-
-		if (UEnclaveInventoryComponent* Inventory = PreviousPawn->FindComponentByClass<UEnclaveInventoryComponent>())
-		{
-			Inventory->DestroyAllItems();
-		}
-
-		UnPossess();
-		PreviousPawn->Destroy();
-	}
-
-	GameMode->RestartPlayer(this);
+	// The same respawn the match uses; the old pawn drops its items in UnPossessed.
+	GameMode->RespawnPlayer(this);
 
 	ENCLAVE_LOG(LogEnclaveCharacter, Log, "EnclaveDebugRespawn complete. New pawn: %s", *GetNameSafe(GetPawn()));
 #endif

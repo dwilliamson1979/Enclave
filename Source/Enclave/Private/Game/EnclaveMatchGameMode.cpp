@@ -113,22 +113,25 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 		return;
 	}
 
+	// A death that isn't a player's has nothing to score.
 	APawn* Victim = LifecycleComp->GetOwner<APawn>();
 	AEnclaveMatchPlayerState* VictimPlayerState = Victim ? Victim->GetPlayerState<AEnclaveMatchPlayerState>() : nullptr;
-	if(!IsValid(Victim) || !IsValid(VictimPlayerState))
+	if (!IsValid(Victim) || !IsValid(VictimPlayerState))
 	{
 		return;
 	}
-	
+
 	VictimPlayerState->AddDeath();
 
 	APawn* Attacker = Cast<APawn>(DamageRequest.SourceActor.Get());
 	AEnclaveMatchPlayerState* AttackerPlayerState = Attacker ? Attacker->GetPlayerState<AEnclaveMatchPlayerState>() : nullptr;
+	// Only an enemy gets the kill: IsHostileTo is false for yourself and teammates.
 	if (AttackerPlayerState && AttackerPlayerState->IsHostileTo(VictimPlayerState))
 	{
 		AttackerPlayerState->AddKill();
 	}
-	
+
+	// The mode sees every death, so it can also penalize suicides or team kills.
 	ScoreKill(AttackerPlayerState, VictimPlayerState);
 
 	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
@@ -137,25 +140,23 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 		MatchGameState->MulticastKill(AttackerPlayerState, VictimPlayerState);
 	}
 
-	FTimerHandle RespawnTimerHandle;
-	GetWorldTimerManager().SetTimer(RespawnTimerHandle, FTimerDelegate::CreateUObject(this, &AEnclaveMatchGameMode::RespawnPlayer, TWeakObjectPtr<AController>(Victim->GetController())), MatchSettings.RespawnDelaySeconds, false);
+	// The body stays until the respawn (destroying it here would be mid-damage).
+	// One timer per death, so the handle is local: RespawnAfterDeath rejects a
+	// player who left or a match that ended, so nothing needs to cancel it.
+	// Weak, because the player may disconnect before it fires.
+	const TWeakObjectPtr<AController> VictimController = Victim->GetController();
+	FTimerHandle RespawnTimer;
+	GetWorldTimerManager().SetTimer(RespawnTimer,
+		FTimerDelegate::CreateUObject(this, &ThisClass::RespawnAfterDeath, VictimController),
+		MatchSettings.RespawnDelaySeconds, false);
 }
 
-void AEnclaveMatchGameMode::RespawnPlayer(TWeakObjectPtr<AController> Controller)
+void AEnclaveMatchGameMode::RespawnAfterDeath(TWeakObjectPtr<AController> Controller)
 {
 	if (!IsMatchInProgress() || !Controller.IsValid())
 	{
 		return;
 	}
 
-	APawn* Pawn = Controller->GetPawn();
-
-	//Call an interface method on the pawn that performs the cleanup? Or look for a component which handles things like respawn?
-
-	if(IsValid(Pawn))
-	{
-		Pawn->Destroy();
-	}
-
-	RestartPlayer(Controller.Get());
+	RespawnPlayer(Controller.Get());
 }
