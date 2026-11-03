@@ -5,6 +5,7 @@
 #include "Debug/EnclaveDebug.h"
 #include "Game/EnclaveMatchGameState.h"
 #include "Player/EnclaveMatchPlayerState.h"
+#include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 
 AEnclaveMatchGameMode::AEnclaveMatchGameMode()
 {
@@ -87,4 +88,74 @@ void AEnclaveMatchGameMode::CancelWarmup(AEnclaveMatchGameState& MatchGameState)
 	MatchGameState.SetPhaseEndServerTime(0.0);
 	UE_LOG(LogEnclaveMatch, Log, TEXT("Warmup cancelled: %d of %d players."),
 		GetNumPlayers(), MatchSettings.MinPlayersToStart);
+}
+
+void AEnclaveMatchGameMode::SetPlayerDefaults(APawn* Pawn)
+{
+	Super::SetPlayerDefaults(Pawn);
+
+	if (!IsValid(Pawn))
+	{
+		return;
+	}
+
+	UEnclaveAvatarLifecycleComponent* LifecycleComponent = Pawn->FindComponentByClass<UEnclaveAvatarLifecycleComponent>();
+	if (IsValid(LifecycleComponent))
+	{
+		LifecycleComponent->OnAvatarDied.AddUniqueDynamic(this, &ThisClass::HandleAvatarDied);
+	}
+}
+
+void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* LifecycleComp, FEnclaveDamageRequest DamageRequest)
+{
+	if (!IsMatchInProgress() || !IsValid(LifecycleComp))
+	{
+		return;
+	}
+
+	APawn* Victim = LifecycleComp->GetOwner<APawn>();
+	AEnclaveMatchPlayerState* VictimPlayerState = Victim ? Victim->GetPlayerState<AEnclaveMatchPlayerState>() : nullptr;
+	if(!IsValid(Victim) || !IsValid(VictimPlayerState))
+	{
+		return;
+	}
+	
+	VictimPlayerState->AddDeath();
+
+	APawn* Attacker = Cast<APawn>(DamageRequest.SourceActor.Get());
+	AEnclaveMatchPlayerState* AttackerPlayerState = Attacker ? Attacker->GetPlayerState<AEnclaveMatchPlayerState>() : nullptr;
+	if (AttackerPlayerState && AttackerPlayerState->IsHostileTo(VictimPlayerState))
+	{
+		AttackerPlayerState->AddKill();
+	}
+	
+	ScoreKill(AttackerPlayerState, VictimPlayerState);
+
+	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
+	if (IsValid(MatchGameState))
+	{
+		MatchGameState->MulticastKill(AttackerPlayerState, VictimPlayerState);
+	}
+
+	FTimerHandle RespawnTimerHandle;
+	GetWorldTimerManager().SetTimer(RespawnTimerHandle, FTimerDelegate::CreateUObject(this, &AEnclaveMatchGameMode::RespawnPlayer, TWeakObjectPtr<AController>(Victim->GetController())), MatchSettings.RespawnDelaySeconds, false);
+}
+
+void AEnclaveMatchGameMode::RespawnPlayer(TWeakObjectPtr<AController> Controller)
+{
+	if (!IsMatchInProgress() || !Controller.IsValid())
+	{
+		return;
+	}
+
+	APawn* Pawn = Controller->GetPawn();
+
+	//Call an interface method on the pawn that performs the cleanup? Or look for a component which handles things like respawn?
+
+	if(IsValid(Pawn))
+	{
+		Pawn->Destroy();
+	}
+
+	RestartPlayer(Controller.Get());
 }

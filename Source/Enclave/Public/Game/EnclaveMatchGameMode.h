@@ -5,9 +5,12 @@
 #include "CoreMinimal.h"
 #include "Game/EnclaveGameMode.h"
 #include "Game/EnclaveMatchSettings.h"
+#include "Combat/EnclaveDamageRequest.h"
 #include "EnclaveMatchGameMode.generated.h"
 
 class AEnclaveMatchGameState;
+class AEnclaveMatchPlayerState;
+class UEnclaveAvatarLifecycleComponent;
 
 /**
  * Match framework shared by every mode: phases (warmup, in progress, post-match),
@@ -32,6 +35,10 @@ public:
 
 	const FEnclaveMatchSettings& GetMatchSettings() const { return MatchSettings; }
 
+	virtual void SetPlayerDefaults(APawn* Pawn) override;
+
+	
+
 protected:
 	/** Applies match URL options on top of the defaults. See FEnclaveMatchSettings. */
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
@@ -53,6 +60,13 @@ protected:
 	/** Defaults for this mode. Subclasses set their own in their constructor. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match")
 	FEnclaveMatchSettings MatchSettings;
+
+	UFUNCTION()
+	void HandleAvatarDied(UEnclaveAvatarLifecycleComponent* LifecycleComp, FEnclaveDamageRequest DamageRequest);
+
+	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim) PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );
+
+	virtual void RespawnPlayer(TWeakObjectPtr<AController> Controller);
 
 private:
 	/** Cancels a running warmup countdown, if any. */

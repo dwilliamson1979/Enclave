@@ -31,4 +31,5 @@ private:
 	/** Server-only combat policy. Callers use UEnclaveCombatPolicyComponent::Get(World). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveCombatPolicyComponent> CombatPolicy;
+
 };
