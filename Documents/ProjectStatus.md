@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-03, after C1 moment 6 (branch `ClaudeEdits`).
+Last updated 2026-11-04, after U3 moment 1 (branch `ClaudeEdits`).
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
 exists, what is in progress, and what comes next. Details live in the linked
@@ -41,7 +41,7 @@ times in a row with clean logs.
 | U1 | PlayerState kills, deaths, team | Done; split into match and team PlayerStates in C1 |
 | U2 | GameState scores, phase end, winner, kill event | Done; split into match, solo and team GameStates in C1 |
 | C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
-| U3 | Team base rules, then TDM | **Next** |
+| U3 | Team base rules, then TDM | **In progress** (moments below) |
 | U4 | Solo base rules, then DM | Not started |
 | C2 | Spawn selection | Not started |
 | C3 | Friendly-fire gate (via `IsHostileTo`) | Not started |
@@ -69,8 +69,24 @@ Decided after moment 6: a match with no score limit and no time limit logs a
 warning in `InitGame` but is allowed. Freezing players at the end of a match is
 done with C4's end screen (see the plan's C4 row).
 
-Nothing has run as a real match yet: there is no concrete DM or TDM mode,
-Blueprint or map. The first playable match comes with U3 or U4.
+U3 is built in three moments (balancing on join was already done in C1 moment 4):
+
+1. The team win check (`AEnclaveTeamMatchGameMode::CheckWinCondition`): the
+   match ends at the score limit or the time limit, the single top team wins,
+   and a shared top score is a draw. Also TDM's `ScoreKill`
+   (`AEnclaveTDMGameMode`): a kill of an enemy is +1 team score and +1 player
+   score. Done.
+2. A TDM Blueprint and the first real match on an existing map (`?game=`).
+3. Friendly fire (the team mode's `CanDamage`), then C3 wires it into
+   `ApplyDamage`.
+
+Decided in U3: kills and deaths are facts recorded by the match base; score is
+each mode's judgement (TDM: +1 per kill; objective modes may pay little or
+nothing per kill). Mode-only stats go on a mode PlayerState. Names are short:
+`AEnclaveTDMGameMode`, `AEnclaveDMGameMode`.
+
+Nothing has run as a real match yet: there is no Blueprint or map for a concrete
+mode. The first playable match is U3 moment 2.
 
 ## Next milestones
 

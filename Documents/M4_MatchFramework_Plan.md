@@ -1,6 +1,6 @@
 # Milestone 4: Match Framework (TDM and Deathmatch)
 
-Status: in progress. U1, U2 and C1 (the match GameMode) are done; U3 is next. Item-by-item status is in [ProjectStatus.md](ProjectStatus.md).
+Status: in progress. U1, U2 and C1 (the match GameMode) are done; U3 is in progress. Item-by-item status is in [ProjectStatus.md](ProjectStatus.md).
 
 ## Goal
 
@@ -35,9 +35,9 @@ AGameMode (engine: match-state machine)
   AEnclaveGameMode                    every map: player classes, UEnclaveCombatPolicyComponent (SSR, hit registration), RespawnPlayer
     AEnclaveMatchGameMode             a contest: phases, timer, deaths, respawn, spawns; no teams, no result
       AEnclaveSoloMatchGameMode       free-for-all: no teams at all; individual result and win check
-        AEnclaveDeathmatchGameMode    rules only: +1 per kill, first to N
+        AEnclaveDMGameMode            rules only: +1 per kill, first to N
       AEnclaveTeamMatchGameMode       teams: count, team scores, assignment and balancing, friendly fire; team win check
-        AEnclaveTeamDeathmatchGameMode rules only: +1 team score per kill, first to N
+        AEnclaveTDMGameMode           rules only: +1 team and player score per kill of an enemy
 
 AGameState (engine)                   one level per GameMode level; each GameMode sets GameStateClass to its own
   AEnclaveGameState                   every map: nothing beyond AGameState yet

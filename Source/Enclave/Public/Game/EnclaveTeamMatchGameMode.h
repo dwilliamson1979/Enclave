@@ -9,7 +9,7 @@
 /**
  * Base for every mode played in teams (TDM now; CTF, Control and others later).
  * It owns what all team modes share: the team count and team scores, team
- * assignment and balancing, and (next) friendly fire and the team win check.
+ * assignment and balancing, the team win check, and (next) friendly fire.
  * A mode's own rules, such as what scores, stay in the mode subclass.
  *
  * Teams are numbered 0..NumTeams-1, matching AEnclaveTeamGameState's TeamScores.
@@ -41,6 +41,14 @@ protected:
 	 * reconnect, AGameMode::PostLogin has already restored their old PlayerState.
 	 */
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+
+	/**
+	 * The match ends when a team reaches the score limit or time runs out. Either
+	 * way, the one team with the top score wins; a shared top score is a draw
+	 * (WinningTeam = NoTeam). That covers two teams reaching the limit in the
+	 * same frame: polling can't tell which got there first.
+	 */
+	virtual bool CheckWinCondition(bool bTimeLimitReached) override;
 
 	/**
 	 * The team for a player who has none. Default: the team with the fewest

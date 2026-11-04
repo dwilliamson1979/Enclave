@@ -7,32 +7,25 @@
 
 void AEnclaveTDMGameMode::ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim)
 {
-	//Could we pass in a bIsHostile parameter instead of doing this check? It would be more efficient since we already perform the check in the calling function. It takes away some of the control from this class, though.
-	AEnclaveTeamGameState* TeamGameState = GetGameState<AEnclaveTeamGameState>();
-	AEnclaveTeamPlayerState* AttackerTeamPlayer = Cast<AEnclaveTeamPlayerState>(Attacker);
-	AEnclaveTeamPlayerState* VictimTeamPlayer = Cast<AEnclaveTeamPlayerState>(Victim);
-
-	if(TeamGameState && AttackerTeamPlayer && VictimTeamPlayer)
+	// Only a kill of an enemy scores. IsHostileTo is false for a suicide or a
+	// team kill; Attacker is null for a death no player caused. None of these
+	// costs the team a point in TDM.
+	if (!Attacker || !Attacker->IsHostileTo(Victim))
 	{
-		// Only score a kill if the attacker is on a different team than the victim
-		if(AttackerTeamPlayer->GetTeamId() != VictimTeamPlayer->GetTeamId())
-		{
-			TeamGameState->AddTeamScore(AttackerTeamPlayer->GetTeamId(), 1);
-		}
-	}
-}
-
-bool AEnclaveTDMGameMode::CheckWinCondition(bool bTimeLimitReached)
-{
-	AEnclaveTeamGameState* TeamGameState = GetGameState<AEnclaveTeamGameState>();
-
-	if(!IsValid(TeamGameState))
-	{
-		UE_LOG(LogEnclaveMatch, Warning, TEXT("CheckWinCondition called with invalid GameState."));
-		return false;
+		return;
 	}
 
+	AEnclaveTeamGameState* TeamGameState = GetGameState<AEnclaveTeamGameState>();
+	const AEnclaveTeamPlayerState* TeamAttacker = Cast<AEnclaveTeamPlayerState>(Attacker);
+	if (!ensureMsgf(TeamGameState && TeamAttacker,
+		TEXT("AEnclaveTDMGameMode needs an AEnclaveTeamGameState and AEnclaveTeamPlayerStates; the kill was not scored.")))
+	{
+		return;
+	}
 
-
-	return false;
+	// The team score decides the match; the player's score is for the
+	// scoreboard. APlayerState's Score is already replicated (a float, exact
+	// for whole numbers far beyond any match).
+	TeamGameState->AddTeamScore(TeamAttacker->GetTeamId(), 1);
+	Attacker->SetScore(Attacker->GetScore() + 1.0f);
 }

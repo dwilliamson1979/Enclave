@@ -68,6 +68,68 @@ void AEnclaveTeamMatchGameMode::HandleStartingNewPlayer_Implementation(APlayerCo
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
 }
 
+bool AEnclaveTeamMatchGameMode::CheckWinCondition(bool bTimeLimitReached)
+{
+	AEnclaveTeamGameState* TeamGameState = GetGameState<AEnclaveTeamGameState>();
+	if (!ensureMsgf(TeamGameState, TEXT("AEnclaveTeamMatchGameMode needs an AEnclaveTeamGameState; the match can't end.")))
+	{
+		return false;
+	}
+
+	// The top score, and how many teams share it. The GameState's scores are the
+	// ones players see, so the result can't disagree with the HUD.
+	int32 TopScore = 0;
+	uint8 TopTeam = AEnclaveTeamPlayerState::NoTeam;
+	int32 NumTeamsAtTop = 0;
+	for (int32 TeamId = 0; TeamId < TeamGameState->GetNumTeams(); ++TeamId)
+	{
+		const int32 Score = TeamGameState->GetTeamScore(static_cast<uint8>(TeamId));
+		if (NumTeamsAtTop == 0 || Score > TopScore)
+		{
+			TopScore = Score;
+			TopTeam = static_cast<uint8>(TeamId);
+			NumTeamsAtTop = 1;
+		}
+		else if (Score == TopScore)
+		{
+			++NumTeamsAtTop;
+		}
+	}
+
+	// >=, not ==: a mode may score more than 1 at a time, and kills can still
+	// land in the frame after the limit is reached (see below).
+	const bool bScoreLimitReached = MatchSettings.ScoreLimit > 0
+		&& NumTeamsAtTop > 0
+		&& TopScore >= MatchSettings.ScoreLimit;
+	if (!bScoreLimitReached && !bTimeLimitReached)
+	{
+		return false;
+	}
+
+	// One rule for both ends. The world tick receives network traffic before
+	// actors tick, so every kill of this frame is already scored and two teams
+	// can reach the limit together. Their order would be packet order, which
+	// isn't fair to anyone, so a shared top score is a draw. No teams at all
+	// (InitTeams failed) is also a draw, so the time limit still ends the match.
+	const uint8 WinningTeam = NumTeamsAtTop == 1 ? TopTeam : AEnclaveTeamPlayerState::NoTeam;
+	TeamGameState->SetWinningTeam(WinningTeam);
+
+	// Runs once: returning true ends the match, so polling stops.
+	FString Scores;
+	for (int32 TeamId = 0; TeamId < TeamGameState->GetNumTeams(); ++TeamId)
+	{
+		Scores += FString::Printf(TEXT("%steam %d: %d"), Scores.IsEmpty() ? TEXT("") : TEXT(", "),
+			TeamId, TeamGameState->GetTeamScore(static_cast<uint8>(TeamId)));
+	}
+	const FString Result = WinningTeam == AEnclaveTeamPlayerState::NoTeam
+		? FString(TEXT("a draw"))
+		: FString::Printf(TEXT("team %d wins"), WinningTeam);
+	UE_LOG(LogEnclaveMatch, Log, TEXT("Match over (%s): %s (%s)."),
+		bScoreLimitReached ? TEXT("score limit") : TEXT("time limit"), *Result, *Scores);
+
+	return true;
+}
+
 uint8 AEnclaveTeamMatchGameMode::ChooseTeamForPlayer(const AController* Player) const
 {
 	uint8 SmallestTeam = 0;
