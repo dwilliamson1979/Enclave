@@ -10,7 +10,6 @@
 
 class AEnclaveMatchGameState;
 class AEnclaveMatchPlayerState;
-class AEnclaveMatchPlayerState;
 class UEnclaveAvatarLifecycleComponent;
 
 /**
