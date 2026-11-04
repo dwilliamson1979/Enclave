@@ -213,6 +213,7 @@ Each phase keeps every existing suite green and is its own commit series.
 | 4 | Keep Hybrid / EchoedStamp | Retire in P6 unless new measurements show a benefit |
 | 5 | Rewind cap for skeletal rewind | Same 200 ms cap |
 | 6 | Who writes which phase | To discuss (see below) |
+| 7 | Carry the shot's fire time (the rewound time) into `FEnclaveDamageRequest`. Today the match ends on the first kill the server *receives* at the score limit (M4 U3), so a lower-ping team can win a last-kill race the other team fired first. With the fire time, the match could keep accepting kills for a grace window (the rewind cap) once the limit is reached, then rank them by fire time | Yes, with P5 (the damage pipeline). The match's grace window is then its own small item on top. Fire time is a client claim, bounded by the rewind checks |
 
 ## Work split (to discuss)
 
