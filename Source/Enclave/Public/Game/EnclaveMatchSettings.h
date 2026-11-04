@@ -6,9 +6,14 @@
 #include "EnclaveMatchSettings.generated.h"
 
 /**
- * Settings shared by every match mode. Each mode sets its defaults (in its
- * constructor or Blueprint); a server can override any of them with a URL
+ * Settings shared by every match mode. Each mode sets its defaults in its
+ * Blueprint (settings are data); a server can override any of them with a URL
  * option, e.g. MapName?ScoreLimit=3?Warmup=0. All times are in seconds.
+ *
+ * Defaults here are values every mode shares, or neutral (ScoreLimit 0) where
+ * modes differ. A Blueprint saves only values that differ from its parent, so
+ * a mode's value that happened to equal the struct default would not be
+ * stored, and would change silently with it.
  *
  * Settings that only one mode uses (a CTF capture limit, for example) belong
  * on that mode's GameMode, not here.
@@ -18,9 +23,12 @@ struct ENCLAVE_API FEnclaveMatchSettings
 {
 	GENERATED_BODY()
 
-	/** Score needed to win; the mode decides what scores. 0 = no score limit. ?ScoreLimit= */
+	/**
+	 * Score needed to win; the mode decides what scores (TDM 50, DM 25, set in
+	 * each mode's Blueprint). 0 = no score limit. ?ScoreLimit=
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0"))
-	int32 ScoreLimit = 50;
+	int32 ScoreLimit = 0;
 
 	/** 0 = no time limit. ?TimeLimit= */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", Units = "s"))
