@@ -183,13 +183,33 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	APawn* Attacker = Cast<APawn>(DamageRequest.SourceActor.Get());
 	AEnclaveMatchPlayerState* AttackerPlayerState = Attacker ? Attacker->GetPlayerState<AEnclaveMatchPlayerState>() : nullptr;
 	// Only an enemy gets the kill: IsHostileTo is false for yourself and teammates.
-	if (AttackerPlayerState && AttackerPlayerState->IsHostileTo(VictimPlayerState))
+	const bool bKill = AttackerPlayerState && AttackerPlayerState->IsHostileTo(VictimPlayerState);
+	if (bKill)
 	{
 		AttackerPlayerState->AddKill();
 	}
 
 	// The mode sees every death, so it can also penalize suicides or team kills.
 	ScoreKill(AttackerPlayerState, VictimPlayerState);
+
+	// After ScoreKill, so the scores include this death. Player stats only: team
+	// scores are the team branch's, and the match-over line reports them.
+	const TCHAR* DeathKind = bKill ? TEXT("kill")
+		: !AttackerPlayerState ? TEXT("no attacker")
+		: AttackerPlayerState == VictimPlayerState ? TEXT("suicide")
+		: TEXT("not hostile");
+	if (AttackerPlayerState && AttackerPlayerState != VictimPlayerState)
+	{
+		UE_LOG(LogEnclaveMatch, Log, TEXT("Death (%s): %s by %s. Victim deaths %d, score %.0f; attacker kills %d, score %.0f."),
+			DeathKind, *VictimPlayerState->GetPlayerName(), *AttackerPlayerState->GetPlayerName(),
+			VictimPlayerState->GetDeaths(), VictimPlayerState->GetScore(),
+			AttackerPlayerState->GetKills(), AttackerPlayerState->GetScore());
+	}
+	else
+	{
+		UE_LOG(LogEnclaveMatch, Log, TEXT("Death (%s): %s. Deaths %d, score %.0f."),
+			DeathKind, *VictimPlayerState->GetPlayerName(), VictimPlayerState->GetDeaths(), VictimPlayerState->GetScore());
+	}
 
 	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
 	if (IsValid(MatchGameState))

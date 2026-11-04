@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-04, after U3 moment 1 (branch `ClaudeEdits`).
+Last updated 2026-11-04, after U3 moment 2 (branch `ClaudeEdits`).
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
 exists, what is in progress, and what comes next. Details live in the linked
@@ -76,17 +76,25 @@ U3 is built in three moments (balancing on join was already done in C1 moment 4)
    and a shared top score is a draw. Also TDM's `ScoreKill`
    (`AEnclaveTDMGameMode`): a kill of an enemy is +1 team score and +1 player
    score. Done.
-2. A TDM Blueprint and the first real match on an existing map (`?game=`).
+2. `BP_TDMGameMode` (`?game=TDM` alias) and the first real matches on
+   `EnclaveMap`, dedicated server with 2 clients: two score-limit wins and a
+   time-limit draw, each followed by a restart that kept the URL options.
+   The match logs every death with the players' stats. Done.
 3. Friendly fire (the team mode's `CanDamage`), then C3 wires it into
    `ApplyDamage`.
 
 Decided in U3: kills and deaths are facts recorded by the match base; score is
 each mode's judgement (TDM: +1 per kill; objective modes may pay little or
 nothing per kill). Mode-only stats go on a mode PlayerState. Names are short:
-`AEnclaveTDMGameMode`, `AEnclaveDMGameMode`.
+`AEnclaveTDMGameMode`, `AEnclaveDMGameMode`. Mode defaults that differ between
+modes (the score limit: TDM 50, DM 25) are set in each mode's Blueprint; the
+settings struct keeps neutral defaults (`ScoreLimit` 0), because a Blueprint
+saves only values that differ from its parent.
 
-Nothing has run as a real match yet: there is no Blueprint or map for a concrete
-mode. The first playable match is U3 moment 2.
+Run a match by hand (close the editor first; server, then one line per client):
+`UnrealEditor.exe Enclave.uproject "/Game/Maps/EnclaveMap?game=TDM?ScoreLimit=3?TimeLimit=180?Warmup=5?PostMatch=8" -server -log`
+and `UnrealEditor.exe Enclave.uproject 127.0.0.1 -game -windowed -ResX=960 -ResY=540`.
+Without a HUD (C4), the server log's `LogEnclaveMatch` lines are the scoreboard.
 
 ## Next milestones
 
@@ -117,7 +125,11 @@ Fixed only when chosen; none block M4.
 - Two SSR diagnostics remain on the character (`DebugLogViewGeometryForShot`,
   the `OnRep_ReplicatedMovement` body); they move to the hit target component
   in Lag Compensation v2.
-- Unverified: whether `RestartGame` (`?Restart`) keeps the server's URL
-  options, such as `?ScoreLimit=3`. Check in the first real match.
+- Teams are reshuffled at every restart: `?Restart` is a non-seamless travel,
+  so clients reconnect with new PlayerStates and get teams in reconnect order.
+  Seamless travel would keep them (`AEnclaveTeamPlayerState::CopyProperties`)
+  and restart faster, but needs a transition map. Not decided yet.
+- The server log warns about 16 out-of-date Manny `PoseAsset`s
+  (`/Game/Characters/ThirdPerson/Rig/Poses/Manny`); re-saving them fixes it.
 - `EnclaveDebugRespawn` should be rechecked in the SSR test range now that item
   teardown happens in `AEnclaveCharacter::UnPossessed`.

@@ -112,6 +112,14 @@ in [ProjectStatus.md](ProjectStatus.md).
 - `RestartPlayer` reuses a pawn the controller still has
   (`GameModeBase.cpp:1287`), so a respawn must remove the old pawn first.
   `SetPlayerDefaults` runs for each pawn it spawns.
+- `?game=` beats the map's World Settings GameMode override
+  (`GameInstance.cpp:1531-1549`); short names come from
+  `GameModeClassAliases` in `DefaultEngine.ini` (`?game=TDM`).
+- `RestartGame` (`?Restart`) reloads the last URL with all its options
+  (`UnrealEngine.cpp:15770`; seamless: `World.cpp:9146`), so `?ScoreLimit=`
+  and `?game=` survive a restart. Verified in a real match.
+- A Blueprint saves only values that differ from its parent class. Setting a
+  Blueprint property to the inherited value stores nothing.
 - The default `FGenericTeamId` attitude solver (`AIInterfaces.cpp`) treats equal
   IDs as friendly, so "everyone on NoTeam" would make free-for-all players
   friends.
