@@ -249,10 +249,21 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	// player who left or a match that ended, so nothing needs to cancel it.
 	// Weak, because the player may disconnect before it fires.
 	const TWeakObjectPtr<AController> VictimController = Victim->GetController();
-	FTimerHandle RespawnTimer;
-	GetWorldTimerManager().SetTimer(RespawnTimer,
-		FTimerDelegate::CreateUObject(this, &ThisClass::RespawnAfterDeath, VictimController),
-		MatchSettings.RespawnDelaySeconds, false);
+	const FTimerDelegate Respawn = FTimerDelegate::CreateUObject(this, &ThisClass::RespawnAfterDeath, VictimController);
+
+	// A timer with a delay of 0 never fires (FTimerManager::InternalSetTimer
+	// only sets one for a rate > 0), so an instant respawn waits for the next
+	// tick instead: still outside this damage callback, and through the same
+	// checks in RespawnAfterDeath.
+	if (MatchSettings.RespawnDelaySeconds > 0)
+	{
+		FTimerHandle RespawnTimer;
+		GetWorldTimerManager().SetTimer(RespawnTimer, Respawn, MatchSettings.RespawnDelaySeconds, false);
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimerForNextTick(Respawn);
+	}
 }
 
 void AEnclaveMatchGameMode::RespawnAfterDeath(TWeakObjectPtr<AController> Controller)
