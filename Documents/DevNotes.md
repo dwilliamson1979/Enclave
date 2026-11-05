@@ -109,6 +109,12 @@ in [ProjectStatus.md](ProjectStatus.md).
   virtuals.
 - Every join path ends in `HandleStartingNewPlayer` (PostLogin, seamless travel);
   `AGameMode::PostLogin` first restores a reconnecting player's PlayerState.
+  The restore (`FindInactivePlayer`, virtual) and `HandleStartingNewPlayer`
+  run in the same call (`GameMode.cpp:115-117`, `GameModeBase.cpp:1035`), so
+  the team mode notes a reconnect in its `FindInactivePlayer` override. The
+  inactive list belongs to the GameMode, so a reconnect is always to the same
+  map; entries expire after `InactivePlayerStateLifeSpan` (300 s) and at most
+  `MaxInactivePlayers` (16) are kept (`GameMode.cpp:46-47`).
 - `RestartPlayer` reuses a pawn the controller still has
   (`GameModeBase.cpp:1287`), so a respawn must remove the old pawn first.
   `SetPlayerDefaults` runs for each pawn it spawns.

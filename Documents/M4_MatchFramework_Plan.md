@@ -181,7 +181,7 @@ most: replication, authority and the GameMode/GameState split.
 | U1 | PlayerState team, kills and deaths | **You** | `Replicated` / `ReplicatedUsing`, `GetLifetimeReplicatedProps`, authority checks, OnRep event. Small and self-contained, so a good first piece. (Later split by C1 into match and team PlayerStates.) |
 | U2 | `AEnclaveGameState` | **You** | Replicated team scores, end time and winner; the kill multicast. Set `GameStateClass` in the GameMode. (Later split by C1 into match, solo and team GameStates.) |
 | C1 | Reparent to `AGameMode` and add the `AEnclaveMatchGameMode` skeleton | Claude | Phases, warmup and timer, death binding, respawn timer, URL options, virtual hooks with defaults |
-| U3 | Team base rules, then TDM rules | **You** | In `AEnclaveTeamMatchGameMode`: team balancing (the smaller team), `CanDamage` (friendly fire) and the team win check. In TDM: `ScoreKill` |
+| U3 | Team base rules, then TDM rules | **You** | In `AEnclaveTeamMatchGameMode`: team balancing (the smaller team), team assignment at match start (Keep teams, Random, even out), Open and Reserved team slots, `CanDamage` (friendly fire) and the team win check. In TDM: `ScoreKill`. Moments in ProjectStatus |
 | U4 | Solo base rules, then DM rules | **You** | In `AEnclaveSoloMatchGameMode`: the individual win check. In DM: `ScoreKill`. Short once TDM exists. |
 | C2 | Spawn selection | Claude | `AEnclavePlayerStart` with an optional team; reject occupied starts; prefer starts far from living enemies. Written as a pure scoring function with unit tests. |
 | C3 | Friendly-fire gate | Claude | `ApplyDamage` asks the match GameMode's `CanDamage`. Self-damage is still allowed. |

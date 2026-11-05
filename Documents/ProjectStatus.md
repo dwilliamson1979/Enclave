@@ -69,8 +69,8 @@ Decided after moment 6: a match with no score limit and no time limit logs a
 warning in `InitGame` but is allowed. Freezing players at the end of a match is
 done with C4's end screen (see the plan's C4 row).
 
-U3 is built in five moments (balancing on join was already done in C1 moment 4;
-moments 3 and 4 were added after moment 2):
+U3 is built in six moments (balancing on join was already done in C1 moment 4;
+moments 3 to 5 were added after moment 2):
 
 1. The team win check (`AEnclaveTeamMatchGameMode::CheckWinCondition`): the
    match ends at the score limit or the time limit, the single top team wins,
@@ -88,12 +88,38 @@ moments 3 and 4 were added after moment 2):
    stats are reset for every player at match start (`ResetMatchStats`). Verified
    with 2 clients over several restarts: about 0.2 s per restart, teams kept,
    stats from 0, combat works after the restart. Done.
-4. Team policy at match start (Keep, Shuffle; both followed by evening out the
-   teams), as a pure function over groups of players, with an editor setting
-   and `?TeamPolicy=`. SkillBalance and parties wait for their data (ratings,
-   a lobby); a solo player is a group of one, so parties fit later.
-5. Friendly fire (the team mode's `CanDamage`), then C3 wires it into
-   `ApplyDamage`.
+4. Team assignment at match start, one pipeline for a new server, a restart,
+   or a mix: build groups (a solo player is a group of one; a party later is
+   one group), keep each group's previous team if `bKeepTeams`, place the rest
+   with the assignment policy (`Random`; `SkillBalance` when ratings exist),
+   then even out to `MaxTeamSizeDifference` (smallest groups, then the newest,
+   move first; a group is never split, so with parties the result is best
+   effort; splitting a party as a last resort comes with parties).
+   `EnclaveTeamAssignment::AssignTeams` (`Game/EnclaveTeamAssignment.h`) with
+   `FEnclaveTeamAssignmentRules` on the team mode and `?TeamAssignment=` /
+   `?KeepTeams=`. Team slots are Open: only connected players count toward
+   team sizes, a player who arrives after the start is placed as new whatever
+   team they carry (smallest team, ties at random), and a reconnect to the
+   same match returns to its old team if the sizes stay within
+   `MaxTeamSizeDifference`, otherwise it is placed as new. Mid-match
+   rebalance is a later, separate item (backfill to the smallest team covers
+   the common case). Tests: `Enclave.Match.TeamAssignment.*`. Verified with 2
+   clients over several restarts with `KeepTeams=1` (teams kept) and
+   `KeepTeams=0` (teams redealt), and with 4 clients mid-match: a reconnect
+   kept its team twice, a late joiner went to the smaller team, and a
+   reconnect whose team had filled went to the other team with its stats.
+   Done.
+5. Reserved team slots: a team slot policy (`Open`, `Reserved`; a default in
+   each mode's Blueprint, overridden by `?TeamSlots=`). Under Reserved, the
+   server's own assignment becomes this match's roster (kept by the match
+   framework by unique ID, because the engine's `InactivePlayerArray` expires
+   after 300 s and holds at most 16), team sizes count roster members, and a
+   reconnect always returns to its team. Still to decide: hold a slot for the
+   whole match or for a time limit.
+6. Friendly fire (the team mode's `CanDamage`), then C3 wires it into
+   `ApplyDamage`. It starts with who counts as a participant: a spectator
+   (`IsOnlyASpectator`) is hostile to nobody, and a `NoTeam` player is
+   neutral, not an enemy.
 
 Decided in U3: kills and deaths are facts recorded by the match base; score is
 each mode's judgement (TDM: +1 per kill; objective modes may pay little or
