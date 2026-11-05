@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
-#include "GameplayEffectTypes.h"
+#include "Animation/EnclaveGameplayTagPropertyMap.h"
 #include "Animation/Interfaces/EnclaveAnimDataProviderInterface.h"
 #include "EnclaveCharacterAnimInstance.generated.h"
 
@@ -19,15 +19,14 @@ class UAbilitySystemComponent;
  * Two inputs, two update phases:
  *
  * - Game thread (NativeUpdateAnimation): copy a snapshot from the pawn via
- *   IEnclaveAnimDataProviderInterface, and bind GameplayTagPropertyMap to
- *   the pawn's ASC once one exists. This is the only place UObjects are
- *   touched.
+ *   IEnclaveAnimDataProviderInterface, and keep GameplayTagBindings bound to
+ *   the pawn's ASC. This is the only place UObjects are touched.
  * - Worker thread (NativeThreadSafeUpdateAnimation): derive GroundSpeed,
  *   MoveDirection and bIsMoving from that snapshot. Touches only this
  *   instance's own members.
  *
  * Linked layer instances are separate UAnimInstances. Because they share
- * this parent, each one resolves its own data and binds its own tag map,
+ * this parent, each one resolves its own data and binds its own tags,
  * so a layer ABP never needs to know which main ABP it's linked into.
  */
 UCLASS()
@@ -40,20 +39,23 @@ public:
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 
+	/** Unbinds the tag bindings: the ASC (on the PlayerState) outlives this instance's pawn. */
+	virtual void NativeUninitializeAnimation() override;
+
 #if WITH_EDITOR
-	/** Flags GameplayTagPropertyMap entries that point at missing or wrongly typed properties. */
+	/** Flags GameplayTagBindings entries with no tag, or a missing or wrongly typed property. */
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif
 
 protected:
 	/**
 	 * Gameplay Tag -> ABP variable bindings, configured per ABP in Class
-	 * Defaults (e.g. State.Item.Reloading -> bIsReloading). Driven by the
-	 * ASC's tag-change events, not polled. Supported property types: bool
-	 * (tag present), int (tag count), float (tag count).
+	 * Defaults (e.g. State.Item.Aiming -> bIsAiming). Driven by the ASC's
+	 * tag-change events, not polled. Supported property types: bool (tag
+	 * present), int, float or double (tag count).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Enclave|Gameplay Tags")
-	FGameplayTagBlueprintPropertyMap GameplayTagPropertyMap;
+	FEnclaveGameplayTagPropertyMap GameplayTagBindings;
 
 	/** This frame's snapshot from the pawn. Default-constructed when no provider exists. */
 	UPROPERTY(BlueprintReadOnly, Category = "Enclave|Anim Data")
@@ -80,13 +82,13 @@ private:
 	bool TryRefreshPawnBinding();
 
 	/**
-	 * Binds GameplayTagPropertyMap the first time the pawn's ASC is
-	 * available. The ASC lives on the PlayerState and is only reachable
-	 * after possession (server) / PlayerState replication (clients), which
-	 * can land after this instance initializes - so this retries each frame
-	 * until it succeeds, then no-ops.
+	 * Keeps GameplayTagBindings bound to the pawn's current ASC. The ASC lives
+	 * on the PlayerState and is only reachable after possession (server) /
+	 * PlayerState replication (clients), which can land after this instance
+	 * initializes, and a new PlayerState brings a new ASC (seamless travel).
+	 * So this checks each frame and rebinds only when the ASC differs.
 	 */
-	void TryBindGameplayTagPropertyMap(APawn* Pawn);
+	void TryBindGameplayTagBindings(APawn* Pawn);
 
 	void ResetAnimationState();
 
@@ -94,6 +96,4 @@ private:
 
 	/** Only valid while CachedPawn is valid - always check CachedPawn first. */
 	const IEnclaveAnimDataProviderInterface* AnimDataProvider = nullptr;
-
-	TWeakObjectPtr<UAbilitySystemComponent> BoundAbilitySystemComponent;
 };

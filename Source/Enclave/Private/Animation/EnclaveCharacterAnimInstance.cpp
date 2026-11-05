@@ -33,7 +33,18 @@ void UEnclaveCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	AnimData = AnimDataProvider->GetAnimData();
 
-	TryBindGameplayTagPropertyMap(CachedPawn.Get());
+	TryBindGameplayTagBindings(CachedPawn.Get());
+}
+
+void UEnclaveCharacterAnimInstance::NativeUninitializeAnimation()
+{
+	// The pawn is going (or this layer is being unlinked), but the ASC lives on
+	// and keeps sending tag changes: unbind now, not at garbage collection.
+	GameplayTagBindings.Unbind();
+	CachedPawn.Reset();
+	AnimDataProvider = nullptr;
+
+	Super::NativeUninitializeAnimation();
 }
 
 // Worker thread (or game thread if multithreaded anim update is disabled).
@@ -64,33 +75,30 @@ bool UEnclaveCharacterAnimInstance::TryRefreshPawnBinding()
 		CachedPawn = Pawn;
 		AnimDataProvider = Cast<IEnclaveAnimDataProviderInterface>(Pawn);
 
-		// A different pawn means a different (or no) ASC - rebind on next update.
-		BoundAbilitySystemComponent.Reset();
+		// A different pawn means a different (or no) ASC: drop the old binding
+		// now; TryBindGameplayTagBindings binds the new one.
+		GameplayTagBindings.Unbind();
 	}
 
 	return Pawn && AnimDataProvider;
 }
 
-void UEnclaveCharacterAnimInstance::TryBindGameplayTagPropertyMap(APawn* Pawn)
+void UEnclaveCharacterAnimInstance::TryBindGameplayTagBindings(APawn* Pawn)
 {
-	if (BoundAbilitySystemComponent.IsValid())
-	{
-		return;
-	}
-
 	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(Pawn);
 	UAbilitySystemComponent* ASC = AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
 
-	if (!ASC)
+	// Bound to this ASC already (the usual case), or no ASC yet because the
+	// PlayerState hasn't arrived: nothing to do, check again next frame.
+	if (!ASC || ASC == GameplayTagBindings.GetBoundAbilitySystemComponent())
 	{
-		// PlayerState (and therefore the ASC) hasn't arrived yet - retry next frame.
 		return;
 	}
 
-	// Registers tag-change callbacks and applies the tags' current counts
-	// immediately, so a pawn that spawns mid-reload starts in the right state.
-	GameplayTagPropertyMap.Initialize(this, ASC);
-	BoundAbilitySystemComponent = ASC;
+	// First bind, or a new ASC (a new PlayerState). Bind unbinds the old one,
+	// and applies current counts so a pawn that spawns mid-reload starts in
+	// the right state.
+	GameplayTagBindings.Bind(this, ASC);
 }
 
 void UEnclaveCharacterAnimInstance::ResetAnimationState()
@@ -103,7 +111,7 @@ EDataValidationResult UEnclaveCharacterAnimInstance::IsDataValid(FDataValidation
 {
 	Super::IsDataValid(Context);
 
-	GameplayTagPropertyMap.IsDataValid(this, Context);
+	GameplayTagBindings.ValidateBindings(GetClass(), Context);
 
 	return Context.GetNumErrors() > 0 ? EDataValidationResult::Invalid : EDataValidationResult::Valid;
 }

@@ -137,11 +137,6 @@ Fixed only when chosen; none block M4.
 - Two SSR diagnostics remain on the character (`DebugLogViewGeometryForShot`,
   the `OnRep_ReplicatedMovement` body); they move to the hit target component
   in Lag Compensation v2.
-- Clients log `FGameplayTagBlueprintPropertyMap::GameplayTagEventCallback called
-  with corrupted RegisteredOwner` after a respawn: the dead pawn's anim
-  instances stay bound to the player's ASC (on the PlayerState) until garbage
-  collection. Noise, not a crash. Fix in progress: our own tag binder that
-  unbinds when the anim instance uninitializes.
 - The server log warns about 16 out-of-date Manny `PoseAsset`s
   (`/Game/Characters/ThirdPerson/Rig/Poses/Manny`); re-saving them fixes it.
 - `EnclaveDebugRespawn` should be rechecked in the SSR test range now that item

@@ -64,7 +64,7 @@ class UEnclaveAnimDataProviderInterface : public UInterface
  *
  * Gameplay state (reloading, aiming down sights, sprinting...) deliberately
  * does NOT belong here: that arrives as Gameplay Tags through the anim
- * instance's GameplayTagPropertyMap, straight from the ASC.
+ * instance's GameplayTagBindings, straight from the ASC.
  */
 class ENCLAVE_API IEnclaveAnimDataProviderInterface
 {

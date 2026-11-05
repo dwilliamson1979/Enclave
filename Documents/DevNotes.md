@@ -126,7 +126,9 @@ in [ProjectStatus.md](ProjectStatus.md).
   without the reset (`GameMode.cpp:408-441`).
 - The ASC lives on the PlayerState, so it outlives each pawn. Anything a pawn
   (or its anim instances) binds to the ASC must unbind when the pawn goes;
-  garbage collection is too late.
+  garbage collection is too late. That's why anim instances use
+  `FEnclaveGameplayTagPropertyMap`, not the engine's
+  `FGameplayTagBlueprintPropertyMap`, which unbinds only in its destructor.
 - A Blueprint saves only values that differ from its parent class. Setting a
   Blueprint property to the inherited value stores nothing.
 - The default `FGenericTeamId` attitude solver (`AIInterfaces.cpp`) treats equal
