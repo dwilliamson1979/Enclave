@@ -28,12 +28,24 @@ void AEnclaveMatchPlayerState::AddDeath()
 	Deaths++;
 }
 
-void AEnclaveMatchPlayerState::Reset()
+void AEnclaveMatchPlayerState::ResetMatchStats()
 {
-	Super::Reset(); //Handles Score reset.
+	if(!HasAuthority())
+	{
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("ResetMatchStats called on non-authority PlayerState. This should only be called on the server."));
+		return;
+	}
 
 	Kills = 0;
 	Deaths = 0;
+	SetScore(0.0f);
+}
+
+void AEnclaveMatchPlayerState::Reset()
+{
+	Super::Reset();
+
+	ResetMatchStats();
 }
 
 void AEnclaveMatchPlayerState::CopyProperties(APlayerState* PlayerState)

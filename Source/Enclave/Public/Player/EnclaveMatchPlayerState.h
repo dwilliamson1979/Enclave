@@ -31,6 +31,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Match")
 	int32 GetDeaths() const { return Deaths; }
 
+	/** Zeroes this match's stats: kills, deaths and score. Authority only. */
+	void ResetMatchStats();
+
+	/** Engine reset (ResetLevel, and before a seamless travel copies the PlayerState): clears the match stats. */
 	virtual void Reset() override;
 
 protected:

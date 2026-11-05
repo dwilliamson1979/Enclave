@@ -118,6 +118,15 @@ in [ProjectStatus.md](ProjectStatus.md).
 - `RestartGame` (`?Restart`) reloads the last URL with all its options
   (`UnrealEngine.cpp:15770`; seamless: `World.cpp:9146`), so `?ScoreLimit=`
   and `?game=` survive a restart. Verified in a real match.
+- Seamless travel (`bUseSeamlessTravel`) needs no transition map: without one
+  the engine travels through an empty dummy world (`World.cpp:8367-8370`).
+  `AGameMode::HandleSeamlessTravelPlayer` resets the old PlayerState, then
+  copies it into a new one (`CopyProperties`), so each player gets a fresh
+  PlayerState and ASC. When the player controller class changes, it copies
+  without the reset (`GameMode.cpp:408-441`).
+- The ASC lives on the PlayerState, so it outlives each pawn. Anything a pawn
+  (or its anim instances) binds to the ASC must unbind when the pawn goes;
+  garbage collection is too late.
 - A Blueprint saves only values that differ from its parent class. Setting a
   Blueprint property to the inherited value stores nothing.
 - The default `FGenericTeamId` attitude solver (`AIInterfaces.cpp`) treats equal

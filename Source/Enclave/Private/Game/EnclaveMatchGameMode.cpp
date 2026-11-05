@@ -11,6 +11,12 @@ AEnclaveMatchGameMode::AEnclaveMatchGameMode()
 {
 	GameStateClass = AEnclaveMatchGameState::StaticClass();
 	PlayerStateClass = AEnclaveMatchPlayerState::StaticClass();
+
+	// Restarts (RestartGame's ?Restart) keep clients connected, and each
+	// PlayerState is copied into the next match (CopyProperties), so a team
+	// mode can keep teams. With no transition map set, the engine travels
+	// through an empty dummy world (World.cpp, FSeamlessTravelHandler::StartTravel).
+	bUseSeamlessTravel = true;
 }
 
 void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
@@ -68,6 +74,27 @@ void AEnclaveMatchGameMode::HandleMatchHasStarted()
 {
 	// The warmup is over; don't leave its end time behind as stale state.
 	WarmupEndServerTime.Reset();
+
+	// A match starts at zero. A seamless restart usually arrives with zeroed
+	// stats (the engine resets the PlayerState before copying it), but not when
+	// the player controller class changes between modes, so don't rely on it.
+	// Inactive players too: one who left during warmup and comes back resumes
+	// their PlayerState.
+	auto ResetStats = [](const TArray<TObjectPtr<APlayerState>>& Players)
+	{
+		for (APlayerState* Player : Players)
+		{
+			if (AEnclaveMatchPlayerState* MatchPlayer = Cast<AEnclaveMatchPlayerState>(Player))
+			{
+				MatchPlayer->ResetMatchStats();
+			}
+		}
+	};
+	if (GameState)
+	{
+		ResetStats(GameState->PlayerArray);
+	}
+	ResetStats(InactivePlayerArray);
 
 	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
 	if (ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the time limit was not set.")))

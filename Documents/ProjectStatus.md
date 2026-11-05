@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-04, after U3 moment 2 (branch `ClaudeEdits`).
+Last updated 2026-11-05, after U3 moment 3, seamless restart (branch `ClaudeEdits`).
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
 exists, what is in progress, and what comes next. Details live in the linked
@@ -69,7 +69,8 @@ Decided after moment 6: a match with no score limit and no time limit logs a
 warning in `InitGame` but is allowed. Freezing players at the end of a match is
 done with C4's end screen (see the plan's C4 row).
 
-U3 is built in three moments (balancing on join was already done in C1 moment 4):
+U3 is built in five moments (balancing on join was already done in C1 moment 4;
+moments 3 and 4 were added after moment 2):
 
 1. The team win check (`AEnclaveTeamMatchGameMode::CheckWinCondition`): the
    match ends at the score limit or the time limit, the single top team wins,
@@ -80,7 +81,18 @@ U3 is built in three moments (balancing on join was already done in C1 moment 4)
    `EnclaveMap`, dedicated server with 2 clients: two score-limit wins and a
    time-limit draw, each followed by a restart that kept the URL options.
    The match logs every death with the players' stats. Done.
-3. Friendly fire (the team mode's `CanDamage`), then C3 wires it into
+3. Seamless restart (added after moment 2): matches restart with seamless
+   travel (`bUseSeamlessTravel` on `AEnclaveMatchGameMode`; no transition map,
+   the engine uses an empty dummy world), so clients stay connected and each
+   PlayerState is copied into the next match: players keep their team. Match
+   stats are reset for every player at match start (`ResetMatchStats`). Verified
+   with 2 clients over several restarts: about 0.2 s per restart, teams kept,
+   stats from 0, combat works after the restart. Done.
+4. Team policy at match start (Keep, Shuffle; both followed by evening out the
+   teams), as a pure function over groups of players, with an editor setting
+   and `?TeamPolicy=`. SkillBalance and parties wait for their data (ratings,
+   a lobby); a solo player is a group of one, so parties fit later.
+5. Friendly fire (the team mode's `CanDamage`), then C3 wires it into
    `ApplyDamage`.
 
 Decided in U3: kills and deaths are facts recorded by the match base; score is
@@ -125,10 +137,11 @@ Fixed only when chosen; none block M4.
 - Two SSR diagnostics remain on the character (`DebugLogViewGeometryForShot`,
   the `OnRep_ReplicatedMovement` body); they move to the hit target component
   in Lag Compensation v2.
-- Teams are reshuffled at every restart: `?Restart` is a non-seamless travel,
-  so clients reconnect with new PlayerStates and get teams in reconnect order.
-  Seamless travel would keep them (`AEnclaveTeamPlayerState::CopyProperties`)
-  and restart faster, but needs a transition map. Not decided yet.
+- Clients log `FGameplayTagBlueprintPropertyMap::GameplayTagEventCallback called
+  with corrupted RegisteredOwner` after a respawn: the dead pawn's anim
+  instances stay bound to the player's ASC (on the PlayerState) until garbage
+  collection. Noise, not a crash. Fix in progress: our own tag binder that
+  unbinds when the anim instance uninitializes.
 - The server log warns about 16 out-of-date Manny `PoseAsset`s
   (`/Game/Characters/ThirdPerson/Rig/Poses/Manny`); re-saving them fixes it.
 - `EnclaveDebugRespawn` should be rechecked in the SSR test range now that item
