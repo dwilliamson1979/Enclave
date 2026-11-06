@@ -7,6 +7,7 @@
 
 #include "Debug/EnclaveDebug.h"
 #include "Game/EnclaveTeamGameState.h"
+#include "Game/EnclaveURLOptions.h"
 #include "Player/EnclaveTeamPlayerState.h"
 
 AEnclaveTeamMatchGameMode::AEnclaveTeamMatchGameMode()
@@ -20,7 +21,17 @@ void AEnclaveTeamMatchGameMode::InitGame(const FString& MapName, const FString& 
 	Super::InitGame(MapName, Options, ErrorMessage);
 
 	TeamAssignmentRules.ApplyOptions(Options);
-	UE_LOG(LogEnclaveMatch, Log, TEXT("Team settings: NumTeams=%d %s"), NumTeams, *TeamAssignmentRules.ToString());
+	EnclaveURLOptions::ApplyBool(Options, TEXT("FriendlyFire"), bFriendlyFire);
+	UE_LOG(LogEnclaveMatch, Log, TEXT("Team settings: NumTeams=%d %s FriendlyFire=%d"),
+		NumTeams, *TeamAssignmentRules.ToString(), bFriendlyFire ? 1 : 0);
+}
+
+bool AEnclaveTeamMatchGameMode::CanDamage(const AEnclaveMatchPlayerState* Attacker, const AEnclaveMatchPlayerState* Victim) const
+{
+	// Super has already allowed null players and self-damage, so Attacker is
+	// valid when the friendly-fire check runs.
+	return Super::CanDamage(Attacker, Victim)
+		|| (bFriendlyFire && Attacker->GetAttitudeTowards(Victim) == EEnclaveAttitude::Friendly);
 }
 
 void AEnclaveTeamMatchGameMode::InitGameState()

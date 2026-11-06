@@ -67,6 +67,8 @@ in [ProjectStatus.md](ProjectStatus.md).
   meaningless for some children; use a property, not a subclass, for different
   values; extract shared code on its second real use.
 - **Ask "is this player my enemy?" (`IsHostileTo`), never "same team?".**
+  `GetAttitudeTowards` gives the full answer (Hostile, Friendly, Neutral) when
+  teammates matter, e.g. friendly fire.
 - **Use the server clock** (`GameState->GetServerWorldTimeSeconds()`) for
   anything the HUD shows, and replicate end timestamps rather than countdowns.
 - **Explicit order beats delegates where order matters:** the character's

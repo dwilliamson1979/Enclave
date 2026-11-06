@@ -23,22 +23,24 @@ void AEnclaveTeamPlayerState::SetTeamId(uint8 NewTeamId)
 	OnRep_TeamId();
 }
 
-bool AEnclaveTeamPlayerState::IsHostileTo(const APlayerState* Other) const
+EEnclaveAttitude AEnclaveTeamPlayerState::GetAttitudeTowards(const APlayerState* Other) const
 {
-	if (!Super::IsHostileTo(Other))
+	// Neutral for yourself and spectators; split the rest by team.
+	const EEnclaveAttitude Attitude = Super::GetAttitudeTowards(Other);
+	if (Attitude == EEnclaveAttitude::Neutral)
 	{
-		return false;
+		return Attitude;
 	}
 
-	// A player with no team is neutral both ways: nobody is its enemy and it is
-	// nobody's enemy. A PlayerState without teams counts as having no team.
+	// A player with no team is neutral both ways: nobody's friend or enemy.
+	// A PlayerState without teams counts as having no team.
 	const AEnclaveTeamPlayerState* OtherTeamPlayer = Cast<AEnclaveTeamPlayerState>(Other);
 	if (!OtherTeamPlayer || TeamId == NoTeam || OtherTeamPlayer->TeamId == NoTeam)
 	{
-		return false;
+		return EEnclaveAttitude::Neutral;
 	}
 
-	return OtherTeamPlayer->TeamId != TeamId;
+	return OtherTeamPlayer->TeamId == TeamId ? EEnclaveAttitude::Friendly : EEnclaveAttitude::Hostile;
 }
 
 void AEnclaveTeamPlayerState::CopyProperties(APlayerState* PlayerState)

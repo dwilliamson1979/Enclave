@@ -15,7 +15,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveTeamChangedSignature, AEn
  * Teams are numbered 0..N-1. NoTeam means "not on a team yet", which in
  * practice is a spectator or a player who hasn't been assigned.
  *
- * Teammates are not hostile to each other; IsHostileTo answers that, so
+ * Teammates are Friendly to each other; GetAttitudeTowards answers that, so
  * other systems never need to compare teams themselves.
  */
 UCLASS()
@@ -37,8 +37,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Match")
 	FOnEnclaveTeamChangedSignature OnTeamChanged;
 
-	/** Hostile only to a player on another team. A player with no team (NoTeam) is neutral both ways. */
-	virtual bool IsHostileTo(const APlayerState* Other) const override;
+	/**
+	 * Friendly to a teammate, Hostile to a player on another team. A player with
+	 * no team (NoTeam) is Neutral both ways.
+	 */
+	virtual EEnclaveAttitude GetAttitudeTowards(const APlayerState* Other) const override;
 
 protected:
 

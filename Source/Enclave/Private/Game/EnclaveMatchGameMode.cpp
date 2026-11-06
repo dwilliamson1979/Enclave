@@ -174,6 +174,16 @@ void AEnclaveMatchGameMode::CancelWarmup(AEnclaveMatchGameState& MatchGameState)
 		GetNumPlayers(), MatchSettings.MinPlayersToStart);
 }
 
+bool AEnclaveMatchGameMode::CanDamage(const AEnclaveMatchPlayerState* Attacker, const AEnclaveMatchPlayerState* Victim) const
+{
+	if (!Attacker || !Victim || Attacker == Victim)
+	{
+		return true;
+	}
+
+	return Attacker->IsHostileTo(Victim);
+}
+
 void AEnclaveMatchGameMode::SetPlayerDefaults(APawn* Pawn)
 {
 	Super::SetPlayerDefaults(Pawn);
@@ -209,7 +219,7 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 
 	APawn* Attacker = Cast<APawn>(DamageRequest.SourceActor.Get());
 	AEnclaveMatchPlayerState* AttackerPlayerState = Attacker ? Attacker->GetPlayerState<AEnclaveMatchPlayerState>() : nullptr;
-	// Only an enemy gets the kill: IsHostileTo is false for yourself and teammates.
+	// Only an enemy gets the kill: IsHostileTo is false for yourself, teammates and neutral players.
 	const bool bKill = AttackerPlayerState && AttackerPlayerState->IsHostileTo(VictimPlayerState);
 	if (bKill)
 	{

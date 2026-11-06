@@ -29,11 +29,16 @@ UAbilitySystemComponent* AEnclavePlayerState::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
-bool AEnclavePlayerState::IsHostileTo(const APlayerState* Other) const
+EEnclaveAttitude AEnclavePlayerState::GetAttitudeTowards(const APlayerState* Other) const
 {
 	// A spectator takes no part in the fight, either way round, so the answer
 	// stays symmetric. IsOnlyASpectator, not IsSpectator: both are set by
 	// StartSpectatingOnly, but leaving the spectating state clears only
 	// IsSpectator (PlayerController.cpp:5788-5792, 5980).
-	return Other != nullptr && Other != this && !IsOnlyASpectator() && !Other->IsOnlyASpectator();
+	if (!Other || Other == this || IsOnlyASpectator() || Other->IsOnlyASpectator())
+	{
+		return EEnclaveAttitude::Neutral;
+	}
+
+	return EEnclaveAttitude::Hostile;
 }

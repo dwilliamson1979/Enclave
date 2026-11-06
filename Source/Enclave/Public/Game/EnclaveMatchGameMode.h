@@ -70,9 +70,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Match")
 	FEnclaveMatchSettings MatchSettings;
 
+	/**
+	 * Whether Attacker may damage Victim. Either may be null: no player behind
+	 * the damage (the environment), or a target that isn't a player (a prop).
+	 * Default for every mode: allowed when either is null or for self-damage;
+	 * between two players, only an enemy (Attacker->IsHostileTo(Victim)), so
+	 * teammates, neutral players and spectators are safe. Team modes add
+	 * friendly fire (teammates, GetAttitudeTowards Friendly).
+	 */
 	UFUNCTION(BlueprintPure, Category = "Match")
-	virtual bool CanDamage(APlayerState* Attacker, APlayerState* Victim) 
-		PURE_VIRTUAL(AEnclaveMatchGameMode::CanDamage, return false;);
+	virtual bool CanDamage(const AEnclaveMatchPlayerState* Attacker, const AEnclaveMatchPlayerState* Victim) const;
 
 	/**
 	 * Awards score for a death. Called for every death while the match is in
