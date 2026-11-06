@@ -46,7 +46,10 @@ public:
 	/**
 	 * Whether Other is this player's enemy. Every map has enemies, so the
 	 * question lives here; how it is answered depends on the mode. Default:
-	 * anyone else. AEnclaveTeamPlayerState narrows it to other teams.
+	 * anyone else, unless either side is only a spectator.
+	 * AEnclaveTeamPlayerState narrows it to other teams. Symmetric within a
+	 * mode (every player has the mode's PlayerState class): A is hostile to B
+	 * exactly when B is hostile to A.
 	 *
 	 * Ask this instead of comparing teams, so friendly fire, spawn selection,
 	 * friend/enemy colors and bots work in every mode. PlayerStates replicate,

@@ -30,10 +30,10 @@ bool AEnclaveTeamPlayerState::IsHostileTo(const APlayerState* Other) const
 		return false;
 	}
 
+	// A player with no team is neutral both ways: nobody is its enemy and it is
+	// nobody's enemy. A PlayerState without teams counts as having no team.
 	const AEnclaveTeamPlayerState* OtherTeamPlayer = Cast<AEnclaveTeamPlayerState>(Other);
-	if (OtherTeamPlayer == nullptr) return true;
-
-	if (TeamId == NoTeam ||	 OtherTeamPlayer->TeamId == NoTeam)
+	if (!OtherTeamPlayer || TeamId == NoTeam || OtherTeamPlayer->TeamId == NoTeam)
 	{
 		return false;
 	}

@@ -37,7 +37,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Match")
 	FOnEnclaveTeamChangedSignature OnTeamChanged;
 
-	/** Hostile unless Other is on this player's team. Players with no team yet are hostile to everyone. */
+	/** Hostile only to a player on another team. A player with no team (NoTeam) is neutral both ways. */
 	virtual bool IsHostileTo(const APlayerState* Other) const override;
 
 protected:
