@@ -90,6 +90,10 @@ protected:
 	FEnclaveTeamAssignmentRules TeamAssignmentRules;
 
 private:
+
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Teams")
+	bool bFriendlyFire = false;
+
 	/**
 	 * Set by FindInactivePlayer and read in the same call chain:
 	 * AGameMode::PostLogin finds the inactive player, then AGameModeBase::PostLogin

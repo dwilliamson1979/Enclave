@@ -70,6 +70,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Match")
 	FEnclaveMatchSettings MatchSettings;
 
+	UFUNCTION(BlueprintPure, Category = "Match")
+	virtual bool CanDamage(APlayerState* Instigator, APlayerState* Victim) 
+		PURE_VIRTUAL(AEnclaveMatchGameMode::CanDamage, return false;);
+
 	/**
 	 * Awards score for a death. Called for every death while the match is in
 	 * progress, including suicides (Attacker == Victim), team kills and deaths

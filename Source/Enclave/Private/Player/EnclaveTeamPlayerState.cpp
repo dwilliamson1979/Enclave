@@ -31,8 +31,14 @@ bool AEnclaveTeamPlayerState::IsHostileTo(const APlayerState* Other) const
 	}
 
 	const AEnclaveTeamPlayerState* OtherTeamPlayer = Cast<AEnclaveTeamPlayerState>(Other);
-	const bool bSameTeam = OtherTeamPlayer && TeamId != NoTeam && OtherTeamPlayer->TeamId == TeamId;
-	return !bSameTeam;
+	if (OtherTeamPlayer == nullptr) return true;
+
+	if (TeamId == NoTeam ||	 OtherTeamPlayer->TeamId == NoTeam)
+	{
+		return false;
+	}
+
+	return OtherTeamPlayer->TeamId != TeamId;
 }
 
 void AEnclaveTeamPlayerState::CopyProperties(APlayerState* PlayerState)

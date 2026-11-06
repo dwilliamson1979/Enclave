@@ -31,5 +31,5 @@ UAbilitySystemComponent* AEnclavePlayerState::GetAbilitySystemComponent() const
 
 bool AEnclavePlayerState::IsHostileTo(const APlayerState* Other) const
 {
-	return Other != nullptr && Other != this;
+	return Other != nullptr && Other != this && !this->IsOnlyASpectator() && !Other->IsOnlyASpectator();
 }
