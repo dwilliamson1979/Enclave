@@ -55,8 +55,9 @@ in [ProjectStatus.md](ProjectStatus.md).
   and Shipping. Log categories are in `Public/Debug/EnclaveDebug.h`
   (`LogEnclaveMatch` for the match framework).
 - **Bad URL options** are logged and the current value is kept (operator input
-  never `ensure`s). Integer options are parsed strictly, because the engine
-  helpers accept "2.5" as 2 and "abc" as 0.
+  never `ensure`s). Numbers are parsed strictly, because the engine helpers
+  accept "2.5" as 2 and "abc" as 0. Use the `EnclaveURLOptions` helpers
+  (`ApplyInt`, `ApplyFloat`, `ApplyBool`, `ApplyEnum`) for every option.
 
 ## Design rules that cut across milestones
 

@@ -71,7 +71,7 @@ protected:
 	FEnclaveMatchSettings MatchSettings;
 
 	UFUNCTION(BlueprintPure, Category = "Match")
-	virtual bool CanDamage(APlayerState* Instigator, APlayerState* Victim) 
+	virtual bool CanDamage(APlayerState* Attacker, APlayerState* Victim) 
 		PURE_VIRTUAL(AEnclaveMatchGameMode::CanDamage, return false;);
 
 	/**

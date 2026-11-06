@@ -3,48 +3,14 @@
 #include "Game/EnclaveTeamAssignment.h"
 
 #include "Algo/StableSort.h"
-#include "Kismet/GameplayStatics.h"
 #include "Math/RandomStream.h"
 
-#include "Debug/EnclaveDebug.h"
+#include "Game/EnclaveURLOptions.h"
 
 void FEnclaveTeamAssignmentRules::ApplyOptions(const FString& Options)
 {
-	const FString AssignmentOption = UGameplayStatics::ParseOption(Options, TEXT("TeamAssignment"));
-	if (!AssignmentOption.IsEmpty())
-	{
-		// Accepts the short name, any case ("random"): the enum prefix is added
-		// when "::" is missing (Enum.cpp:951-968). The generated _MAX entry isn't a policy.
-		const UEnum* Enum = StaticEnum<EEnclaveTeamAssignment>();
-		const int32 Index = Enum->GetIndexByNameString(AssignmentOption);
-		if (Index == INDEX_NONE || Enum->GetNameStringByIndex(Index).EndsWith(TEXT("_MAX")))
-		{
-			UE_LOG(LogEnclaveMatch, Warning, TEXT("Ignoring invalid TeamAssignment server option '%s'; keeping %s."),
-				*AssignmentOption, *Enum->GetNameStringByValue(static_cast<int64>(Assignment)));
-		}
-		else
-		{
-			Assignment = static_cast<EEnclaveTeamAssignment>(Enum->GetValueByIndex(Index));
-		}
-	}
-
-	const FString KeepOption = UGameplayStatics::ParseOption(Options, TEXT("KeepTeams"));
-	if (!KeepOption.IsEmpty())
-	{
-		if (KeepOption == TEXT("1") || KeepOption.Equals(TEXT("true"), ESearchCase::IgnoreCase))
-		{
-			bKeepTeams = true;
-		}
-		else if (KeepOption == TEXT("0") || KeepOption.Equals(TEXT("false"), ESearchCase::IgnoreCase))
-		{
-			bKeepTeams = false;
-		}
-		else
-		{
-			UE_LOG(LogEnclaveMatch, Warning, TEXT("Ignoring invalid KeepTeams server option '%s'. Expected 1 or 0; keeping %d."),
-				*KeepOption, bKeepTeams ? 1 : 0);
-		}
-	}
+	EnclaveURLOptions::ApplyEnum(Options, TEXT("TeamAssignment"), Assignment);
+	EnclaveURLOptions::ApplyBool(Options, TEXT("KeepTeams"), bKeepTeams);
 }
 
 FString FEnclaveTeamAssignmentRules::ToString() const

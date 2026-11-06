@@ -5,6 +5,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Game/EnclaveMatchSettings.h"
 #include "Game/EnclaveTeamAssignment.h"
+#include "Game/EnclaveURLOptions.h"
 #include "Math/RandomStream.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveMatchSettingsOptionsTest,
@@ -220,6 +221,43 @@ bool FEnclaveTeamAssignmentOptionsTest::RunTest(const FString& Parameters)
 	Rules.ApplyOptions(TEXT("?TeamAssignment=EEnclaveTeamAssignment_MAX"));
 	TestTrue(TEXT("Unknown policy ignored"), Rules.Assignment == EEnclaveTeamAssignment::Random);
 	TestTrue(TEXT("Bad KeepTeams ignored"), Rules.bKeepTeams);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveURLOptionsTest,
+	"Enclave.Match.URLOptions",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveURLOptionsTest::RunTest(const FString& Parameters)
+{
+	// Floats: strict, in range.
+	float Scale = 1.0f;
+	EnclaveURLOptions::ApplyFloat(TEXT("?Scale=0.5"), TEXT("Scale"), 0.0f, 1.0f, Scale);
+	TestEqual(TEXT("Float applied"), Scale, 0.5f);
+	EnclaveURLOptions::ApplyFloat(TEXT("?Other=0.25"), TEXT("Scale"), 0.0f, 1.0f, Scale);
+	TestEqual(TEXT("Missing float key keeps the value"), Scale, 0.5f);
+
+	AddExpectedMessage(TEXT("Ignoring invalid"), EAutomationExpectedMessageFlags::Contains, 4);
+	EnclaveURLOptions::ApplyFloat(TEXT("?Scale=1.5"), TEXT("Scale"), 0.0f, 1.0f, Scale);
+	EnclaveURLOptions::ApplyFloat(TEXT("?Scale=0.5.5"), TEXT("Scale"), 0.0f, 1.0f, Scale);
+	EnclaveURLOptions::ApplyFloat(TEXT("?Scale=half"), TEXT("Scale"), 0.0f, 1.0f, Scale);
+	EnclaveURLOptions::ApplyFloat(TEXT("?Scale=-0.1"), TEXT("Scale"), 0.0f, 1.0f, Scale);
+	TestEqual(TEXT("Bad floats keep the value"), Scale, 0.5f);
+
+	// Bools: 1/0/true/false.
+	bool bFlag = false;
+	EnclaveURLOptions::ApplyBool(TEXT("?Flag=1"), TEXT("Flag"), bFlag);
+	TestTrue(TEXT("Bool 1"), bFlag);
+	EnclaveURLOptions::ApplyBool(TEXT("?Flag=FALSE"), TEXT("Flag"), bFlag);
+	TestFalse(TEXT("Bool FALSE"), bFlag);
+
+	// Strict numbers.
+	int32 IntValue = 0;
+	float FloatValue = 0.0f;
+	TestTrue(TEXT("Int 42"), EnclaveURLOptions::TryParseStrictInt(TEXT("42"), IntValue) && IntValue == 42);
+	TestFalse(TEXT("Int 2.5"), EnclaveURLOptions::TryParseStrictInt(TEXT("2.5"), IntValue));
+	TestTrue(TEXT("Float .5"), EnclaveURLOptions::TryParseStrictFloat(TEXT(".5"), FloatValue) && FloatValue == 0.5f);
+	TestFalse(TEXT("Float ."), EnclaveURLOptions::TryParseStrictFloat(TEXT("."), FloatValue));
+	TestFalse(TEXT("Float 1e3"), EnclaveURLOptions::TryParseStrictFloat(TEXT("1e3"), FloatValue));
 	return true;
 }
 
