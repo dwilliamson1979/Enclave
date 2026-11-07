@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Game/EnclaveGameMode.h"
 #include "Game/EnclaveMatchSettings.h"
+#include "Game/EnclaveHitPolicy.h"
 #include "Combat/EnclaveDamageRequest.h"
 #include "EnclaveMatchGameMode.generated.h"
 
@@ -69,6 +70,18 @@ protected:
 	/** Defaults for this mode. Subclasses set their own in their constructor. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match")
 	FEnclaveMatchSettings MatchSettings;
+
+	/** Hits during warmup: players see every hit, nobody gets hurt. */
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Hits")
+	FEnclaveHitPolicy WarmupHitPolicy = FEnclaveHitPolicy::Simulated();
+
+	/** Hits while the match is in progress: enemies, yourself and the environment hurt; teammates don't. */
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Hits")
+	FEnclaveHitPolicy MatchHitPolicy;
+
+	/** Hits after the match ends: like warmup, the result is already decided. */
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Hits")
+	FEnclaveHitPolicy PostMatchHitPolicy = FEnclaveHitPolicy::Simulated();
 
 	/**
 	 * Whether Attacker may damage Victim. Either may be null: no player behind
