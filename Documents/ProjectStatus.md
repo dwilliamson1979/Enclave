@@ -148,8 +148,6 @@ Gameplay ideas are collected in `GameplayIdeas.txt`.
 
 Fixed only when chosen; none block M4.
 
-- Kill credit is lost if the killer's character is destroyed before the kill
-  lands. Fix: carry the instigator's PlayerState in `FEnclaveDamageRequest`.
 - The match ends on the first kill the server receives at the score limit, so
   ping can decide a last-kill race (kills in the same frame are a draw). The
   fair fix (a grace window ranked by fire time) is decision 7 in

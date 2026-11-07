@@ -16,6 +16,7 @@
 
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
 #include "Controllers/EnclavePlayerController.h"
 #include "Debug/EnclaveDebug.h"
 #include "HAL/IConsoleManager.h"
@@ -549,6 +550,9 @@ void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* Actor
 	}
 
 	AActor* DamageCauser = GetTriggeringSourceAs<AActor>();
+	// The ASC lives on the PlayerState, so the ability's owner is the shooter's
+	// PlayerState, which outlives the pawn.
+	APlayerState* SourcePlayerState = Cast<APlayerState>(GetOwningActorFromActorInfo());
 
 	for (const FEnclaveHitResult& HitResult : HitResults)
 	{
@@ -561,6 +565,7 @@ void UEnclaveGA_Fire::PerformHitDetection(const FGameplayAbilityActorInfo* Actor
 		FEnclaveDamageRequest DamageRequest;
 		DamageRequest.Damage = HitResult.Damage;
 		DamageRequest.SourceActor = AvatarActor;
+		DamageRequest.SourcePlayerState = SourcePlayerState;
 		DamageRequest.DamageCauser = DamageCauser;
 		DamageRequest.HitResult = HitResult;
 		DamageRequest.DamageTags = HitResult.DamageTags;

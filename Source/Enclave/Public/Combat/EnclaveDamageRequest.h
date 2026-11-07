@@ -8,6 +8,7 @@
 #include "EnclaveDamageRequest.generated.h"
 
 class AActor;
+class APlayerState;
 
 /**
  * Storage- and implementation-agnostic description of one damage attempt.
@@ -41,6 +42,15 @@ struct ENCLAVE_API FEnclaveDamageRequest
 	/** Actor ultimately responsible for the damage, such as the firing avatar. */
 	UPROPERTY(BlueprintReadWrite, Category = "Combat|Damage")
 	TObjectPtr<AActor> SourceActor = nullptr;
+
+	/**
+	 * The player responsible for the damage, or null when no player is (the
+	 * environment). Set when the damage starts (a shot, a throw), so it stays
+	 * valid after the attacker's pawn dies, unlike SourceActor's PlayerState.
+	 * Match rules (kill credit, friendly fire) use this, not SourceActor.
+	 */
+	UPROPERTY(BlueprintReadWrite, Category = "Combat|Damage")
+	TObjectPtr<APlayerState> SourcePlayerState = nullptr;
 
 	/** Actor or object actor that physically caused the damage, such as a weapon or projectile. */
 	UPROPERTY(BlueprintReadWrite, Category = "Combat|Damage")

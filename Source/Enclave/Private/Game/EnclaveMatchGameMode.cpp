@@ -217,8 +217,11 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 
 	VictimPlayerState->AddDeath();
 
-	APawn* Attacker = Cast<APawn>(DamageRequest.SourceActor.Get());
-	AEnclaveMatchPlayerState* AttackerPlayerState = Attacker ? Attacker->GetPlayerState<AEnclaveMatchPlayerState>() : nullptr;
+	// From the request, not the attacker's pawn: the pawn may have died (and
+	// lost its PlayerState) before the damage landed. A player who has left
+	// has a destroyed PlayerState, and counts as no attacker.
+	APlayerState* SourcePlayerState = DamageRequest.SourcePlayerState.Get();
+	AEnclaveMatchPlayerState* AttackerPlayerState = IsValid(SourcePlayerState) ? Cast<AEnclaveMatchPlayerState>(SourcePlayerState) : nullptr;
 	// Only an enemy gets the kill: IsHostileTo is false for yourself, teammates and neutral players.
 	const bool bKill = AttackerPlayerState && AttackerPlayerState->IsHostileTo(VictimPlayerState);
 	if (bKill)
