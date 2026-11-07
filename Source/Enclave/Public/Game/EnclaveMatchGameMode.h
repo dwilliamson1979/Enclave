@@ -25,9 +25,12 @@ class UEnclaveAvatarLifecycleComponent;
  *
  * Phases come from AGameMode's match state machine: this class answers
  * ReadyToStartMatch / ReadyToEndMatch and reacts to the Handle* events.
+ *
+ * It is also the damage policy (IEnclaveDamagePolicyInterface): each phase has
+ * a hit policy (warmup, match, post-match) that says what hits on players do.
  */
 UCLASS(Abstract)
-class ENCLAVE_API AEnclaveMatchGameMode : public AEnclaveGameMode
+class ENCLAVE_API AEnclaveMatchGameMode : public AEnclaveGameMode, public IEnclaveDamagePolicyInterface
 {
 	GENERATED_BODY()
 
@@ -39,7 +42,27 @@ public:
 	/** Binds the match's death handling to every pawn RestartPlayer spawns. */
 	virtual void SetPlayerDefaults(APawn* Pawn) override;
 
+	/**
+	 * IEnclaveDamagePolicyInterface. Hits on non-players (dummies, destructibles)
+	 * apply: their own code decides what damage does. Hits on players get the
+	 * current phase's hit policy for the kind of hit: Environment (no attacker),
+	 * Self, or by the attacker's attitude, Hostile or Friendly (scaled by
+	 * FriendlyDamageScale). Hits on neutral players (spectators, no team) are
+	 * ignored.
+	 */
+	virtual EEnclaveHitResponse ResolveDamage(const AActor* Target, FEnclaveDamageRequest& InOutRequest) const override;
+
+	/** The hit policy of the current phase, set by OnMatchStateSet. */
+	const FEnclaveHitPolicy& GetCurrentHitPolicy() const { return *CurrentHitPolicy; }
+
 protected:
+	/**
+	 * Called on every phase change (AGameMode::SetMatchState, GameMode.cpp:327-339).
+	 * Points CurrentHitPolicy at the new phase's policy. A mode that adds a
+	 * phase (e.g. overtime) overrides this and sets its own policy.
+	 */
+	virtual void OnMatchStateSet() override;
+
 	/** Applies match URL options on top of the defaults. See FEnclaveMatchSettings. */
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
@@ -75,7 +98,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Match|Hits")
 	FEnclaveHitPolicy WarmupHitPolicy = FEnclaveHitPolicy::Simulated();
 
-	/** Hits while the match is in progress: enemies, yourself and the environment hurt; teammates don't. */
+	/** Hits while the match is in progress: enemies, yourself and the environment hurt; teammates don't (team modes: ?FriendlyFire=). */
 	UPROPERTY(EditDefaultsOnly, Category = "Match|Hits")
 	FEnclaveHitPolicy MatchHitPolicy;
 
@@ -84,21 +107,17 @@ protected:
 	FEnclaveHitPolicy PostMatchHitPolicy = FEnclaveHitPolicy::Simulated();
 
 	/**
-	 * Whether Attacker may damage Victim. Either may be null: no player behind
-	 * the damage (the environment), or a target that isn't a player (a prop).
-	 * Default for every mode: allowed when either is null or for self-damage;
-	 * between two players, only an enemy (Attacker->IsHostileTo(Victim)), so
-	 * teammates, neutral players and spectators are safe. Team modes add
-	 * friendly fire (teammates, GetAttitudeTowards Friendly).
+	 * One of the policies above, for the current phase. A pointer, not a copy,
+	 * so a change to a policy (e.g. ?FriendlyFire= in InitGame) is seen at once.
 	 */
-	UFUNCTION(BlueprintPure, Category = "Match")
-	virtual bool CanDamage(const AEnclaveMatchPlayerState* Attacker, const AEnclaveMatchPlayerState* Victim) const;
+	const FEnclaveHitPolicy* CurrentHitPolicy = &WarmupHitPolicy;
 
 	/**
 	 * Awards score for a death. Called for every death while the match is in
 	 * progress, including suicides (Attacker == Victim), team kills and deaths
 	 * with no player responsible (Attacker null). Use Attacker->IsHostileTo(Victim)
-	 * to tell a real kill apart. Victim is never null.
+	 * to tell a real kill apart. Victim is never null. (A team kill doesn't
+	 * count as the victim's death.)
 	 */
 	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim)
 		PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );

@@ -15,25 +15,32 @@
  */
 namespace EnclaveURLOptions
 {
+	// Each Apply function returns true when the option was present and valid
+	// (InOutValue now holds it), false when it was missing or invalid.
+
 	/** ?Key=<integer >= MinValue>. */
-	ENCLAVE_API void ApplyInt(const FString& Options, const TCHAR* Key, int32 MinValue, int32& InOutValue);
+	ENCLAVE_API bool ApplyInt(const FString& Options, const TCHAR* Key, int32 MinValue, int32& InOutValue);
 
 	/** ?Key=<number in [MinValue, MaxValue]>, e.g. 0.5. */
-	ENCLAVE_API void ApplyFloat(const FString& Options, const TCHAR* Key, float MinValue, float MaxValue, float& InOutValue);
+	ENCLAVE_API bool ApplyFloat(const FString& Options, const TCHAR* Key, float MinValue, float MaxValue, float& InOutValue);
 
 	/** ?Key=1|0|true|false (any case). */
-	ENCLAVE_API void ApplyBool(const FString& Options, const TCHAR* Key, bool& InOutValue);
+	ENCLAVE_API bool ApplyBool(const FString& Options, const TCHAR* Key, bool& InOutValue);
 
 	/** ?Key=<enum entry name>, short and any case ("random"). Writes the value of the entry found. */
-	ENCLAVE_API void ApplyEnumValue(const FString& Options, const TCHAR* Key, const UEnum& Enum, int64& InOutValue);
+	ENCLAVE_API bool ApplyEnumValue(const FString& Options, const TCHAR* Key, const UEnum& Enum, int64& InOutValue);
 
 	/** ApplyEnumValue for a UENUM type. */
 	template<typename TEnum>
-	void ApplyEnum(const FString& Options, const TCHAR* Key, TEnum& InOutValue)
+	bool ApplyEnum(const FString& Options, const TCHAR* Key, TEnum& InOutValue)
 	{
 		int64 Value = static_cast<int64>(InOutValue);
-		ApplyEnumValue(Options, Key, *StaticEnum<TEnum>(), Value);
+		if (!ApplyEnumValue(Options, Key, *StaticEnum<TEnum>(), Value))
+		{
+			return false;
+		}
 		InOutValue = static_cast<TEnum>(Value);
+		return true;
 	}
 
 	/** Strict integer: digits only, an optional leading '-', at most nine digits (always fits in an int32). */

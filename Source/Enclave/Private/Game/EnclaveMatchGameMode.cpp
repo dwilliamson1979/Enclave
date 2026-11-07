@@ -174,14 +174,63 @@ void AEnclaveMatchGameMode::CancelWarmup(AEnclaveMatchGameState& MatchGameState)
 		GetNumPlayers(), MatchSettings.MinPlayersToStart);
 }
 
-bool AEnclaveMatchGameMode::CanDamage(const AEnclaveMatchPlayerState* Attacker, const AEnclaveMatchPlayerState* Victim) const
+EEnclaveHitResponse AEnclaveMatchGameMode::ResolveDamage(const AActor* Target, FEnclaveDamageRequest& InOutRequest) const
 {
-	if (!Attacker || !Victim || Attacker == Victim)
+	// Not a player (a dummy, a destructible): its own code decides what damage does.
+	const APawn* VictimPawn = Cast<APawn>(Target);
+	const AEnclavePlayerState* Victim = VictimPawn ? VictimPawn->GetPlayerState<AEnclavePlayerState>() : nullptr;
+	if (!Victim)
 	{
-		return true;
+		return EEnclaveHitResponse::Apply;
 	}
 
-	return Attacker->IsHostileTo(Victim);
+	const FEnclaveHitPolicy& Policy = GetCurrentHitPolicy();
+
+	// No player behind the damage (falling, fire), or one who has left.
+	const AEnclavePlayerState* Attacker = Cast<AEnclavePlayerState>(InOutRequest.SourcePlayerState.Get());
+	if (!IsValid(Attacker))
+	{
+		return Policy.Environment;
+	}
+
+	if (Attacker == Victim)
+	{
+		return Policy.Self;
+	}
+
+	switch (Attacker->GetAttitudeTowards(Victim))
+	{
+	case EEnclaveAttitude::Hostile:
+		return Policy.Hostile;
+	case EEnclaveAttitude::Friendly:
+		if (Policy.Friendly != EEnclaveHitResponse::Ignore)
+		{
+			InOutRequest.Damage *= Policy.FriendlyDamageScale;
+		}
+		return Policy.Friendly;
+	case EEnclaveAttitude::Neutral:
+	default:
+		return EEnclaveHitResponse::Ignore;
+	}
+}
+
+void AEnclaveMatchGameMode::OnMatchStateSet()
+{
+	Super::OnMatchStateSet();
+
+	// Leaving the map (or aborting) keeps the last phase's policy.
+	if (MatchState == MatchState::EnteringMap || MatchState == MatchState::WaitingToStart)
+	{
+		CurrentHitPolicy = &WarmupHitPolicy;
+	}
+	else if (MatchState == MatchState::InProgress)
+	{
+		CurrentHitPolicy = &MatchHitPolicy;
+	}
+	else if (MatchState == MatchState::WaitingPostMatch)
+	{
+		CurrentHitPolicy = &PostMatchHitPolicy;
+	}
 }
 
 void AEnclaveMatchGameMode::SetPlayerDefaults(APawn* Pawn)
@@ -215,8 +264,6 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 		return;
 	}
 
-	VictimPlayerState->AddDeath();
-
 	// From the request, not the attacker's pawn: the pawn may have died (and
 	// lost its PlayerState) before the damage landed. A player who has left
 	// has a destroyed PlayerState, and counts as no attacker.
@@ -227,6 +274,15 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	if (bKill)
 	{
 		AttackerPlayerState->AddKill();
+	}
+
+	// A team kill (friendly fire) isn't the victim's fault, so it doesn't count
+	// as their death. Suicides and deaths with no attacker do.
+	const bool bTeamKill = AttackerPlayerState && AttackerPlayerState != VictimPlayerState
+		&& AttackerPlayerState->GetAttitudeTowards(VictimPlayerState) == EEnclaveAttitude::Friendly;
+	if (!bTeamKill)
+	{
+		VictimPlayerState->AddDeath();
 	}
 
 	// The mode sees every death, so it can also penalize suicides or team kills.

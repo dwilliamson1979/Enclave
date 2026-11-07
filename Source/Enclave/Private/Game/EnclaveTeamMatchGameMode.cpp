@@ -21,17 +21,21 @@ void AEnclaveTeamMatchGameMode::InitGame(const FString& MapName, const FString& 
 	Super::InitGame(MapName, Options, ErrorMessage);
 
 	TeamAssignmentRules.ApplyOptions(Options);
-	EnclaveURLOptions::ApplyBool(Options, TEXT("FriendlyFire"), bFriendlyFire);
-	UE_LOG(LogEnclaveMatch, Log, TEXT("Team settings: NumTeams=%d %s FriendlyFire=%d"),
-		NumTeams, *TeamAssignmentRules.ToString(), bFriendlyFire ? 1 : 0);
-}
 
-bool AEnclaveTeamMatchGameMode::CanDamage(const AEnclaveMatchPlayerState* Attacker, const AEnclaveMatchPlayerState* Victim) const
-{
-	// Super has already allowed null players and self-damage, so Attacker is
-	// valid when the friendly-fire check runs.
-	return Super::CanDamage(Attacker, Victim)
-		|| (bFriendlyFire && Attacker->GetAttitudeTowards(Victim) == EEnclaveAttitude::Friendly);
+	// Friendly fire is a match setting only: warmup and post-match keep their
+	// own policies. Starting from the current row only makes an invalid
+	// value's warning say what is kept.
+	bool bFriendlyFire = MatchHitPolicy.Friendly == EEnclaveHitResponse::Apply;
+	if (EnclaveURLOptions::ApplyBool(Options, TEXT("FriendlyFire"), bFriendlyFire))
+	{
+		MatchHitPolicy.Friendly = bFriendlyFire ? EEnclaveHitResponse::Apply : EEnclaveHitResponse::Ignore;
+	}
+	EnclaveURLOptions::ApplyFloat(Options, TEXT("FriendlyFireScale"), 0.0f, 1.0f, MatchHitPolicy.FriendlyDamageScale);
+
+	UE_LOG(LogEnclaveMatch, Log, TEXT("Team settings: NumTeams=%d %s FriendlyFire=%s FriendlyFireScale=%g"),
+		NumTeams, *TeamAssignmentRules.ToString(),
+		*StaticEnum<EEnclaveHitResponse>()->GetNameStringByValue(static_cast<int64>(MatchHitPolicy.Friendly)),
+		MatchHitPolicy.FriendlyDamageScale);
 }
 
 void AEnclaveTeamMatchGameMode::InitGameState()

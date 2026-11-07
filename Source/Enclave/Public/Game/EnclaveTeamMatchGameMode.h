@@ -29,7 +29,11 @@ public:
 	int32 GetNumTeams() const { return NumTeams; }
 
 protected:
-	/** Applies the team URL options (?TeamAssignment=, ?KeepTeams=, ?FriendlyFire=) on top of the match settings. */
+	/**
+	 * Applies the team URL options on top of the match settings:
+	 * ?TeamAssignment=, ?KeepTeams=, and ?FriendlyFire=1|0 / ?FriendlyFireScale=
+	 * (0 to 1), which set MatchHitPolicy's Friendly row and scale.
+	 */
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
 	/** Sets up the team GameState as soon as it exists, so warmup already shows the teams. */
@@ -69,9 +73,6 @@ protected:
 	 */
 	virtual bool CheckWinCondition(bool bTimeLimitReached) override;
 
-	/** The match rule (only enemies), plus friendly fire: with bFriendlyFire, teammates may damage each other. */
-	virtual bool CanDamage(const AEnclaveMatchPlayerState* Attacker, const AEnclaveMatchPlayerState* Victim) const override;
-
 	/**
 	 * The team for a player placed as new. Default: the team with the fewest
 	 * players, not counting Player itself; ties are broken at random.
@@ -93,10 +94,6 @@ protected:
 	FEnclaveTeamAssignmentRules TeamAssignmentRules;
 
 private:
-	/** Teammates can damage each other. Off is standard for public TDM. ?FriendlyFire=1|0 */
-	UPROPERTY(EditDefaultsOnly, Category = "Match|Teams")
-	bool bFriendlyFire = false;
-
 	/**
 	 * Set by FindInactivePlayer and read in the same call chain:
 	 * AGameMode::PostLogin finds the inactive player, then AGameModeBase::PostLogin

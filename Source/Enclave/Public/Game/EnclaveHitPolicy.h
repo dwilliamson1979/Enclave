@@ -26,6 +26,10 @@ struct ENCLAVE_API FEnclaveHitPolicy
 	UPROPERTY(EditDefaultsOnly, Category = "Hit Policy")
 	EEnclaveHitResponse Friendly = EEnclaveHitResponse::Ignore;
 
+	/** Multiplies damage between teammates when Friendly isn't Ignore. */
+	UPROPERTY(EditDefaultsOnly, Category = "Hit Policy", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "Friendly != EEnclaveHitResponse::Ignore"))
+	float FriendlyDamageScale = 1.0f;
+
 	/** Your own damage (your grenade). */
 	UPROPERTY(EditDefaultsOnly, Category = "Hit Policy")
 	EEnclaveHitResponse Self = EEnclaveHitResponse::Apply;

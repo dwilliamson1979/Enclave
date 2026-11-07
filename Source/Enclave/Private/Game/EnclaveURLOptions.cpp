@@ -59,12 +59,12 @@ bool EnclaveURLOptions::TryParseStrictFloat(const FString& Value, float& OutValu
 	return true;
 }
 
-void EnclaveURLOptions::ApplyInt(const FString& Options, const TCHAR* Key, int32 MinValue, int32& InOutValue)
+bool EnclaveURLOptions::ApplyInt(const FString& Options, const TCHAR* Key, int32 MinValue, int32& InOutValue)
 {
 	const FString Value = UGameplayStatics::ParseOption(Options, Key);
 	if (Value.IsEmpty())
 	{
-		return;
+		return false;
 	}
 
 	int32 Parsed = 0;
@@ -72,18 +72,19 @@ void EnclaveURLOptions::ApplyInt(const FString& Options, const TCHAR* Key, int32
 	{
 		UE_LOG(LogEnclaveMatch, Warning, TEXT("Ignoring invalid %s server option '%s'. Expected an integer >= %d; keeping %d."),
 			Key, *Value, MinValue, InOutValue);
-		return;
+		return false;
 	}
 
 	InOutValue = Parsed;
+	return true;
 }
 
-void EnclaveURLOptions::ApplyFloat(const FString& Options, const TCHAR* Key, float MinValue, float MaxValue, float& InOutValue)
+bool EnclaveURLOptions::ApplyFloat(const FString& Options, const TCHAR* Key, float MinValue, float MaxValue, float& InOutValue)
 {
 	const FString Value = UGameplayStatics::ParseOption(Options, Key);
 	if (Value.IsEmpty())
 	{
-		return;
+		return false;
 	}
 
 	float Parsed = 0.0f;
@@ -91,41 +92,43 @@ void EnclaveURLOptions::ApplyFloat(const FString& Options, const TCHAR* Key, flo
 	{
 		UE_LOG(LogEnclaveMatch, Warning, TEXT("Ignoring invalid %s server option '%s'. Expected a number from %g to %g; keeping %g."),
 			Key, *Value, MinValue, MaxValue, InOutValue);
-		return;
+		return false;
 	}
 
 	InOutValue = Parsed;
+	return true;
 }
 
-void EnclaveURLOptions::ApplyBool(const FString& Options, const TCHAR* Key, bool& InOutValue)
+bool EnclaveURLOptions::ApplyBool(const FString& Options, const TCHAR* Key, bool& InOutValue)
 {
 	const FString Value = UGameplayStatics::ParseOption(Options, Key);
 	if (Value.IsEmpty())
 	{
-		return;
+		return false;
 	}
 
 	if (Value == TEXT("1") || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase))
 	{
 		InOutValue = true;
+		return true;
 	}
-	else if (Value == TEXT("0") || Value.Equals(TEXT("false"), ESearchCase::IgnoreCase))
+	if (Value == TEXT("0") || Value.Equals(TEXT("false"), ESearchCase::IgnoreCase))
 	{
 		InOutValue = false;
+		return true;
 	}
-	else
-	{
-		UE_LOG(LogEnclaveMatch, Warning, TEXT("Ignoring invalid %s server option '%s'. Expected 1 or 0; keeping %d."),
-			Key, *Value, InOutValue ? 1 : 0);
-	}
+
+	UE_LOG(LogEnclaveMatch, Warning, TEXT("Ignoring invalid %s server option '%s'. Expected 1 or 0; keeping %d."),
+		Key, *Value, InOutValue ? 1 : 0);
+	return false;
 }
 
-void EnclaveURLOptions::ApplyEnumValue(const FString& Options, const TCHAR* Key, const UEnum& Enum, int64& InOutValue)
+bool EnclaveURLOptions::ApplyEnumValue(const FString& Options, const TCHAR* Key, const UEnum& Enum, int64& InOutValue)
 {
 	const FString Value = UGameplayStatics::ParseOption(Options, Key);
 	if (Value.IsEmpty())
 	{
-		return;
+		return false;
 	}
 
 	// Accepts the short name, any case: the enum prefix is added when "::" is
@@ -135,8 +138,9 @@ void EnclaveURLOptions::ApplyEnumValue(const FString& Options, const TCHAR* Key,
 	{
 		UE_LOG(LogEnclaveMatch, Warning, TEXT("Ignoring invalid %s server option '%s'; keeping %s."),
 			Key, *Value, *Enum.GetNameStringByValue(InOutValue));
-		return;
+		return false;
 	}
 
 	InOutValue = Enum.GetValueByIndex(Index);
+	return true;
 }
