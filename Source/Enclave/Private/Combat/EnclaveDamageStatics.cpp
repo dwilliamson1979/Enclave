@@ -5,9 +5,12 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameModeBase.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
 
 #include "Combat/Interfaces/EnclaveDamagePolicyInterface.h"
 #include "Combat/Interfaces/EnclaveDamageReceiverInterface.h"
+#include "Debug/EnclaveDebug.h"
 
 bool UEnclaveDamageStatics::ApplyDamage(AActor* Target, const FEnclaveDamageRequest& DamageRequest)
 {
@@ -29,6 +32,16 @@ bool UEnclaveDamageStatics::ApplyDamage(AActor* Target, const FEnclaveDamageRequ
 	const EEnclaveHitResponse Response = DamagePolicy
 		? DamagePolicy->ResolveDamage(Target, ResolvedRequest)
 		: EEnclaveHitResponse::Apply;
+
+	// Players by name (they match the match log); anything else by object name.
+	const APawn* TargetPawn = Cast<APawn>(Target);
+	const APlayerState* TargetPlayerState = TargetPawn ? TargetPawn->GetPlayerState() : nullptr;
+	const APlayerState* SourcePlayerState = DamageRequest.SourcePlayerState.Get();
+	UE_LOG(LogEnclaveCombat, Verbose, TEXT("ApplyDamage %s -> %s: %s, damage %g -> %g"),
+		SourcePlayerState ? *SourcePlayerState->GetPlayerName() : TEXT("(no attacker)"),
+		TargetPlayerState ? *TargetPlayerState->GetPlayerName() : *GetNameSafe(Target),
+		*StaticEnum<EEnclaveHitResponse>()->GetNameStringByValue(static_cast<int64>(Response)),
+		DamageRequest.Damage, ResolvedRequest.Damage);
 
 	switch (Response)
 	{

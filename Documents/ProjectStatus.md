@@ -44,7 +44,7 @@ times in a row with clean logs.
 | U3 | Team base rules, then TDM | **In progress** (moments below) |
 | U4 | Solo base rules, then DM | Not started |
 | C2 | Spawn selection | Not started |
-| C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6; real-match check pending |
+| C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
@@ -132,7 +132,12 @@ moments 3 to 5 were added after moment 2):
    hits on neutral players are ignored. The damage request carries the
    attacker's PlayerState (`SourcePlayerState`), so a kill still counts when
    the attacker's pawn has died. A team kill doesn't count as the victim's
-   death. Built and unit-tested; still to check in a real match (3 clients).
+   death. Verified on a dedicated server with 3 clients (two teammates):
+   `?FriendlyFire=1?FriendlyFireScale=0.5` halved teammate damage and a team
+   kill added no death and no kill; `?FriendlyFire=0` ignored teammate hits;
+   enemy kills counted; post-match hits were simulated. Warmup is not yet
+   testable (see known issues). The server log shows each hit's response with
+   `-LogCmds="LogEnclaveCombat Verbose"`. Done.
 
 Decided in U3: kills and deaths are facts recorded by the match base; score is
 each mode's judgement (TDM: +1 per kill; objective modes may pay little or
@@ -160,6 +165,12 @@ Gameplay ideas are collected in `GameplayIdeas.txt`.
 ## Known issues and small leftovers
 
 Fixed only when chosen; none block M4.
+
+- Players have no pawn during warmup: `AGameMode::PlayerCanRestart` is false
+  until the match is in progress (`GameMode.cpp:548-556`), so the warmup hit
+  policy has nothing to apply to yet. Fortnite-style warmup needs a warmup
+  spawning item: restarts allowed in `WaitingToStart`, and every player reset
+  (fresh pawn at a spawn point) at match start, together with C2.
 
 - The match ends on the first kill the server receives at the score limit, so
   ping can decide a last-kill race (kills in the same frame are a draw). The
