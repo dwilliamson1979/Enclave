@@ -16,9 +16,23 @@ enum class EEnclaveTeamAssignment : uint8
 	Random
 };
 
+/** Whether a player who leaves mid-match keeps their place on their team. */
+UENUM()
+enum class EEnclaveTeamSlots : uint8
+{
+	/** Only connected players hold a place: a leaver's place goes to whoever joins next. */
+	Open,
+	/**
+	 * The match-start teams are this match's roster (FEnclaveTeamRoster): a
+	 * player who leaves keeps their place for ReservedSlotHoldSeconds, team
+	 * sizes count those places, and a returning player always gets their team.
+	 */
+	Reserved
+};
+
 /**
  * A team mode's assignment rules: editor settings on the GameMode, overridable
- * with URL options (?TeamAssignment=Random?KeepTeams=0).
+ * with URL options (?TeamAssignment=Random?KeepTeams=0?TeamSlots=Reserved?ReservedSlotHold=120).
  */
 USTRUCT()
 struct ENCLAVE_API FEnclaveTeamAssignmentRules
@@ -40,6 +54,14 @@ struct ENCLAVE_API FEnclaveTeamAssignmentRules
 	/** Team sizes may differ by at most this much (at match start, and when a player reconnects). */
 	UPROPERTY(EditDefaultsOnly, Category = "Match|Teams", meta = (ClampMin = "1"))
 	int32 MaxTeamSizeDifference = 1;
+
+	/** Whether a player who leaves mid-match keeps their place. ?TeamSlots=Open|Reserved */
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Teams")
+	EEnclaveTeamSlots TeamSlots = EEnclaveTeamSlots::Open;
+
+	/** With Reserved slots, how long a leaver's place is held, in seconds; 0 = the whole match. ?ReservedSlotHold= */
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Teams", meta = (ClampMin = "0", EditCondition = "TeamSlots == EEnclaveTeamSlots::Reserved"))
+	float ReservedSlotHoldSeconds = 0.0f;
 
 	/** Applies the URL options above. Invalid values are logged and the current value is kept. */
 	void ApplyOptions(const FString& Options);

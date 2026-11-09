@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-09, after U3 moment 6 and C3, friendly fire and the hit policy (branch `ClaudeEdits`).
+Last updated 2026-11-09, after U3 moment 5, reserved team slots (branch `ClaudeEdits`).
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
 exists, what is in progress, and what comes next. Details live in the linked
@@ -41,7 +41,7 @@ times in a row with clean logs.
 | U1 | PlayerState kills, deaths, team | Done; split into match and team PlayerStates in C1 |
 | U2 | GameState scores, phase end, winner, kill event | Done; split into match, solo and team GameStates in C1 |
 | C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
-| U3 | Team base rules, then TDM | **In progress** (moments below) |
+| U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
 | U4 | Solo base rules, then DM | Not started |
 | C2 | Spawn selection | Not started |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
@@ -109,13 +109,21 @@ moments 3 to 5 were added after moment 2):
    kept its team twice, a late joiner went to the smaller team, and a
    reconnect whose team had filled went to the other team with its stats.
    Done.
-5. Reserved team slots: a team slot policy (`Open`, `Reserved`; a default in
-   each mode's Blueprint, overridden by `?TeamSlots=`). Under Reserved, the
-   server's own assignment becomes this match's roster (kept by the match
-   framework by unique ID, because the engine's `InactivePlayerArray` expires
-   after 300 s and holds at most 16), team sizes count roster members, and a
-   reconnect always returns to its team. Still to decide: hold a slot for the
-   whole match or for a time limit.
+5. Reserved team slots: `TeamSlots` (`Open`, `Reserved`) and
+   `ReservedSlotHoldSeconds` (0 = the whole match) in
+   `FEnclaveTeamAssignmentRules`, a default in each mode's Blueprint,
+   overridden by `?TeamSlots=` and `?ReservedSlotHold=`. Under Reserved, the
+   match-start assignment becomes this match's roster (`FEnclaveTeamRoster`,
+   keyed by unique net ID, because the engine's `InactivePlayerArray` expires
+   after 300 s and holds at most 16). A player who leaves keeps their place for
+   the hold time, team sizes count held places, a returning player whose place
+   is held gets their team back, late joiners join the roster, and a player who
+   returns as a spectator gives up their place. `PreLogin` refuses a newcomer
+   ("Server full.") when connected players plus held places reach
+   `MaxPlayers`, because the engine counts only connected players. Tests:
+   `Enclave.Match.TeamRoster`. Verified on a dedicated server with
+   `?TeamSlots=Reserved?MaxPlayers=3` and 3 clients: a player disconnected,
+   a 4th client was refused, and the player reconnected to their team. Done.
 6. Friendly fire and the hit policy (built before moment 5), with C3. Players
    have an attitude to each other (`GetAttitudeTowards`: Hostile, Friendly,
    Neutral; a spectator or a `NoTeam` player is Neutral). Each match phase has
@@ -165,6 +173,10 @@ Gameplay ideas are collected in `GameplayIdeas.txt`.
 ## Known issues and small leftovers
 
 Fixed only when chosen; none block M4.
+
+- A player who returns to a reserved place after the engine dropped their
+  PlayerState (300 s, or more than 16 leavers) gets their team back but not
+  their match stats. Keeping stats would mean storing them in the roster too.
 
 - Players have no pawn during warmup: `AGameMode::PlayerCanRestart` is false
   until the match is in progress (`GameMode.cpp:548-556`), so the warmup hit

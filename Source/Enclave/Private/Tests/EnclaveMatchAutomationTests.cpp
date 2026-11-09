@@ -5,6 +5,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Game/EnclaveMatchSettings.h"
 #include "Game/EnclaveTeamAssignment.h"
+#include "Game/EnclaveTeamRoster.h"
 #include "Game/EnclaveURLOptions.h"
 #include "Math/RandomStream.h"
 
@@ -215,12 +216,64 @@ bool FEnclaveTeamAssignmentOptionsTest::RunTest(const FString& Parameters)
 	Rules.ApplyOptions(TEXT("?KeepTeams=true"));
 	TestTrue(TEXT("KeepTeams=true"), Rules.bKeepTeams);
 
+	TestTrue(TEXT("Team slots are Open by default"), Rules.TeamSlots == EEnclaveTeamSlots::Open);
+	Rules.ApplyOptions(TEXT("?TeamSlots=reserved?ReservedSlotHold=120"));
+	TestTrue(TEXT("TeamSlots=reserved"), Rules.TeamSlots == EEnclaveTeamSlots::Reserved);
+	TestEqual(TEXT("ReservedSlotHold=120"), Rules.ReservedSlotHoldSeconds, 120.0f);
+	Rules.ApplyOptions(TEXT("?ReservedSlotHold=0"));
+	TestEqual(TEXT("ReservedSlotHold=0 (the whole match)"), Rules.ReservedSlotHoldSeconds, 0.0f);
+
 	// Invalid values log a warning and keep the current value.
-	AddExpectedMessage(TEXT("Ignoring invalid"), EAutomationExpectedMessageFlags::Contains, 3);
+	AddExpectedMessage(TEXT("Ignoring invalid"), EAutomationExpectedMessageFlags::Contains, 5);
 	Rules.ApplyOptions(TEXT("?TeamAssignment=SkillBalance?KeepTeams=maybe"));
 	Rules.ApplyOptions(TEXT("?TeamAssignment=EEnclaveTeamAssignment_MAX"));
+	Rules.ApplyOptions(TEXT("?TeamSlots=Closed?ReservedSlotHold=-5"));
 	TestTrue(TEXT("Unknown policy ignored"), Rules.Assignment == EEnclaveTeamAssignment::Random);
 	TestTrue(TEXT("Bad KeepTeams ignored"), Rules.bKeepTeams);
+	TestTrue(TEXT("Unknown team slots ignored"), Rules.TeamSlots == EEnclaveTeamSlots::Reserved);
+	TestEqual(TEXT("Negative hold ignored"), Rules.ReservedSlotHoldSeconds, 0.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveTeamRosterTest,
+	"Enclave.Match.TeamRoster",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveTeamRosterTest::RunTest(const FString& Parameters)
+{
+	// Hold for the whole match (0).
+	FEnclaveTeamRoster Roster;
+	Roster.Add(TEXT("A"), 0);
+	Roster.Add(TEXT("B"), 0);
+	Roster.Add(TEXT("C"), 1);
+	TestTrue(TEXT("A connected player holds their team"), Roster.FindHeldTeam(TEXT("A"), 10.0, 0.0) == TOptional<uint8>(0));
+	TestFalse(TEXT("A stranger holds nothing"), Roster.FindHeldTeam(TEXT("X"), 10.0, 0.0).IsSet());
+	TestEqual(TEXT("No one absent"), Roster.CountAllAbsentHeld(10.0, 0.0), 0);
+
+	Roster.MarkLeft(TEXT("A"), 10.0);
+	Roster.MarkLeft(TEXT("X"), 10.0);   // not on the roster: nothing happens
+	TestEqual(TEXT("A's place on team 0 is held"), Roster.CountAbsentHeld(0, 1000.0, 0.0), 1);
+	TestEqual(TEXT("Nothing held on team 1"), Roster.CountAbsentHeld(1, 1000.0, 0.0), 0);
+	TestEqual(TEXT("One place held in all"), Roster.CountAllAbsentHeld(1000.0, 0.0), 1);
+	TestTrue(TEXT("A still gets team 0 much later"), Roster.FindHeldTeam(TEXT("A"), 1000.0, 0.0) == TOptional<uint8>(0));
+
+	// A returning player is connected again: no longer an absent place.
+	Roster.Add(TEXT("A"), 0);
+	TestEqual(TEXT("A is back"), Roster.CountAllAbsentHeld(1000.0, 0.0), 0);
+
+	// Hold for 60 s.
+	Roster.MarkLeft(TEXT("C"), 100.0);
+	TestTrue(TEXT("Held before the time is up"), Roster.FindHeldTeam(TEXT("C"), 159.0, 60.0) == TOptional<uint8>(1));
+	TestEqual(TEXT("Counted before the time is up"), Roster.CountAbsentHeld(1, 159.0, 60.0), 1);
+	TestFalse(TEXT("Expired at the hold time"), Roster.FindHeldTeam(TEXT("C"), 160.0, 60.0).IsSet());
+	TestEqual(TEXT("Not counted once expired"), Roster.CountAbsentHeld(1, 160.0, 60.0), 0);
+
+	// Removing frees the place (a player who came back as a spectator).
+	Roster.MarkLeft(TEXT("B"), 200.0);
+	Roster.Remove(TEXT("B"));
+	TestEqual(TEXT("B's place is freed"), Roster.CountAbsentHeld(0, 200.0, 0.0), 0);
+
+	Roster.Reset();
+	TestFalse(TEXT("Reset empties the roster"), Roster.FindHeldTeam(TEXT("A"), 200.0, 0.0).IsSet());
 	return true;
 }
 

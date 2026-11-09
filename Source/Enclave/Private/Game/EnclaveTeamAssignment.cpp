@@ -11,12 +11,22 @@ void FEnclaveTeamAssignmentRules::ApplyOptions(const FString& Options)
 {
 	EnclaveURLOptions::ApplyEnum(Options, TEXT("TeamAssignment"), Assignment);
 	EnclaveURLOptions::ApplyBool(Options, TEXT("KeepTeams"), bKeepTeams);
+	EnclaveURLOptions::ApplyEnum(Options, TEXT("TeamSlots"), TeamSlots);
+	EnclaveURLOptions::ApplyFloat(Options, TEXT("ReservedSlotHold"), 0.0f, TNumericLimits<float>::Max(), ReservedSlotHoldSeconds);
 }
 
 FString FEnclaveTeamAssignmentRules::ToString() const
 {
-	return FString::Printf(TEXT("TeamAssignment=%s KeepTeams=%d MaxTeamSizeDifference=%d"),
-		*StaticEnum<EEnclaveTeamAssignment>()->GetNameStringByValue(static_cast<int64>(Assignment)), bKeepTeams ? 1 : 0, MaxTeamSizeDifference);
+	FString Result = FString::Printf(TEXT("TeamAssignment=%s KeepTeams=%d MaxTeamSizeDifference=%d TeamSlots=%s"),
+		*StaticEnum<EEnclaveTeamAssignment>()->GetNameStringByValue(static_cast<int64>(Assignment)), bKeepTeams ? 1 : 0, MaxTeamSizeDifference,
+		*StaticEnum<EEnclaveTeamSlots>()->GetNameStringByValue(static_cast<int64>(TeamSlots)));
+	if (TeamSlots == EEnclaveTeamSlots::Reserved)
+	{
+		Result += ReservedSlotHoldSeconds > 0.0f
+			? FString::Printf(TEXT(" ReservedSlotHold=%gs"), ReservedSlotHoldSeconds)
+			: FString(TEXT(" ReservedSlotHold=match"));
+	}
+	return Result;
 }
 
 namespace

@@ -2,7 +2,11 @@
 
 #include "Game/EnclaveTeamMatchGameMode.h"
 
+#include "Engine/World.h"
+#include "GameFramework/GameSession.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
+#include "Kismet/GameplayStatics.h"
 #include "Math/RandomStream.h"
 
 #include "Debug/EnclaveDebug.h"
@@ -92,6 +96,9 @@ void AEnclaveTeamMatchGameMode::AssignTeamsAtMatchStart()
 		Players.Add(TeamPlayer);
 	}
 
+	// With Reserved slots, this assignment is the match's roster.
+	Roster.Reset();
+
 	// A fresh seed per match, logged so a surprising result can be replayed in a test.
 	FRandomStream Random;
 	Random.GenerateNewSeed();
@@ -107,10 +114,15 @@ void AEnclaveTeamMatchGameMode::AssignTeamsAtMatchStart()
 			++NumChanged;
 		}
 		Players[Index]->SetTeamId(Teams[Index]);
+		const FString RosterKey = GetRosterKey(Players[Index]->GetUniqueId());
+		if (UsesReservedSlots() && !RosterKey.IsEmpty())
+		{
+			Roster.Add(RosterKey, Teams[Index]);
+		}
 		if (Teams[Index] < NumTeams)
 		{
-			FString& Roster = TeamRosters[Teams[Index]];
-			Roster += (Roster.IsEmpty() ? TEXT("") : TEXT(", ")) + Players[Index]->GetPlayerName();
+			FString& Names = TeamRosters[Teams[Index]];
+			Names += (Names.IsEmpty() ? TEXT("") : TEXT(", ")) + Players[Index]->GetPlayerName();
 		}
 	}
 
@@ -122,6 +134,69 @@ void AEnclaveTeamMatchGameMode::AssignTeamsAtMatchStart()
 	}
 	UE_LOG(LogEnclaveMatch, Log, TEXT("Teams at match start (%s, seed %d, %d of %d changed team): %s."),
 		*TeamAssignmentRules.ToString(), Random.GetInitialSeed(), NumChanged, Players.Num(), *Summary);
+}
+
+void AEnclaveTeamMatchGameMode::PreLogin(const FString& Options, const FString& Address, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage)
+{
+	Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
+	if (!ErrorMessage.IsEmpty() || !UsesReservedSlots() || !IsMatchInProgress() || !GameSession)
+	{
+		return;
+	}
+
+	// A spectator-only connection takes no place on a team (the engine checks
+	// spectator capacity on its own).
+	if (UGameplayStatics::ParseOption(Options, TEXT("SpectatorOnly")) == TEXT("1"))
+	{
+		return;
+	}
+
+	// A player coming back to a held place is already counted among the held places.
+	const double Now = GetWorld()->GetTimeSeconds();
+	const double HoldSeconds = TeamAssignmentRules.ReservedSlotHoldSeconds;
+	const FString RosterKey = GetRosterKey(UniqueId);
+	if (!RosterKey.IsEmpty() && Roster.FindHeldTeam(RosterKey, Now, HoldSeconds).IsSet())
+	{
+		return;
+	}
+
+	// The same limit as AGameSession::AtCapacity, which honors this override (GameSession.cpp:338).
+	static const IConsoleVariable* MaxPlayersOverride = IConsoleManager::Get().FindConsoleVariable(TEXT("net.MaxPlayersOverride"));
+	const int32 MaxPlayers = MaxPlayersOverride && MaxPlayersOverride->GetInt() > 0 ? MaxPlayersOverride->GetInt() : GameSession->MaxPlayers;
+
+	const int32 HeldPlaces = Roster.CountAllAbsentHeld(Now, HoldSeconds);
+	if (MaxPlayers > 0 && GetNumPlayers() + HeldPlaces >= MaxPlayers)
+	{
+		ErrorMessage = TEXT("Server full.");
+		UE_LOG(LogEnclaveMatch, Log, TEXT("Refused a new player: %d connected and %d places held for absent players (MaxPlayers %d)."),
+			GetNumPlayers(), HeldPlaces, MaxPlayers);
+	}
+}
+
+void AEnclaveTeamMatchGameMode::Logout(AController* Exiting)
+{
+	const AEnclaveTeamPlayerState* PlayerState = Exiting ? Exiting->GetPlayerState<AEnclaveTeamPlayerState>() : nullptr;
+	const FString RosterKey = PlayerState ? GetRosterKey(PlayerState->GetUniqueId()) : FString();
+	if (UsesReservedSlots() && IsMatchInProgress() && !RosterKey.IsEmpty())
+	{
+		const double Now = GetWorld()->GetTimeSeconds();
+		Roster.MarkLeft(RosterKey, Now);
+		const TOptional<uint8> HeldTeam = Roster.FindHeldTeam(RosterKey, Now, TeamAssignmentRules.ReservedSlotHoldSeconds);
+		if (HeldTeam.IsSet())
+		{
+			const float HoldSeconds = TeamAssignmentRules.ReservedSlotHoldSeconds;
+			const FString HoldText = HoldSeconds > 0.0f ? FString::Printf(TEXT("for %g s"), HoldSeconds) : FString(TEXT("for the whole match"));
+			UE_LOG(LogEnclaveMatch, Log, TEXT("%s left; their place on team %d is held %s."),
+				*PlayerState->GetPlayerName(), HeldTeam.GetValue(), *HoldText);
+		}
+	}
+
+	Super::Logout(Exiting);
+}
+
+FString AEnclaveTeamMatchGameMode::GetRosterKey(const FUniqueNetIdRepl& UniqueId)
+{
+	return UniqueId.IsValid() ? UniqueId.ToString() : FString();
 }
 
 bool AEnclaveTeamMatchGameMode::FindInactivePlayer(APlayerController* PC)
@@ -142,9 +217,31 @@ void AEnclaveTeamMatchGameMode::HandleStartingNewPlayer_Implementation(APlayerCo
 	ReconnectingPlayer.Reset();
 
 	AEnclaveTeamPlayerState* PlayerState = NewPlayer ? NewPlayer->GetPlayerState<AEnclaveTeamPlayerState>() : nullptr;
+	const FString RosterKey = PlayerState ? GetRosterKey(PlayerState->GetUniqueId()) : FString();
+	const bool bUseRoster = UsesReservedSlots() && IsMatchInProgress() && !RosterKey.IsEmpty();
+	const double Now = GetWorld()->GetTimeSeconds();
 
-	// Spectators stay on NoTeam.
-	if (PlayerState && !MustSpectate(NewPlayer))
+	// With Reserved slots, a player whose place is held returns to it, whether
+	// or not the engine still had their PlayerState (it expires after 300 s).
+	const TOptional<uint8> HeldTeam = bUseRoster
+		? Roster.FindHeldTeam(RosterKey, Now, TeamAssignmentRules.ReservedSlotHoldSeconds)
+		: TOptional<uint8>();
+
+	// Spectators stay on NoTeam, and a spectator gives up any place they held.
+	if (PlayerState && MustSpectate(NewPlayer))
+	{
+		if (bUseRoster)
+		{
+			Roster.Remove(RosterKey);
+		}
+	}
+	else if (PlayerState && HeldTeam.IsSet())
+	{
+		PlayerState->SetTeamId(HeldTeam.GetValue());
+		Roster.Add(RosterKey, HeldTeam.GetValue());
+		UE_LOG(LogEnclaveMatch, Log, TEXT("%s returns to team %d (reserved place)."), *PlayerState->GetPlayerName(), HeldTeam.GetValue());
+	}
+	else if (PlayerState)
 	{
 		// An out-of-range team (from a mode with more teams) counts as none.
 		const uint8 CurrentTeam = PlayerState->GetTeamId();
@@ -184,6 +281,12 @@ void AEnclaveTeamMatchGameMode::HandleStartingNewPlayer_Implementation(APlayerCo
 				: FString::Printf(TEXT("arrived after the start with team %d"), CurrentTeam);
 			UE_LOG(LogEnclaveMatch, Log, TEXT("%s joins team %d (%s; %d players on it now)."),
 				*PlayerState->GetPlayerName(), NewTeam, *Reason, CountPlayersOnTeam(NewTeam));
+		}
+
+		// With Reserved slots, a player placed during the match holds a place too.
+		if (bUseRoster)
+		{
+			Roster.Add(RosterKey, PlayerState->GetTeamId());
 		}
 	}
 
@@ -287,8 +390,8 @@ int32 AEnclaveTeamMatchGameMode::CountPlayersOnTeam(uint8 TeamId, const APlayerS
 		return 0;
 	}
 
-	// PlayerArray holds connected players only; players who left are in
-	// InactivePlayerArray, so they don't hold a place on a team.
+	// PlayerArray holds connected players only. Players who left hold a place
+	// only with Reserved slots, through the roster.
 	int32 Count = 0;
 	for (const APlayerState* Player : GameState->PlayerArray)
 	{
@@ -299,5 +402,9 @@ int32 AEnclaveTeamMatchGameMode::CountPlayersOnTeam(uint8 TeamId, const APlayerS
 		}
 	}
 
+	if (UsesReservedSlots() && IsMatchInProgress())
+	{
+		Count += Roster.CountAbsentHeld(TeamId, GetWorld()->GetTimeSeconds(), TeamAssignmentRules.ReservedSlotHoldSeconds);
+	}
 	return Count;
 }
