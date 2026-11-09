@@ -49,7 +49,7 @@ times in a row with clean logs.
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
 | C6 | Graybox arena map | Not started |
-| C7 | Tests and match smoke test | Not started (only `Enclave.Match.Settings.ApplyOptions` exists) |
+| C7 | Tests and match smoke test | Not started (unit tests so far: `Enclave.Match.Settings`, `.URLOptions`, `.TeamAssignment.*`, `.TeamRoster`) |
 
 C1 is built in six moments, with the user sketching each:
 
@@ -155,16 +155,24 @@ modes (the score limit: TDM 50, DM 25) are set in each mode's Blueprint; the
 settings struct keeps neutral defaults (`ScoreLimit` 0), because a Blueprint
 saves only values that differ from its parent.
 
+**Next:** U4 (solo base rules, then DM; the user's item), so both match
+branches exist before the shared pieces (C2 spawns with warmup spawning, C4
+HUD) are built on top.
+
 Run a match by hand (close the editor first; server, then one line per client):
 `UnrealEditor.exe Enclave.uproject "/Game/Maps/EnclaveMap?game=TDM?ScoreLimit=3?TimeLimit=180?Warmup=5?PostMatch=8" -server -log`
 and `UnrealEditor.exe Enclave.uproject 127.0.0.1 -game -windowed -ResX=960 -ResY=540`.
 Without a HUD (C4), the server log's `LogEnclaveMatch` lines are the scoreboard.
+Add `-LogCmds="LogEnclaveCombat Verbose"` to the server to log every hit's
+response (Ignore, Simulate, Apply) and damage. For a reconnect, type
+`disconnect`, then `open 127.0.0.1`, in the same client's console: a new
+client process is a different player (a new unique net ID).
 
 ## Next milestones
 
 | Milestone | What | Doc |
 |---|---|---|
-| After M4 | Lag Compensation v2: a central server-only manager, per-bone (hitbox) rewind, scaling to 26-32 players | [LagCompensation_v2_Design.md](LagCompensation_v2_Design.md) (draft) |
+| After M4 | Lag Compensation v2: a central server-only manager, per-bone (hitbox) rewind, scaling to 26-32 players; with it, an `ApplyDamage` overload that takes the damage receiver the manager already holds (the damage policy stays inside `ApplyDamage`) | [LagCompensation_v2_Design.md](LagCompensation_v2_Design.md) (draft) |
 | Later | Bots (likely at launch; free-for-all bots need an attitude solver that calls `IsHostileTo`) | none yet |
 | Later | More modes (CTF, Control, Sector-style), as new subclasses of the solo or team match GameModes | M4 plan, Architecture |
 
