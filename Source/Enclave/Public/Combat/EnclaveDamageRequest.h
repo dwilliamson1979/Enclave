@@ -47,7 +47,8 @@ struct ENCLAVE_API FEnclaveDamageRequest
 	 * The player responsible for the damage, or null when no player is (the
 	 * environment). Set when the damage starts (a shot, a throw), so it stays
 	 * valid after the attacker's pawn dies, unlike SourceActor's PlayerState.
-	 * Match rules (kill credit, friendly fire) use this, not SourceActor.
+	 * Match rules (kill credit, friendly fire) and the GAS effect source and
+	 * instigator use this, not SourceActor.
 	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Combat|Damage")
 	TObjectPtr<APlayerState> SourcePlayerState = nullptr;

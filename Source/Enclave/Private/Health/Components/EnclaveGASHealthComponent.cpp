@@ -5,6 +5,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/PlayerState.h"
 
 #include "Abilities/Attributes/EnclaveAttributeSet.h"
 #include "Abilities/Effects/EnclaveGE_Damage.h"
@@ -118,7 +119,15 @@ bool UEnclaveGASHealthComponent::ReceiveDamage(const FEnclaveDamageRequest& Dama
 
 	// Source is operation context, not a lifecycle relationship. Resolve it per
 	// damage request rather than caching an attacker that can change every hit.
-	UAbilitySystemComponent* SourceASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(DamageRequest.SourceActor.Get());
+	// A player's ASC lives on their PlayerState, which outlives the pawn (a
+	// grenade that lands after its thrower died). SourceActor covers a source
+	// with no player (e.g. a turret with its own ASC); with neither, the target
+	// is its own source.
+	UAbilitySystemComponent* SourceASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(DamageRequest.SourcePlayerState.Get());
+	if (!IsValid(SourceASC))
+	{
+		SourceASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(DamageRequest.SourceActor.Get());
+	}
 	UAbilitySystemComponent* EffectSourceASC = IsValid(SourceASC) ? SourceASC : TargetASC;
 
 	FGameplayEffectContextHandle ContextHandle = EffectSourceASC->MakeEffectContext();

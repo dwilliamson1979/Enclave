@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
+#include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -130,9 +131,15 @@ void UEnclaveAvatarLifecycleComponent::EnterDeadState(const FEnclaveDamageReques
 
 	FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
 
-	if (IsValid(DamageRequest.SourceActor))
+	// GAS convention (UAbilitySystemComponent::MakeEffectContext): the instigator
+	// is the ASC's owner, here the killer's PlayerState, which outlives their
+	// pawn; SourceActor covers a killer with no player. The causer is the weapon.
+	AActor* KillerInstigator = IsValid(DamageRequest.SourcePlayerState)
+		? static_cast<AActor*>(DamageRequest.SourcePlayerState.Get())
+		: DamageRequest.SourceActor.Get();
+	if (IsValid(KillerInstigator))
 	{
-		ContextHandle.AddInstigator(DamageRequest.SourceActor.Get(), DamageRequest.DamageCauser.Get());
+		ContextHandle.AddInstigator(KillerInstigator, DamageRequest.DamageCauser.Get());
 	}
 
 	if (IsValid(DamageRequest.DamageCauser))
