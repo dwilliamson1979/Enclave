@@ -21,7 +21,7 @@ Shipping DM alongside TDM is deliberate. A second mode keeps TDM-only assumption
 | ASC survives respawn | `AEnclavePlayerState` owns the ASC; the character is the avatar | Respawn creates a new pawn; abilities and player-scoped effects persist |
 | Respawn cleanup path | Was `AEnclavePlayerController::PerformDebugRespawn` | Done in C1: `AEnclaveGameMode::RespawnPlayer` (unpossess, destroy, `RestartPlayer`); the character drops its items in `UnPossessed`. The debug command calls it too. |
 | Starting loadout | `AEnclaveCharacter` `StartingSlottedItems` / `StartingInventoryItems` | Each respawn gets the loadout automatically |
-| Single damage entry point | `UEnclaveDamageStatics::ApplyDamage` | One place to apply the friendly-fire rule |
+| Single damage entry point | `UEnclaveDamageStatics::ApplyDamage` | One place to ask the damage policy (`IEnclaveDamagePolicyInterface`), done in C3 |
 | HUD art | `Content/UI/Hud/Art` (elimination feed, ammo counter, accolades) | Use for the HUD widgets |
 | Test harness | `Tools/Scripts/SSR/RunSSRSession.ps1`, dedicated server plus N clients | Reused for a match smoke test |
 
@@ -165,7 +165,12 @@ virtual void  ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerS
 virtual bool  CheckWinCondition(bool bTimeLimitReached)
     PURE_VIRTUAL(...);  // polled every frame in progress; sets the result (winner, or none = draw) when true
 // Implemented once per branch (solo: player score; team: team score), not per mode.
-virtual bool  CanDamage(AController* Instigator, AController* Victim) const;  // friendly fire
+
+// AEnclaveMatchGameMode is the damage policy (IEnclaveDamagePolicyInterface), asked by ApplyDamage
+virtual EEnclaveHitResponse ResolveDamage(const AActor* Target, FEnclaveDamageRequest& InOutRequest) const;
+// Ignore, Simulate (hit marker, no damage) or Apply, from the current phase's FEnclaveHitPolicy
+// (WarmupHitPolicy, MatchHitPolicy, PostMatchHitPolicy; set in OnMatchStateSet).
+// Friendly fire is MatchHitPolicy's Friendly row and FriendlyDamageScale (?FriendlyFire=, ?FriendlyFireScale=).
 ```
 
 ## Work items and ownership
@@ -181,10 +186,10 @@ most: replication, authority and the GameMode/GameState split.
 | U1 | PlayerState team, kills and deaths | **You** | `Replicated` / `ReplicatedUsing`, `GetLifetimeReplicatedProps`, authority checks, OnRep event. Small and self-contained, so a good first piece. (Later split by C1 into match and team PlayerStates.) |
 | U2 | `AEnclaveGameState` | **You** | Replicated team scores, end time and winner; the kill multicast. Set `GameStateClass` in the GameMode. (Later split by C1 into match, solo and team GameStates.) |
 | C1 | Reparent to `AGameMode` and add the `AEnclaveMatchGameMode` skeleton | Claude | Phases, warmup and timer, death binding, respawn timer, URL options, virtual hooks with defaults |
-| U3 | Team base rules, then TDM rules | **You** | In `AEnclaveTeamMatchGameMode`: team balancing (the smaller team), team assignment at match start (Keep teams, Random, even out), Open and Reserved team slots, `CanDamage` (friendly fire) and the team win check. In TDM: `ScoreKill`. Moments in ProjectStatus |
+| U3 | Team base rules, then TDM rules | **You** | In `AEnclaveTeamMatchGameMode`: team balancing (the smaller team), team assignment at match start (Keep teams, Random, even out), Open and Reserved team slots, friendly fire (player attitude and the hit policy) and the team win check. In TDM: `ScoreKill`. Moments in ProjectStatus |
 | U4 | Solo base rules, then DM rules | **You** | In `AEnclaveSoloMatchGameMode`: the individual win check. In DM: `ScoreKill`. Short once TDM exists. |
 | C2 | Spawn selection | Claude | `AEnclavePlayerStart` with an optional team; reject occupied starts; prefer starts far from living enemies. Written as a pure scoring function with unit tests. |
-| C3 | Friendly-fire gate | Claude | `ApplyDamage` asks the match GameMode's `CanDamage`. Self-damage is still allowed. |
+| C3 | Damage policy | Claude | `ApplyDamage` asks the game mode's `ResolveDamage` (`IEnclaveDamagePolicyInterface`): Ignore, Simulate or Apply by the phase's hit policy. Self-damage applies in the match. |
 | C4 | HUD C++ base and data plumbing | Claude | Widget base classes that read GameState and PlayerState: score and timer bar, elimination feed, Tab scoreboard, death/respawn countdown, end-of-match screen, health and ammo. With the end screen: freeze players when the match ends (block input in `AEnclaveCharacter::CanProcessAvatarInput` once the match is no longer in progress, cancel active abilities such as held fire, stop movement) and point the camera at the winner (`APlayerController::GameHasEnded`) |
 | U5 | HUD widget layouts (UMG) | You or your team | Optional. Uses the existing HUD art. I can make plain placeholders if nobody wants it. |
 | C5 | Team colors | Claude | Simple mesh tint so friend and enemy are readable. Placeholder until real art. |

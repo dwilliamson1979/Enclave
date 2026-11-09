@@ -75,7 +75,13 @@ in [ProjectStatus.md](ProjectStatus.md).
   `PossessedBy` / `UnPossessed` run their steps in a fixed order (ASC init
   before items; item teardown before `Super`, while the ASC is reachable).
 - **Combat code doesn't depend on the GameMode class:** the combat policy is a
-  component found with `UEnclaveCombatPolicyComponent::Get(World)`.
+  component found with `UEnclaveCombatPolicyComponent::Get(World)`, and the
+  damage rules are `IEnclaveDamagePolicyInterface` on the game mode, which
+  `ApplyDamage` asks for every hit (Ignore, Simulate, Apply).
+- **Every damage request carries the attacker's PlayerState**
+  (`FEnclaveDamageRequest::SourcePlayerState`), not only the pawn: kill credit
+  and the hit policy need it after the pawn dies. A projectile or grenade
+  copies it when thrown.
 - **Past stage docs and gates are reference points**, not requirements.
   Decide with data and best practice.
 

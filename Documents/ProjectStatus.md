@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-05, after U3 moment 3, seamless restart (branch `ClaudeEdits`).
+Last updated 2026-11-09, after U3 moment 6 and C3, friendly fire and the hit policy (branch `ClaudeEdits`).
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
 exists, what is in progress, and what comes next. Details live in the linked
@@ -44,7 +44,7 @@ times in a row with clean logs.
 | U3 | Team base rules, then TDM | **In progress** (moments below) |
 | U4 | Solo base rules, then DM | Not started |
 | C2 | Spawn selection | Not started |
-| C3 | Friendly-fire gate (via `IsHostileTo`) | Not started |
+| C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6; real-match check pending |
 | C4 | HUD C++ base | Not started |
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
@@ -116,10 +116,23 @@ moments 3 to 5 were added after moment 2):
    after 300 s and holds at most 16), team sizes count roster members, and a
    reconnect always returns to its team. Still to decide: hold a slot for the
    whole match or for a time limit.
-6. Friendly fire (the team mode's `CanDamage`), then C3 wires it into
-   `ApplyDamage`. It starts with who counts as a participant: a spectator
-   (`IsOnlyASpectator`) is hostile to nobody, and a `NoTeam` player is
-   neutral, not an enemy.
+6. Friendly fire and the hit policy (built before moment 5), with C3. Players
+   have an attitude to each other (`GetAttitudeTowards`: Hostile, Friendly,
+   Neutral; a spectator or a `NoTeam` player is Neutral). Each match phase has
+   a hit policy (`FEnclaveHitPolicy`: a response per kind of hit on a player,
+   Hostile, Friendly, Self, Environment; each is Ignore, Simulate or Apply,
+   plus `FriendlyDamageScale`). Warmup and post-match simulate every hit (hit
+   markers, no damage, Fortnite style); the match applies them, except
+   teammates (`?FriendlyFire=1|0`, `?FriendlyFireScale=`). `OnMatchStateSet`
+   points `CurrentHitPolicy` at the phase's policy. `AEnclaveMatchGameMode`
+   implements `IEnclaveDamagePolicyInterface::ResolveDamage`, which
+   `UEnclaveDamageStatics::ApplyDamage` asks for every hit (a game mode
+   without it applies all damage). Hits on non-players (dummies,
+   destructibles) always apply: their own code decides what damage does;
+   hits on neutral players are ignored. The damage request carries the
+   attacker's PlayerState (`SourcePlayerState`), so a kill still counts when
+   the attacker's pawn has died. A team kill doesn't count as the victim's
+   death. Built and unit-tested; still to check in a real match (3 clients).
 
 Decided in U3: kills and deaths are facts recorded by the match base; score is
 each mode's judgement (TDM: +1 per kill; objective modes may pay little or
