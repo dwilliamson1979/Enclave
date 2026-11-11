@@ -9,7 +9,7 @@ void AEnclaveTDMGameMode::ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclave
 {
 	// Only a kill of an enemy scores. IsHostileTo is false for a suicide or a
 	// team kill; Attacker is null for a death no player caused. None of these
-	// costs the team a point in TDM.
+	// costs the team a point (the base applies SuicideScore to the player).
 	if (!Attacker || !Attacker->IsHostileTo(Victim))
 	{
 		return;

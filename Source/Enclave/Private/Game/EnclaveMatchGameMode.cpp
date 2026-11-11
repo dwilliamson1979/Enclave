@@ -285,7 +285,16 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 		VictimPlayerState->AddDeath();
 	}
 
-	// The mode sees every death, so it can also penalize suicides or team kills.
+	// A suicide (by yourself, or by no player) costs the player, in every mode,
+	// so the base applies it and no mode can forget it. Never a team score: a
+	// saboteur must not be able to cost their team points.
+	const bool bSuicide = !AttackerPlayerState || AttackerPlayerState == VictimPlayerState;
+	if (bSuicide && MatchSettings.SuicideScore != 0)
+	{
+		VictimPlayerState->SetScore(VictimPlayerState->GetScore() + static_cast<float>(MatchSettings.SuicideScore));
+	}
+
+	// The mode sees every death, so it can also penalize team kills.
 	ScoreKill(AttackerPlayerState, VictimPlayerState);
 
 	// After ScoreKill, so the scores include this death. Player stats only: team

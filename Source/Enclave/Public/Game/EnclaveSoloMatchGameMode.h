@@ -26,4 +26,6 @@ public:
 protected:
 	/** Clears the result, then lets the base start the match. */
 	virtual void HandleMatchHasStarted() override;
+
+	virtual bool CheckWinCondition(bool bTimeLimitReached) override;
 };

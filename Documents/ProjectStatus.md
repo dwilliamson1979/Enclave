@@ -42,7 +42,8 @@ times in a row with clean logs.
 | U2 | GameState scores, phase end, winner, kill event | Done; split into match, solo and team GameStates in C1 |
 | C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
 | U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
-| U4 | Solo base rules, then DM | Not started |
+| U4 | Solo base rules, then DM | In progress (three moments, below) |
+| U6 | Kill credit: damage history, last-damager credit, later assists | Not started; after U4 |
 | C2 | Spawn selection | Not started |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
@@ -147,6 +148,23 @@ moments 3 to 5 were added after moment 2):
    testable (see known issues). The server log shows each hit's response with
    `-LogCmds="LogEnclaveCombat Verbose"`. Done.
 
+U4 is built in three moments:
+
+1. The solo win check (`AEnclaveSoloMatchGameMode::CheckWinCondition`): the
+   match ends at the score limit or the time limit, the single top player
+   wins, a shared top score is a draw, spectators take no part, and a lone
+   player wins even on 0. Built; tested by the matches in moment 3.
+2. `SuicideScore` and DM's `ScoreKill`. A suicide (killed by yourself, or by
+   no player) changes the victim's player score by `SuicideScore`
+   (`FEnclaveMatchSettings`, neutral 0, `?SuicideScore=`; -1 in both mode
+   Blueprints), applied by the match base before `ScoreKill`; it never
+   touches a team score, so a saboteur can't cost a team points.
+   `AEnclaveDMGameMode::ScoreKill`: +1 for a kill of an enemy. The penalty
+   alone doesn't stop kill denial by suicide (in TDM it touches only the
+   scoreboard); U6's last-damager credit does.
+3. `BP_DMGameMode` (`?game=DM` alias) and real DM matches on a dedicated
+   server: a score-limit win, a time-limit draw, a suicide penalty.
+
 Decided in U3: kills and deaths are facts recorded by the match base; score is
 each mode's judgement (TDM: +1 per kill; objective modes may pay little or
 nothing per kill). Mode-only stats go on a mode PlayerState. Names are short:
@@ -155,9 +173,9 @@ modes (the score limit: TDM 50, DM 25) are set in each mode's Blueprint; the
 settings struct keeps neutral defaults (`ScoreLimit` 0), because a Blueprint
 saves only values that differ from its parent.
 
-**Next:** U4 (solo base rules, then DM; the user's item), so both match
-branches exist before the shared pieces (C2 spawns with warmup spawning, C4
-HUD) are built on top.
+**Next:** finish U4 (solo base rules, then DM), so both match branches exist
+before the shared pieces (C2 spawns with warmup spawning, C4 HUD) are built on
+top; then U6 (kill credit).
 
 Run a match by hand (close the editor first; server, then one line per client):
 `UnrealEditor.exe Enclave.uproject "/Game/Maps/EnclaveMap?game=TDM?ScoreLimit=3?TimeLimit=180?Warmup=5?PostMatch=8" -server -log`

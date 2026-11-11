@@ -20,7 +20,11 @@ class ENCLAVE_API AEnclaveTDMGameMode : public AEnclaveTeamMatchGameMode
 
 protected:
 
-	/** +1 team and player score for a kill of an enemy; nothing for suicides, team kills or deaths with no attacker. */
+	/**
+	 * +1 team and player score for a kill of an enemy; nothing for team kills.
+	 * A suicide or a death with no attacker never costs the team; the base
+	 * applies SuicideScore to the player's own score.
+	 */
 	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim) override;
 
 };

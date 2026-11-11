@@ -117,7 +117,8 @@ protected:
 	 * progress, including suicides (Attacker == Victim), team kills and deaths
 	 * with no player responsible (Attacker null). Use Attacker->IsHostileTo(Victim)
 	 * to tell a real kill apart. Victim is never null. (A team kill doesn't
-	 * count as the victim's death.)
+	 * count as the victim's death. A suicide's MatchSettings.SuicideScore is
+	 * already applied to the victim's player score.)
 	 */
 	virtual void ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveMatchPlayerState* Victim)
 		PURE_VIRTUAL(AEnclaveMatchGameMode::ScoreKill, );

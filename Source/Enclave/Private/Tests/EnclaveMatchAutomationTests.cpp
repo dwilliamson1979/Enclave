@@ -29,6 +29,9 @@ bool FEnclaveMatchSettingsOptionsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("MinPlayers applied"), Settings.MinPlayersToStart, 4);
 	TestEqual(TEXT("PostMatch applied"), Settings.PostMatchSeconds, 5);
 
+	Settings.ApplyOptions(TEXT("?SuicideScore=-1"));
+	TestEqual(TEXT("Negative SuicideScore applied"), Settings.SuicideScore, -1);
+
 	// Invalid values log a warning and keep the current value.
 	AddExpectedMessage(TEXT("Ignoring invalid"), EAutomationExpectedMessageFlags::Contains, 5);
 	Settings.ApplyOptions(TEXT("?ScoreLimit=abc?TimeLimit=-5?MinPlayers=0?Warmup=2.5?RespawnDelay=3abc"));

@@ -187,7 +187,8 @@ most: replication, authority and the GameMode/GameState split.
 | U2 | `AEnclaveGameState` | **You** | Replicated team scores, end time and winner; the kill multicast. Set `GameStateClass` in the GameMode. (Later split by C1 into match, solo and team GameStates.) |
 | C1 | Reparent to `AGameMode` and add the `AEnclaveMatchGameMode` skeleton | Claude | Phases, warmup and timer, death binding, respawn timer, URL options, virtual hooks with defaults |
 | U3 | Team base rules, then TDM rules | **You** | In `AEnclaveTeamMatchGameMode`: team balancing (the smaller team), team assignment at match start (Keep teams, Random, even out), Open and Reserved team slots, friendly fire (player attitude and the hit policy) and the team win check. In TDM: `ScoreKill`. Moments in ProjectStatus |
-| U4 | Solo base rules, then DM rules | **You** | In `AEnclaveSoloMatchGameMode`: the individual win check. In DM: `ScoreKill`. Short once TDM exists. |
+| U4 | Solo base rules, then DM rules | **You** | In `AEnclaveSoloMatchGameMode`: the individual win check. In DM: `ScoreKill`. In the match base: `SuicideScore` (a suicide costs the player, never the team). Short once TDM exists. |
+| U6 | Kill credit | **You** | A damage history per life (attacker, damage, server time; applied damage only, recorded in `ApplyDamage`; reset on respawn). At death: a suicide or a death with no attacker goes to the most recent hostile damager inside a time window, and then is not a suicide (no `SuicideScore`). Later, assists: other hostile damagers inside the window, above a threshold. Window, threshold and points are settings. Fixes kill denial by suicide in both modes. |
 | C2 | Spawn selection | Claude | `AEnclavePlayerStart` with an optional team; reject occupied starts; prefer starts far from living enemies. Written as a pure scoring function with unit tests. |
 | C3 | Damage policy | Claude | `ApplyDamage` asks the game mode's `ResolveDamage` (`IEnclaveDamagePolicyInterface`): Ignore, Simulate or Apply by the phase's hit policy. Self-damage applies in the match. |
 | C4 | HUD C++ base and data plumbing | Claude | Widget base classes that read GameState and PlayerState: score and timer bar, elimination feed, Tab scoreboard, death/respawn countdown, end-of-match screen, health and ammo. With the end screen: freeze players when the match ends (block input in `AEnclaveCharacter::CanProcessAvatarInput` once the match is no longer in progress, cancel active abilities such as held fire, stop movement) and point the camera at the winner (`APlayerController::GameHasEnded`) |
@@ -199,7 +200,7 @@ most: replication, authority and the GameMode/GameState split.
 ## Order
 
 1. **Foundation.** U1, U2, then C1.
-2. **Rules.** U3, then U4. In parallel, C2 and C3.
+2. **Rules.** U3, then U4, then U6. In parallel, C2 and C3.
 3. **Presentation.** C4, then U5 (or placeholders), then C5.
 4. **Playable.** C6 and C7, then a real playtest with people. The milestone is done when
    a 4v4 dedicated-server match runs from start through restart three times in a row,

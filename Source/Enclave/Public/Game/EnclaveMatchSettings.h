@@ -50,6 +50,14 @@ struct ENCLAVE_API FEnclaveMatchSettings
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", Units = "s"))
 	int32 PostMatchSeconds = 15;
 
+	/**
+	 * Added to the player's own score for a suicide (killed by yourself, or by
+	 * no player), usually negative. Never touches a team score, so one player
+	 * can't cost their team points on purpose. 0 = no penalty. ?SuicideScore=
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match")
+	int32 SuicideScore = 0;
+
 	/** Applies the URL options above. Invalid values are logged and the current value is kept. */
 	void ApplyOptions(const FString& Options);
 
