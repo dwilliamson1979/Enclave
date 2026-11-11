@@ -29,6 +29,8 @@
 #include "Equipment/Components/EnclaveEquipmentComponent.h"
 #include "Equipment/Items/EnclaveItem.h"
 #include "GameplayTags/EnclaveEquipmentSlotTags.h"
+#include "GameplayTags/EnclaveDamageTags.h"
+#include "Combat/EnclaveDamageRequest.h"
 #include "Collision/EnclaveCollisionChannels.h"
 
 #include "Engine/Engine.h"
@@ -336,6 +338,37 @@ void AEnclaveCharacter::UnPossessed()
 	UninitializeAbilitySystemConsumers();
 
 	Super::UnPossessed();
+}
+
+void AEnclaveCharacter::FellOutOfWorld(const UDamageType& DmgType)
+{
+	// Only the server decides a death; Super also destroys only on authority.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	// Kill rather than damage: the hit policy could simulate or ignore
+	// environment damage (warmup, post-match), and a player below the world must
+	// never stay alive there. No SourcePlayerState: no player is responsible.
+	if (IsValid(LifecycleComp) && !LifecycleComp->IsDead())
+	{
+		FEnclaveDamageRequest Cause;
+		Cause.SourceActor = this;
+		Cause.DamageTags.AddTag(EnclaveGameplayTags::Damage_Source_Environment);
+		LifecycleComp->Kill(Cause);
+	}
+
+	// Nobody sees a body below the world, so remove it now rather than at the
+	// respawn. Unpossess first, as RespawnPlayer does: UnPossessed tears down
+	// items while the PlayerState's ASC is still reachable. The match already
+	// scheduled the respawn from the controller (OnAvatarDied), so the player
+	// gets a new pawn either way.
+	if (AController* OwningController = GetController())
+	{
+		OwningController->UnPossess();
+	}
+	Super::FellOutOfWorld(DmgType);
 }
 
 bool AEnclaveCharacter::TeleportTo(const FVector& DestLocation, const FRotator& DestRotation, bool bIsATest, bool bNoCheck)

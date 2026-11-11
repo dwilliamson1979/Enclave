@@ -39,6 +39,15 @@ public:
 	void EnclaveDebugRespawn();
 
 	/**
+	 * Development-only damage to this player's own pawn, through ApplyDamage and
+	 * the hit policy like real damage. Source "Self" (default) has this player as
+	 * the attacker; "Environment" has no player responsible. Either way, a death
+	 * is a suicide for the match rules. Example: EnclaveDebugDamage 1000 Environment
+	 */
+	UFUNCTION(Exec)
+	void EnclaveDebugDamage(float Amount, const FString& Source);
+
+	/**
 	 * Development-only inventory-removal test. Removes and destroys the currently
 	 * wielded ordinary inventory item on authority, exercising Equipment fallback.
 	 * The persistent default item is never removable through this command.
@@ -154,6 +163,11 @@ private:
 	void ServerEnclaveDebugRespawn();
 
 	void PerformDebugRespawn();
+
+	UFUNCTION(Server, Reliable)
+	void ServerEnclaveDebugDamage(float Amount, bool bEnvironment);
+
+	void PerformDebugDamage(float Amount, bool bEnvironment);
 
 	UFUNCTION(Server, Reliable)
 	void ServerEnclaveDebugRemoveWieldedItem();

@@ -31,15 +31,15 @@ struct ENCLAVE_API FEnclaveMatchSettings
 	int32 ScoreLimit = 0;
 
 	/** 0 = no time limit. ?TimeLimit= */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", Units = "s"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
 	int32 TimeLimitSeconds = 600;
 
 	/** Delay between death and automatic respawn. ?RespawnDelay= */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", Units = "s"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
 	int32 RespawnDelaySeconds = 3;
 
 	/** Countdown once MinPlayersToStart are in. 0 = start immediately. ?Warmup= */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", Units = "s"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
 	int32 WarmupSeconds = 10;
 
 	/** Players needed before the warmup countdown begins. ?MinPlayers= */
@@ -47,7 +47,7 @@ struct ENCLAVE_API FEnclaveMatchSettings
 	int32 MinPlayersToStart = 2;
 
 	/** How long the results show before the map restarts. ?PostMatch= */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", Units = "s"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
 	int32 PostMatchSeconds = 15;
 
 	/**

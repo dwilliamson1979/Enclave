@@ -81,6 +81,12 @@ bool UEnclaveAvatarLifecycleComponent::IsDead() const
 	return LifecycleState == EEnclaveAvatarLifecycleState::Dead;
 }
 
+void UEnclaveAvatarLifecycleComponent::Kill(const FEnclaveDamageRequest& Cause)
+{
+	// EnterDeadState checks authority and ignores an avatar that is already dead.
+	EnterDeadState(Cause);
+}
+
 void UEnclaveAvatarLifecycleComponent::HandleHealthDepleted(UEnclaveHealthComponent* DepletedHealthComponent, FEnclaveDamageRequest DamageRequest)
 {
 	if (!IsValid(DepletedHealthComponent) || DepletedHealthComponent != HealthComponent.Get())

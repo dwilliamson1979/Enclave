@@ -60,7 +60,7 @@ struct ENCLAVE_API FEnclaveTeamAssignmentRules
 	EEnclaveTeamSlots TeamSlots = EEnclaveTeamSlots::Open;
 
 	/** With Reserved slots, how long a leaver's place is held, in seconds; 0 = the whole match. ?ReservedSlotHold= */
-	UPROPERTY(EditDefaultsOnly, Category = "Match|Teams", meta = (ClampMin = "0", EditCondition = "TeamSlots == EEnclaveTeamSlots::Reserved"))
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Teams", meta = (ClampMin = "0", ForceUnits = "s", EditCondition = "TeamSlots == EEnclaveTeamSlots::Reserved"))
 	float ReservedSlotHoldSeconds = 0.0f;
 
 	/** Applies the URL options above. Invalid values are logged and the current value is kept. */

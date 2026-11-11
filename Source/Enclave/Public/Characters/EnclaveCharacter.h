@@ -69,6 +69,16 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
+
+	/**
+	 * Below the map's kill Z. The engine would only destroy the actor
+	 * (Actor.cpp, AActor::FellOutOfWorld), which skips death, scoring and the
+	 * respawn. Instead the avatar dies as an environment death (no player
+	 * responsible, so a suicide for the match rules), bypassing the hit policy:
+	 * falling out of the world is always fatal. Then the body is removed.
+	 */
+	virtual void FellOutOfWorld(const UDamageType& DmgType) override;
+
 	virtual bool TeleportTo(const FVector& DestLocation, const FRotator& DestRotation, bool bIsATest = false, bool bNoCheck = false) override;
 
 	/**

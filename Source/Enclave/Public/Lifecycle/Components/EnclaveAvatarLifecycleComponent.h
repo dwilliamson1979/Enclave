@@ -59,6 +59,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lifecycle")
 	bool IsDead() const;
 
+	/**
+	 * Authority: kills this avatar without damage, for deaths no hit policy may
+	 * decide, such as falling out of the world. Cause describes the death for
+	 * OnAvatarDied listeners as a damage request would (no SourcePlayerState =
+	 * no player responsible); its Damage is not applied, so health is unchanged.
+	 * Health stops at "depleted"; death is this component's.
+	 */
+	void Kill(const FEnclaveDamageRequest& Cause);
+
 	/** Authority-side semantic death notification carrying the terminal damage request. */
 	UPROPERTY(BlueprintAssignable, Category = "Lifecycle")
 	FEnclaveAvatarDiedSignature OnAvatarDied;

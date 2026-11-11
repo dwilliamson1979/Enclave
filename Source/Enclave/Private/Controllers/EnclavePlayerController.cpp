@@ -44,6 +44,9 @@
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 #if ENCLAVE_INCLUDE_DEBUG_CODE
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
+#include "Combat/EnclaveDamageStatics.h"
+#include "Combat/EnclaveDamageRequest.h"
+#include "GameplayTags/EnclaveDamageTags.h"
 #endif
 
 // Deliberately independent of Enclave.Debug.FireTrace: one toggles the
@@ -613,6 +616,63 @@ void AEnclavePlayerController::PerformDebugRespawn()
 	GameMode->RespawnPlayer(this);
 
 	ENCLAVE_LOG(LogEnclaveCharacter, Log, "EnclaveDebugRespawn complete. New pawn: %s", *GetNameSafe(GetPawn()));
+#endif
+}
+
+void AEnclavePlayerController::EnclaveDebugDamage(float Amount, const FString& Source)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	const bool bEnvironment = Source.Equals(TEXT("Environment"), ESearchCase::IgnoreCase);
+	if (!(Amount > 0.0f) || (!bEnvironment && !Source.IsEmpty() && !Source.Equals(TEXT("Self"), ESearchCase::IgnoreCase)))
+	{
+		ENCLAVE_LOG(LogEnclaveCombat, Warning, "Usage: EnclaveDebugDamage <Amount > 0> [Self|Environment]");
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		PerformDebugDamage(Amount, bEnvironment);
+		return;
+	}
+
+	ServerEnclaveDebugDamage(Amount, bEnvironment);
+#endif
+}
+
+void AEnclavePlayerController::ServerEnclaveDebugDamage_Implementation(float Amount, bool bEnvironment)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	PerformDebugDamage(Amount, bEnvironment);
+#endif
+}
+
+void AEnclavePlayerController::PerformDebugDamage(float Amount, bool bEnvironment)
+{
+#if ENCLAVE_INCLUDE_DEBUG_CODE
+	APawn* MyPawn = GetPawn();
+	if (!HasAuthority() || !IsValid(MyPawn) || !(Amount > 0.0f))
+	{
+		return;
+	}
+
+	// Through the one damage entry point, so the hit policy (Self or
+	// Environment) decides, exactly as for real damage.
+	FEnclaveDamageRequest DamageRequest;
+	DamageRequest.Damage = Amount;
+	if (bEnvironment)
+	{
+		DamageRequest.DamageTags.AddTag(EnclaveGameplayTags::Damage_Source_Environment);
+	}
+	else
+	{
+		DamageRequest.SourceActor = MyPawn;
+		DamageRequest.SourcePlayerState = PlayerState;
+	}
+
+	const bool bApplied = UEnclaveDamageStatics::ApplyDamage(MyPawn, DamageRequest);
+	ENCLAVE_LOG(LogEnclaveCombat, Log, "EnclaveDebugDamage: %g %s damage to %s: %s.",
+		Amount, bEnvironment ? TEXT("environment") : TEXT("self"), *GetNameSafe(PlayerState.Get()),
+		bApplied ? TEXT("applied") : TEXT("not applied (hit policy, or no receiver)"));
 #endif
 }
 
