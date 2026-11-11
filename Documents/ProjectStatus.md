@@ -1,6 +1,7 @@
 # Enclave Project Status
 
-Last updated 2026-11-11, after U4, solo rules and DM (branch `ClaudeEdits`).
+Last updated 2026-11-11, after U4 and the U6 moment 1 design. Work happens on
+`main` with a short branch per piece of work.
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
 exists, what is in progress, and what comes next. Details live in the linked
@@ -43,7 +44,7 @@ times in a row with clean logs.
 | C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
 | U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
 | U4 | Solo base rules, then DM | Done (three moments, below) |
-| U6 | Kill credit: damage history, last-damager credit, later assists | Not started; after U4 |
+| U6 | Kill credit: damage history, last-damager credit, later assists | Moment 1 designed, ready to sketch (below) |
 | C2 | Spawn selection | Not started |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
@@ -185,8 +186,57 @@ modes (the score limit: TDM 50, DM 25) are set in each mode's Blueprint; the
 settings struct keeps neutral defaults (`ScoreLimit` 0), because a Blueprint
 saves only values that differ from its parent.
 
-**Next:** U6 (kill credit), then the shared pieces built on both match
-branches (C2 spawns with warmup spawning, C4 HUD).
+U6 is built in three moments (branch `u6-kill-credit`):
+
+1. The damage history. Designed, ready for the user to sketch:
+   - **Why the recording point matters:** death fires synchronously inside
+     `ReceiveDamage` (`EnclaveDamageStatics.cpp:52`, the GAS attribute
+     delegate in `EnclaveGASHealthComponent.cpp:156-159`,
+     `EnclaveHealthComponent.cpp:52-55`, `OnAvatarDied` in
+     `EnclaveAvatarLifecycleComponent.cpp:156`), so anything recorded after
+     `ReceiveDamage` returns misses the killing blow.
+   - **Recording (option B):** `UEnclaveHealthComponent::NotifyHealthChanged`
+     broadcasts a new `OnDamageTaken(FEnclaveDamageTaken)` before
+     `OnHealthDepleted`, only when health dropped. The struct holds the
+     request and `HealthDamage` (actual health lost, so no overkill and
+     correct once armor exists); `ShieldDamage` is added when shields exist.
+     Both health components get it through the base.
+   - **Storage:** a new server-only, unreplicated
+     `UEnclaveDamageHistoryComponent` on the character (a new pawn per life
+     resets it). One entry per hit: `TWeakObjectPtr<APlayerState> Attacker`,
+     the damage, `double ServerTime` (`GetServerWorldTimeSeconds`), a weak
+     `DamageCauser` and `DamageTags`. Records every hit that took health
+     (hostile, friendly, self, environment); moments 2 and 3 filter by
+     attitude when they query. Pruned by `MaxEntryAgeSeconds = 30` plus a
+     64-entry cap (oldest dropped first); limited by time, not by attacker
+     count. The recording function doesn't know about health; a query such
+     as `GetEntriesSince(Time)`.
+   - **Check:** a temporary `Verbose` log of the victim's history in
+     `HandleAvatarDied`, tested in PIE with `EnclaveDebugDamage` and shots.
+2. Kill credit: the killing blow, or the most recent hostile damager inside a
+   short window (about 5 s, a match setting) for suicides and environment
+   deaths; a credited death is not a suicide (no `SuicideScore`).
+3. Assists: hostile damagers inside a longer window (about 10-15 s) above a
+   damage threshold (for example 25% of max health), stored on the
+   PlayerState; what an assist is worth is each mode's judgement.
+
+Decided in the U6 discussion, built later, not in U6:
+- **Damage pools:** shield and health damage both count toward credit (as in
+  Apex's damage stat). Pools (health, shield, temporary shields) become GAS
+  attributes drained in a fixed order where `Damage` is consumed
+  (`EnclaveAttributeSet.cpp:43-50`); temporary shields and absorb spells are
+  gameplay effects. Not a registry of pool components with priorities (it
+  splits state from GAS and makes the order emergent). The damage receiver
+  then announces death only after it has produced the `FEnclaveDamageTaken`
+  result, instead of inside the attribute delegate.
+- **Hit feedback:** `ReceiveDamage` returns `bool` today (enough for the hit
+  marker in `UEnclaveGA_Fire::NotifyHitConfirmed`). Damage numbers, kill and
+  shield-break markers need it to return the damage-taken breakdown; design it
+  with armor or with combat feedback, whichever comes first.
+
+**Next:** U6 moment 1 (the user sketches), then moments 2 and 3, then the
+shared pieces built on both match branches (C2 spawns with warmup spawning,
+C4 HUD).
 
 Run a match by hand (close the editor first; server, then one line per client):
 `UnrealEditor.exe Enclave.uproject "/Game/Maps/EnclaveMap?game=TDM?ScoreLimit=3?TimeLimit=180?Warmup=5?PostMatch=8" -server -log`
