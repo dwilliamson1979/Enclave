@@ -45,12 +45,12 @@ times in a row with clean logs.
 | U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
 | U4 | Solo base rules, then DM | Done (three moments, below) |
 | U6 | Kill credit: damage history, last-damager credit, later assists | Done (three moments, below) |
-| C2 | Spawn selection | Step 1 done (below); next: team starts, then warmup spawning |
+| C2 | Spawn selection | Steps 1-2 done (below); next: warmup spawning |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
-| C6 | Graybox arena map | Not started |
+| C6 | Graybox arena map | First pass generated: `TDM_TwinBases`, `DM_Pinwheel` (below) |
 | C7 | Tests and match smoke test | Not started (unit tests so far: `Enclave.Match.Settings`, `.URLOptions`, `.TeamAssignment.*`, `.TeamRoster`, `.SpawnSelection`) |
 
 C1 is built in six moments, with the user sketching each:
@@ -277,8 +277,26 @@ C2 is built in three steps:
    (`GameModeBase.cpp:842-848`, `1168-1176`); the match mode now returns
    false. A PIE "Play from Here" start is used for each player's first spawn
    only. Verified in PIE (DM, 3 players).
-2. Team starts: TDM narrows `IsStartAllowedFor` to the player's team's starts.
+2. Team starts. Done. `AEnclaveTeamPlayerStart` is a start that belongs to one
+   team; a plain `APlayerStart` is shared. The team match mode's
+   `IsStartAllowedFor` allows a team start only for its team's players (a
+   player with no team gets the plain starts). Modes without teams use every
+   start, so one map can serve both. A subclass rather than an optional team
+   on every start, so "team" stays out of what DM uses.
 3. Warmup spawning (see Known issues).
+
+C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
+`CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the
+actors labelled `GB.` and keeps the rest) generates two maps in
+`/Game/Maps/Graybox`:
+
+- `TDM_TwinBases` (80 x 40 m, 4v4): two mirrored bases across a trench, a
+  covered bridge over it, flank ramps out of the trench, and in each base a
+  balcony overlooking the courtyard and a screened spawn room with 8 team
+  starts.
+- `DM_Pinwheel` (50 x 50 m): a raised center with four off-center ramps,
+  raised corner platforms, screen walls that make loops along the sides, and
+  12 starts spread around.
 
 **Next:** the shared pieces built on both match branches (C2 spawns with warmup spawning,
 C4 HUD).

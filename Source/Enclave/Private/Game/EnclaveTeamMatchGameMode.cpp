@@ -11,6 +11,7 @@
 
 #include "Debug/EnclaveDebug.h"
 #include "Game/EnclaveTeamGameState.h"
+#include "Game/EnclaveTeamPlayerStart.h"
 #include "Game/EnclaveURLOptions.h"
 #include "Player/EnclaveTeamPlayerState.h"
 
@@ -407,4 +408,16 @@ int32 AEnclaveTeamMatchGameMode::CountPlayersOnTeam(uint8 TeamId, const APlayerS
 		Count += Roster.CountAbsentHeld(TeamId, GetWorld()->GetTimeSeconds(), TeamAssignmentRules.ReservedSlotHoldSeconds);
 	}
 	return Count;
+}
+
+bool AEnclaveTeamMatchGameMode::IsStartAllowedFor(const APlayerStart& Start, const AController& Player) const
+{
+	const AEnclaveTeamPlayerStart* TeamStart = Cast<AEnclaveTeamPlayerStart>(&Start);
+	if (!TeamStart)
+	{
+		return true;
+	}
+
+	const AEnclaveTeamPlayerState* TeamPlayer = Player.GetPlayerState<AEnclaveTeamPlayerState>();
+	return TeamPlayer && TeamPlayer->GetTeamId() == TeamStart->GetTeamId();
 }
