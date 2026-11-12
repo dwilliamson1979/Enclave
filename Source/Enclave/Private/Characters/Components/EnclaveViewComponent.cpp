@@ -106,7 +106,7 @@ void UEnclaveViewComponent::BeginFocus(AEnclaveItem* SourceItem, const FEnclaveF
 	const float CurrentFOV = ViewCamera->FieldOfView;
 	ActiveViewSettings = Settings;
 	ActiveViewSettings.FocusFOV = FMath::Clamp(Settings.FocusFOV, 5.0f, 170.0f);
-	ActiveViewSettings.LookSensitivityMultiplier = FMath::Max(0.01f, Settings.LookSensitivityMultiplier);
+	ActiveViewSettings.LookSensitivityAdjustment = FMath::Max(0.01f, Settings.LookSensitivityAdjustment);
 	ActiveViewSettings.EnterDuration = FMath::Max(0.0f, Settings.EnterDuration);
 	ActiveViewSettings.ExitDuration = FMath::Max(0.0f, Settings.ExitDuration);
 
@@ -308,8 +308,12 @@ void UEnclaveViewComponent::AdvanceFocus(float DeltaTime)
 		: Target;
 	FocusWeight = EnclaveFocusBlend::Weight(FocusProgress, bFocusActive, ActiveViewSettings);
 
-	ViewCamera->SetFieldOfView(FMath::Lerp(BaseFOV, ActiveViewSettings.FocusFOV, FocusWeight));
-	CurrentSensitivityMultiplier = FMath::Lerp(1.0f, ActiveViewSettings.LookSensitivityMultiplier, FocusWeight);
+	const float FOV = FMath::Lerp(BaseFOV, ActiveViewSettings.FocusFOV, FocusWeight);
+	ViewCamera->SetFieldOfView(FOV);
+	// Zoom matching from the FOV actually shown, so sensitivity follows the
+	// eased transition with no blend of its own; the profile's adjustment fades in with it.
+	CurrentSensitivityMultiplier = EnclaveFocusBlend::LookScaleForFOV(FOV, BaseFOV)
+		* FMath::Lerp(1.0f, ActiveViewSettings.LookSensitivityAdjustment, FocusWeight);
 }
 
 void UEnclaveViewComponent::FinishFocusIfOut()

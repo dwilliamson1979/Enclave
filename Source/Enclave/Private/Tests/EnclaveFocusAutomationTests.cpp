@@ -47,4 +47,22 @@ bool FEnclaveFocusBlendTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveFocusLookScaleTest,
+	"Enclave.Focus.LookScale",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveFocusLookScaleTest::RunTest(const FString& Parameters)
+{
+	// Hip sensitivity is untouched at any hip FOV.
+	TestEqual(TEXT("1 at the hip FOV (90)"), EnclaveFocusBlend::LookScaleForFOV(90.0f, 90.0f), 1.0f, 1e-4f);
+	TestEqual(TEXT("1 at the hip FOV (103)"), EnclaveFocusBlend::LookScaleForFOV(103.0f, 103.0f), 1.0f, 1e-4f);
+
+	// 90 to 65: tan(32.5) / tan(45), about 0.637.
+	TestEqual(TEXT("90 to 65"), EnclaveFocusBlend::LookScaleForFOV(65.0f, 90.0f), 0.6371f, 1e-3f);
+
+	// Narrower is slower.
+	TestTrue(TEXT("A 4x-style zoom is slower than an iron sight"),
+		EnclaveFocusBlend::LookScaleForFOV(25.0f, 90.0f) < EnclaveFocusBlend::LookScaleForFOV(65.0f, 90.0f));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
