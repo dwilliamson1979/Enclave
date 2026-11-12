@@ -90,6 +90,20 @@ TConstArrayView<FEnclaveDamageHistoryEntry> UEnclaveDamageHistoryComponent::GetE
 	return TConstArrayView<FEnclaveDamageHistoryEntry>(Entries).RightChop(First);
 }
 
+APlayerState* UEnclaveDamageHistoryComponent::FindMostRecentAttacker(double ServerTime, TFunctionRef<bool(const APlayerState&)> Accept) const
+{
+	const TConstArrayView<FEnclaveDamageHistoryEntry> Recent = GetEntriesSince(ServerTime);
+	for (int32 Index = Recent.Num() - 1; Index >= 0; --Index)
+	{
+		APlayerState* Attacker = Recent[Index].Attacker.Get();
+		if (IsValid(Attacker) && Accept(*Attacker))
+		{
+			return Attacker;
+		}
+	}
+	return nullptr;
+}
+
 double UEnclaveDamageHistoryComponent::GetServerTime() const
 {
 	const UWorld* World = GetWorld();

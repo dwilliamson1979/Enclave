@@ -33,9 +33,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnclaveMaxHealthChangedSignature
  *
  * This component deliberately does not own Health or MaxHealth. Derived
  * implementations decide where those authoritative values live:
- * UEnclaveSimpleHealthComponent stores/replicates them directly, while the
- * future UEnclaveGASHealthComponent will expose values owned by an Attribute
- * Set. Consumers can depend on this base without caring which storage model
+ * UEnclaveSimpleHealthComponent stores/replicates them directly, while
+ * UEnclaveGASHealthComponent exposes values owned by UEnclaveAttributeSet. Consumers can depend on this base without caring which storage model
  * backs the actor.
  *
  * The base also stops at "health depleted." It does not equate zero health

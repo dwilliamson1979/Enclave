@@ -115,7 +115,10 @@ protected:
 	/**
 	 * Awards score for a death. Called for every death while the match is in
 	 * progress, including suicides (Attacker == Victim), team kills and deaths
-	 * with no player responsible (Attacker null). Use Attacker->IsHostileTo(Victim)
+	 * with no player responsible (Attacker null). Attacker is the credited
+	 * player (see MatchSettings.KillCreditWindowSeconds): an enemy who damaged
+	 * the victim just before a suicide, a fall or a team kill is the Attacker,
+	 * and the death is a kill. Use Attacker->IsHostileTo(Victim)
 	 * to tell a real kill apart. Victim is never null. (A team kill doesn't
 	 * count as the victim's death. A suicide's MatchSettings.SuicideScore is
 	 * already applied to the victim's player score.)
@@ -138,6 +141,15 @@ private:
 	/** Server: credits the death and kill, scores it, announces it, and schedules the respawn. */
 	UFUNCTION()
 	void HandleAvatarDied(UEnclaveAvatarLifecycleComponent* LifecycleComp, FEnclaveDamageRequest DamageRequest);
+
+	/**
+	 * The player credited with Victim's death: the killing blow's attacker if
+	 * they are an enemy; otherwise the most recent enemy in the victim's damage
+	 * history within MatchSettings.KillCreditWindowSeconds; otherwise the
+	 * killing blow's attacker (yourself, a teammate, or null for no player).
+	 */
+	AEnclaveMatchPlayerState* ResolveKillCredit(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
+		AEnclaveMatchPlayerState* KillingBlowAttacker) const;
 
 	/** Respawn timer callback: respawns the player if they are still here and the match is still in progress. */
 	void RespawnAfterDeath(TWeakObjectPtr<AController> Controller);

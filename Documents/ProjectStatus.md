@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-12, after U6 moment 1. Work happens on
+Last updated 2026-11-12, after U6 moment 2. Work happens on
 `main` with a short branch per piece of work.
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
@@ -44,7 +44,7 @@ times in a row with clean logs.
 | C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
 | U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
 | U4 | Solo base rules, then DM | Done (three moments, below) |
-| U6 | Kill credit: damage history, last-damager credit, later assists | Moment 1 done (below); moment 2 next |
+| U6 | Kill credit: damage history, last-damager credit, later assists | Moments 1-2 done (below); moment 3 next |
 | C2 | Spawn selection | Not started |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
@@ -208,9 +208,25 @@ U6 is built in three moments (branch `u6-kill-credit`):
    killing blow at 0.00 s; `EnclaveDebugDamage 1000` records 100 (no
    overkill). A fall below the kill Z adds no entry (it bypasses
    `ApplyDamage`); moment 2 must test shoot-then-fall. Done.
-2. Kill credit: the killing blow, or the most recent hostile damager inside a
-   short window (about 5 s, a match setting) for suicides and environment
-   deaths; a credited death is not a suicide (no `SuicideScore`).
+2. Kill credit. `AEnclaveMatchGameMode::ResolveKillCredit`: the killing
+   blow's attacker if they are an enemy; otherwise (yourself, no player, a
+   teammate) the most recent enemy in the victim's damage history within
+   `KillCreditWindowSeconds` (`FEnclaveMatchSettings`, 5, `?KillCreditWindow=`,
+   0 = off); otherwise the killing blow's attacker. Everything after it in
+   `HandleAvatarDied` uses the credited player, so a credited death is a kill:
+   the victim's death counts and there is no `SuicideScore`. A hostile killing
+   blow always wins, even over an enemy who did more damage (that is an
+   assist, moment 3). The history query is generic
+   (`FindMostRecentAttacker(Since, Accept)`); the game mode passes the
+   hostility check. Decided: a team kill after enemy damage inside the window
+   is the enemy's kill (they did the work); with no enemy damage it stays a
+   team kill. No team-kill penalty exists yet; if one is added, `ScoreKill`
+   needs the killing-blow player too (it gets only the credited one). The log
+   says `Death (credited kill)` plus `Killing blow by ...`; a kill-feed flag is
+   C4's. Verified in PIE: credit after a self-kill and after a fall (no
+   `SuicideScore`), a suicide outside the window costs a point, and in TDM
+   (friendly hits applied) a teammate's finish after enemy damage is the
+   enemy's kill. Done.
 3. Assists: hostile damagers inside a longer window (about 10-15 s) above a
    damage threshold (for example 25% of max health), stored on the
    PlayerState; what an assist is worth is each mode's judgement.
@@ -235,7 +251,7 @@ Decided in the U6 discussion, built later, not in U6:
   shield-break markers need it to return the damage-taken breakdown; design it
   with armor or with combat feedback, whichever comes first.
 
-**Next:** U6 moment 2 (kill credit), then moment 3, then the
+**Next:** U6 moment 3 (assists), then the
 shared pieces built on both match branches (C2 spawns with warmup spawning,
 C4 HUD).
 

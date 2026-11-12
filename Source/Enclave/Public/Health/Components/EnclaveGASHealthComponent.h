@@ -22,9 +22,11 @@ class UEnclaveAttributeSet;
  * to GAS attribute-change delegates, and currently serves as the top-level
  * damage receiver for a straightforward GAS combatant.
  *
- * If a future combatant needs shields/armor/routing ahead of Health, a
- * dedicated damage-router component can replace this as the top-level
- * IEnclaveDamageReceiverInterface without changing the health abstraction.
+ * Shields and armor, when they come, are attributes in the same attribute
+ * set, drained in a fixed order where Damage is consumed
+ * (UEnclaveAttributeSet), not components in front of this one. The receiver
+ * then reports the damage per pool in FEnclaveDamageTaken and announces death
+ * only after producing it, instead of from the Health attribute delegate.
  */
 UCLASS(Blueprintable, ClassGroup = (Enclave), meta = (BlueprintSpawnableComponent))
 class ENCLAVE_API UEnclaveGASHealthComponent : public UEnclaveHealthComponent, public IEnclaveDamageReceiverInterface, public IEnclaveAbilitySystemConsumerInterface

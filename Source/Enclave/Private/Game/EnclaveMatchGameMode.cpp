@@ -265,20 +265,15 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 		return;
 	}
 
-	// TEMPORARY (U6 moment 1 check): the victim's damage history, which must
-	// include the killing blow. Removed when moment 2 uses the history.
-	ENCLAVE_DEBUG_CODE(
-		if (const UEnclaveDamageHistoryComponent* DamageHistory = Victim->FindComponentByClass<UEnclaveDamageHistoryComponent>())
-		{
-			UE_LOG(LogEnclaveMatch, Verbose, TEXT("%s died. Damage history:%s"), *VictimPlayerState->GetPlayerName(), *DamageHistory->DescribeEntries());
-		}
-	);
-
 	// From the request, not the attacker's pawn: the pawn may have died (and
 	// lost its PlayerState) before the damage landed. A player who has left
 	// has a destroyed PlayerState, and counts as no attacker.
 	APlayerState* SourcePlayerState = DamageRequest.SourcePlayerState.Get();
-	AEnclaveMatchPlayerState* AttackerPlayerState = IsValid(SourcePlayerState) ? Cast<AEnclaveMatchPlayerState>(SourcePlayerState) : nullptr;
+	AEnclaveMatchPlayerState* KillingBlowPlayerState = IsValid(SourcePlayerState) ? Cast<AEnclaveMatchPlayerState>(SourcePlayerState) : nullptr;
+	// Everything below uses the credited player, so a credited death is a kill:
+	// the victim's death counts and there is no SuicideScore.
+	AEnclaveMatchPlayerState* AttackerPlayerState = ResolveKillCredit(*Victim, *VictimPlayerState, KillingBlowPlayerState);
+	const bool bCredited = AttackerPlayerState != KillingBlowPlayerState;
 	// Only an enemy gets the kill: IsHostileTo is false for yourself, teammates and neutral players.
 	const bool bKill = AttackerPlayerState && AttackerPlayerState->IsHostileTo(VictimPlayerState);
 	if (bKill)
@@ -309,7 +304,8 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 
 	// After ScoreKill, so the scores include this death. Player stats only: team
 	// scores are the team branch's, and the match-over line reports them.
-	const TCHAR* DeathKind = bKill ? TEXT("kill")
+	const TCHAR* DeathKind = bCredited ? TEXT("credited kill")
+		: bKill ? TEXT("kill")
 		: !AttackerPlayerState ? TEXT("no attacker")
 		: AttackerPlayerState == VictimPlayerState ? TEXT("suicide")
 		: TEXT("not hostile");
@@ -319,6 +315,11 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 			DeathKind, *VictimPlayerState->GetPlayerName(), *AttackerPlayerState->GetPlayerName(),
 			VictimPlayerState->GetDeaths(), VictimPlayerState->GetScore(),
 			AttackerPlayerState->GetKills(), AttackerPlayerState->GetScore());
+		if (bCredited)
+		{
+			UE_LOG(LogEnclaveMatch, Log, TEXT("  Killing blow by %s."),
+				KillingBlowPlayerState ? *KillingBlowPlayerState->GetPlayerName() : TEXT("no player"));
+		}
 	}
 	else
 	{
@@ -352,6 +353,32 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	{
 		GetWorldTimerManager().SetTimerForNextTick(Respawn);
 	}
+}
+
+AEnclaveMatchPlayerState* AEnclaveMatchGameMode::ResolveKillCredit(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
+	AEnclaveMatchPlayerState* KillingBlowAttacker) const
+{
+	if (KillingBlowAttacker && KillingBlowAttacker->IsHostileTo(&VictimPlayerState))
+	{
+		return KillingBlowAttacker;
+	}
+
+	const UEnclaveDamageHistoryComponent* DamageHistory = Victim.FindComponentByClass<UEnclaveDamageHistoryComponent>();
+	const AGameStateBase* MatchGameState = GetGameState<AGameStateBase>();
+	if (MatchSettings.KillCreditWindowSeconds <= 0 || !DamageHistory || !MatchGameState)
+	{
+		return KillingBlowAttacker;
+	}
+
+	// Same clock as the history's entries.
+	const double Since = MatchGameState->GetServerWorldTimeSeconds() - MatchSettings.KillCreditWindowSeconds;
+	APlayerState* RecentEnemy = DamageHistory->FindMostRecentAttacker(Since, [&VictimPlayerState](const APlayerState& Attacker)
+	{
+		const AEnclaveMatchPlayerState* MatchAttacker = Cast<AEnclaveMatchPlayerState>(&Attacker);
+		return MatchAttacker && MatchAttacker->IsHostileTo(&VictimPlayerState);
+	});
+
+	return RecentEnemy ? CastChecked<AEnclaveMatchPlayerState>(RecentEnemy) : KillingBlowAttacker;
 }
 
 void AEnclaveMatchGameMode::RespawnAfterDeath(TWeakObjectPtr<AController> Controller)

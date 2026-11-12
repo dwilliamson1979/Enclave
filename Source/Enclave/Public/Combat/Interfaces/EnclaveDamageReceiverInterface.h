@@ -19,9 +19,12 @@ class UEnclaveDamageReceiverInterface : public UInterface
  * Enclave damage requests.
  *
  * The interface is intentionally independent of health. A simple health
- * component can receive damage directly, while a future combatant damage
- * router can implement this contract and resolve shields/armor/resistances
- * before forwarding the remaining damage to health.
+ * component receives damage directly. A GAS combatant's receiver (today
+ * UEnclaveGASHealthComponent) applies the request as a gameplay effect:
+ * damage pools (health, later shields and armor) are attributes drained in a
+ * fixed order where the Damage meta-attribute is consumed, and temporary
+ * shields or absorbs are gameplay effects. Pools are not separate components
+ * registered with the receiver.
  */
 class ENCLAVE_API IEnclaveDamageReceiverInterface
 {

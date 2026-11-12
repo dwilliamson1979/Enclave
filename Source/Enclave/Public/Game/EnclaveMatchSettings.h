@@ -58,6 +58,15 @@ struct ENCLAVE_API FEnclaveMatchSettings
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match")
 	int32 SuicideScore = 0;
 
+	/**
+	 * A death whose killing blow wasn't an enemy's (yourself, no player, a
+	 * teammate) goes to the most recent enemy who damaged the victim within
+	 * this many seconds, so a kill can't be denied by suicide or a fall.
+	 * 0 = off: the killing blow alone decides. ?KillCreditWindow=
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
+	int32 KillCreditWindowSeconds = 5;
+
 	/** Applies the URL options above. Invalid values are logged and the current value is kept. */
 	void ApplyOptions(const FString& Options);
 

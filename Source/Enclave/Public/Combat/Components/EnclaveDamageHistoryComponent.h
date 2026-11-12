@@ -56,6 +56,13 @@ public:
 	/** Entries that landed at or after ServerTime, oldest first. */
 	TConstArrayView<FEnclaveDamageHistoryEntry> GetEntriesSince(double ServerTime) const;
 
+	/**
+	 * The attacker of the most recent entry at or after ServerTime that Accept
+	 * takes, or null. Entries with no attacker, or one who has left, are skipped.
+	 * The caller decides who counts (e.g. hostile to the victim).
+	 */
+	APlayerState* FindMostRecentAttacker(double ServerTime, TFunctionRef<bool(const APlayerState&)> Accept) const;
+
 	/** One line per entry, for logs. */
 	FString DescribeEntries() const;
 
