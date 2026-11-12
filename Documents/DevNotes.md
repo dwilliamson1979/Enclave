@@ -36,6 +36,10 @@ in [ProjectStatus.md](ProjectStatus.md).
   Each runs a warm-up session first. Long suites take more than 10 minutes.
 - **Test map:** `CreateSSRTestMap.ps1` regenerates
   `/Game/Maps/Test/SSR_TestRange` from `create_ssr_test_map.py`.
+- **Graybox match maps:** `Tools\Scripts\Maps\CreateGrayboxMaps.ps1` (editor
+  closed) regenerates `/Game/Maps/Graybox/TDM_TwinBases` and `DM_Pinwheel`
+  from `create_graybox_maps.py`. It rebuilds only actors labelled `GB.`, so
+  rename a generated piece before hand-editing it or the next run replaces it.
 - **Reference results** (dedicated, 60 Hz, about 82 ms RTT): layouts 97-100%
   clear hits, 100% clear misses, 100% not hit behind cover, no fallbacks; abuse
   suite 98-100% / 100% in every case; stamps about 140 B/s per client.
@@ -107,6 +111,10 @@ in [ProjectStatus.md](ProjectStatus.md).
   60 Hz server ran at about 35 Hz); `powershell -File` passes comma lists as one
   string.
 - **The first session after a build hitches**, which is why the suites warm up.
+- **Set Kill Z on every map** (World Settings, World). The engine default is
+  about -10.5 km (`WorldSettings.cpp:116`), minutes of falling before
+  `FellOutOfWorld` (`Actor.cpp:2318-2326`) kills and respawns the player. The
+  graybox generator sets it; `EnclaveMap` needs it by hand.
 - `Automation_Enclave.slnx` sometimes shows as modified after a build; it's
   generated, so don't commit it.
 
