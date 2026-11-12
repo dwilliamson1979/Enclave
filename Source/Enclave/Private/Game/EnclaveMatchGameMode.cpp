@@ -8,6 +8,10 @@
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 #include "Combat/Components/EnclaveDamageHistoryComponent.h"
 #include "Health/Components/EnclaveHealthComponent.h"
+#include "Player/EnclavePlayerState.h"
+#include "Engine/PlayerStartPIE.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerStart.h"
 
 AEnclaveMatchGameMode::AEnclaveMatchGameMode()
 {
@@ -27,6 +31,8 @@ void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Opti
 
 	MatchSettings.ApplyOptions(Options);
 	UE_LOG(LogEnclaveMatch, Log, TEXT("Match settings: %s"), *MatchSettings.ToString());
+
+	SpawnRandom.GenerateNewSeed();
 
 	// Operator input (URL or Blueprint), so warn rather than refuse: an endless
 	// practice server is legitimate. ApplyOptions checks values one at a time;
@@ -107,11 +113,48 @@ void AEnclaveMatchGameMode::HandleMatchHasStarted()
 		MatchGameState->SetPhaseEndServerTime(MatchEnd);
 	}
 
-	UE_LOG(LogEnclaveMatch, Log, TEXT("Match started: %d players, time limit %d s, score limit %d."),
-		GetNumPlayers(), MatchSettings.TimeLimitSeconds, MatchSettings.ScoreLimit);
+	// Everyone starts the match on a fresh pawn: full health, a fresh loadout,
+	// and a start chosen for the match (in a team mode, for the team just
+	// assigned). Dead warmup bodies go too. Super's loop then spawns every
+	// player without a pawn (GameMode.cpp:208-215), which is now all of them.
+	int32 RemovedPawns = 0;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PlayerController = It->Get();
+		if (PlayerController && PlayerController->GetPawn())
+		{
+			RemovePawn(*PlayerController);
+			++RemovedPawns;
+		}
+	}
+
+	UE_LOG(LogEnclaveMatch, Log, TEXT("Match started: %d players, time limit %d s, score limit %d (%d warmup pawns removed)."),
+		GetNumPlayers(), MatchSettings.TimeLimitSeconds, MatchSettings.ScoreLimit, RemovedPawns);
 
 	// Last: Super spawns every player, and they must spawn into a fresh match.
 	Super::HandleMatchHasStarted();
+}
+
+bool AEnclaveMatchGameMode::PlayerCanRestart_Implementation(APlayerController* Player)
+{
+	if (GetMatchState() == MatchState::WaitingToStart)
+	{
+		return AGameModeBase::PlayerCanRestart_Implementation(Player);
+	}
+	return Super::PlayerCanRestart_Implementation(Player);
+}
+
+void AEnclaveMatchGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+	// Super may start the match (a warmup of 0), which spawns everyone, so
+	// check the phase after it. The same spectator checks as AGameMode's.
+	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+
+	if (GetMatchState() == MatchState::WaitingToStart && IsValid(NewPlayer) && !NewPlayer->GetPawn()
+		&& !bStartPlayersAsSpectators && !MustSpectate(NewPlayer) && PlayerCanRestart(NewPlayer))
+	{
+		RestartPlayer(NewPlayer);
+	}
 }
 
 bool AEnclaveMatchGameMode::ReadyToEndMatch_Implementation()
@@ -249,11 +292,98 @@ void AEnclaveMatchGameMode::SetPlayerDefaults(APawn* Pawn)
 	{
 		LifecycleComponent->OnAvatarDied.AddUniqueDynamic(this, &ThisClass::HandleAvatarDied);
 	}
+
+	// Here, not in ChoosePlayerStart: that also runs at login, before any spawn.
+	SpawnedControllers.Add(Pawn->GetController());
+}
+
+bool AEnclaveMatchGameMode::ShouldSpawnAtStartSpot(AController* Player)
+{
+	return false;
+}
+
+AActor* AEnclaveMatchGameMode::ChoosePlayerStart_Implementation(AController* Player)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(Player) || !World)
+	{
+		return Super::ChoosePlayerStart_Implementation(Player);
+	}
+
+	// The pawn the player will get, to test whether it fits at each start (as the engine does).
+	const UClass* PawnClass = GetDefaultPawnClassForController(Player);
+	const APawn* PawnToFit = PawnClass ? PawnClass->GetDefaultObject<APawn>() : nullptr;
+	const bool bFirstSpawn = !SpawnedControllers.Contains(Player);
+
+	TArray<APlayerStart*, TInlineAllocator<32>> Starts;
+	TArray<FEnclaveSpawnCandidate, TInlineAllocator<32>> Candidates;
+	for (TActorIterator<APlayerStart> It(World); It; ++It)
+	{
+		APlayerStart* Start = *It;
+		if (Start->IsA<APlayerStartPIE>())
+		{
+			if (bFirstSpawn)
+			{
+				return Start;
+			}
+			continue;
+		}
+
+		if (!IsStartAllowedFor(*Start, *Player))
+		{
+			continue;
+		}
+
+		const FRotator Rotation = Start->GetActorRotation();
+		FVector FitLocation = Start->GetActorLocation();
+		const bool bBlocked = PawnToFit && World->EncroachingBlockingGeometry(PawnToFit, FitLocation, Rotation);
+		// A start the pawn can't be nudged clear of isn't a candidate.
+		if (bBlocked && !World->FindTeleportSpot(PawnToFit, FitLocation, Rotation))
+		{
+			continue;
+		}
+
+		Starts.Add(Start);
+		Candidates.Add({ Start->GetActorLocation(), bBlocked });
+	}
+
+	// Living enemies: a dead body stays until its respawn, so a pawn alone isn't enough.
+	TArray<FVector, TInlineAllocator<16>> EnemyLocations;
+	const AEnclavePlayerState* SpawningPlayerState = Player->GetPlayerState<AEnclavePlayerState>();
+	if (SpawningPlayerState && GameState)
+	{
+		for (APlayerState* Other : GameState->PlayerArray)
+		{
+			const APawn* OtherPawn = Other ? Other->GetPawn() : nullptr;
+			if (!OtherPawn || Other == SpawningPlayerState || !SpawningPlayerState->IsHostileTo(Other))
+			{
+				continue;
+			}
+
+			const UEnclaveAvatarLifecycleComponent* Lifecycle = OtherPawn->FindComponentByClass<UEnclaveAvatarLifecycleComponent>();
+			if (!Lifecycle || Lifecycle->GetLifecycleState() == EEnclaveAvatarLifecycleState::Alive)
+			{
+				EnemyLocations.Add(OtherPawn->GetActorLocation());
+			}
+		}
+	}
+
+	const int32 Chosen = EnclaveSpawnSelection::ChooseStart(Candidates, EnemyLocations, SpawnRules, SpawnRandom);
+	if (Chosen == INDEX_NONE)
+	{
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("No start allowed for %s; using the engine's choice."), *GetNameSafe(Player));
+		return Super::ChoosePlayerStart_Implementation(Player);
+	}
+
+	UE_LOG(LogEnclaveMatch, Verbose, TEXT("Spawn start for %s: %s (%d candidates, %d living enemies%s)."),
+		*GetNameSafe(SpawningPlayerState), *GetNameSafe(Starts[Chosen]), Candidates.Num(), EnemyLocations.Num(),
+		Candidates[Chosen].bBlocked ? TEXT(", blocked") : TEXT(""));
+	return Starts[Chosen];
 }
 
 void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* LifecycleComp, FEnclaveDamageRequest DamageRequest)
 {
-	if (!IsMatchInProgress() || !IsValid(LifecycleComp))
+	if (!IsSpawningPhase() || !IsValid(LifecycleComp))
 	{
 		return;
 	}
@@ -263,6 +393,14 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	AEnclaveMatchPlayerState* VictimPlayerState = Victim ? Victim->GetPlayerState<AEnclaveMatchPlayerState>() : nullptr;
 	if (!IsValid(Victim) || !IsValid(VictimPlayerState))
 	{
+		return;
+	}
+
+	// Warmup: back in after the usual delay, and nothing counts.
+	if (!IsMatchInProgress())
+	{
+		UE_LOG(LogEnclaveMatch, Log, TEXT("Warmup death: %s."), *VictimPlayerState->GetPlayerName());
+		ScheduleRespawn(*Victim);
 		return;
 	}
 
@@ -339,11 +477,17 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 		MatchGameState->MulticastKill(AttackerPlayerState, VictimPlayerState);
 	}
 
+	ScheduleRespawn(*Victim);
+}
+
+void AEnclaveMatchGameMode::ScheduleRespawn(const APawn& Victim)
+{
 	// The body stays until the respawn (destroying it here would be mid-damage).
 	// One timer per death, so the handle is local: RespawnAfterDeath rejects a
-	// player who left or a match that ended, so nothing needs to cancel it.
+	// player who left, a match that ended, or a player already on a fresh pawn,
+	// so nothing needs to cancel it.
 	// Weak, because the player may disconnect before it fires.
-	const TWeakObjectPtr<AController> VictimController = Victim->GetController();
+	const TWeakObjectPtr<AController> VictimController = Victim.GetController();
 	const FTimerDelegate Respawn = FTimerDelegate::CreateUObject(this, &ThisClass::RespawnAfterDeath, VictimController);
 
 	// A timer with a delay of 0 never fires (FTimerManager::InternalSetTimer
@@ -429,7 +573,15 @@ void AEnclaveMatchGameMode::AwardAssists(const APawn& Victim, const AEnclaveMatc
 
 void AEnclaveMatchGameMode::RespawnAfterDeath(TWeakObjectPtr<AController> Controller)
 {
-	if (!IsMatchInProgress() || !Controller.IsValid())
+	if (!IsSpawningPhase() || !Controller.IsValid())
+	{
+		return;
+	}
+
+	// Already on a living pawn: the match-start reset replaced the body this timer was for.
+	const APawn* CurrentPawn = Controller->GetPawn();
+	const UEnclaveAvatarLifecycleComponent* Lifecycle = CurrentPawn ? CurrentPawn->FindComponentByClass<UEnclaveAvatarLifecycleComponent>() : nullptr;
+	if (Lifecycle && !Lifecycle->IsDead())
 	{
 		return;
 	}

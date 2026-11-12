@@ -6,11 +6,14 @@
 #include "Game/EnclaveGameMode.h"
 #include "Game/EnclaveMatchSettings.h"
 #include "Game/EnclaveHitPolicy.h"
+#include "Game/EnclaveSpawnSelection.h"
+#include "Math/RandomStream.h"
 #include "Combat/EnclaveDamageRequest.h"
 #include "EnclaveMatchGameMode.generated.h"
 
 class AEnclaveMatchGameState;
 class AEnclaveMatchPlayerState;
+class APlayerStart;
 class UEnclaveAvatarLifecycleComponent;
 
 /**
@@ -41,6 +44,22 @@ public:
 
 	/** Binds the match's death handling to every pawn RestartPlayer spawns. */
 	virtual void SetPlayerDefaults(APawn* Pawn) override;
+
+	/**
+	 * Always false, so every spawn chooses a start (ChoosePlayerStart). The
+	 * engine's version is true once the controller has a StartSpot, which is
+	 * set at login and never updated, so every respawn would reuse the login
+	 * start (GameModeBase.cpp:842-848, 1168-1176).
+	 */
+	virtual bool ShouldSpawnAtStartSpot(AController* Player) override;
+
+	/**
+	 * Also true during warmup (WaitingToStart), so players can move and shoot
+	 * while they wait. AGameMode's version is false until the match is in
+	 * progress (GameMode.cpp:548-556); this skips that check and keeps the
+	 * base one (not a spectator, world loaded; GameModeBase.cpp:1203-1211).
+	 */
+	virtual bool PlayerCanRestart_Implementation(APlayerController* Player) override;
 
 	/**
 	 * IEnclaveDamagePolicyInterface. Hits on non-players (dummies, destructibles)
@@ -74,11 +93,18 @@ protected:
 	virtual bool ReadyToStartMatch_Implementation() override;
 
 	/**
-	 * Warmup is over: sets the time limit and then calls Super, which spawns
-	 * every player. Subclasses that add their own match state (results, team
-	 * scores) set it up before calling Super.
+	 * Warmup is over: resets stats, sets the time limit, removes every warmup
+	 * pawn and then calls Super, which spawns every player fresh. Subclasses
+	 * that add their own match state (results, team scores, teams) set it up
+	 * before calling Super, so the fresh spawns see it.
 	 */
 	virtual void HandleMatchHasStarted() override;
+
+	/**
+	 * A player who arrives during warmup spawns right away. AGameMode spawns
+	 * arrivals only once the match is in progress (GameMode.cpp:529-540).
+	 */
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 
 	/**
 	 * Polled every frame while InProgress, so a match has one way to end, whatever
@@ -105,6 +131,24 @@ protected:
 	/** Hits after the match ends: like warmup, the result is already decided. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match|Hits")
 	FEnclaveHitPolicy PostMatchHitPolicy = FEnclaveHitPolicy::Simulated();
+
+	/** How spawn starts are chosen. See EnclaveSpawnSelection. */
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Spawning")
+	FEnclaveSpawnRules SpawnRules;
+
+	/**
+	 * The start for a spawn, away from living enemies (EnclaveSpawnSelection).
+	 * A "Play from Here" start in PIE is used for each player's first spawn of
+	 * the match only, so respawns still test the real choice. Falls back to
+	 * the engine's choice if no start is allowed for the player.
+	 */
+	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
+
+	/**
+	 * Whether Player may spawn at Start. Always true here; a mode narrows it
+	 * (a team mode: the player's team's starts).
+	 */
+	virtual bool IsStartAllowedFor(const APlayerStart& Start, const AController& Player) const { return true; }
 
 	/**
 	 * One of the policies above, for the current phase. A pointer, not a copy,
@@ -138,7 +182,10 @@ protected:
 		PURE_VIRTUAL(AEnclaveMatchGameMode::CheckWinCondition, return false;);
 
 private:
-	/** Server: credits the death and kill, scores it, announces it, and schedules the respawn. */
+	/**
+	 * Server: credits the death and kill, scores it, announces it, and schedules
+	 * the respawn. A warmup death only schedules the respawn: nothing scores.
+	 */
 	UFUNCTION()
 	void HandleAvatarDied(UEnclaveAvatarLifecycleComponent* LifecycleComp, FEnclaveDamageRequest DamageRequest);
 
@@ -160,12 +207,29 @@ private:
 	void AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
 		const AEnclaveMatchPlayerState* Killer, double Now) const;
 
-	/** Respawn timer callback: respawns the player if they are still here and the match is still in progress. */
+	/** Respawns Victim's controller after MatchSettings.RespawnDelaySeconds. */
+	void ScheduleRespawn(const APawn& Victim);
+
+	/**
+	 * Respawn timer callback: respawns the player if they are still here, it's
+	 * still a phase with spawning (warmup or in progress), and they have no
+	 * living pawn. The last check stops a warmup death's timer, firing after
+	 * the match-start reset, from replacing the player's fresh pawn.
+	 */
 	void RespawnAfterDeath(TWeakObjectPtr<AController> Controller);
+
+	/** Warmup or in progress: the phases where players spawn and respawn. */
+	bool IsSpawningPhase() const { return GetMatchState() == MatchState::WaitingToStart || IsMatchInProgress(); }
 
 	/** Cancels a running warmup countdown, if any. */
 	void CancelWarmup(AEnclaveMatchGameState& MatchGameState);
 
 	/** Server time the warmup ends. Unset while there aren't enough players. */
 	TOptional<double> WarmupEndServerTime;
+
+	/** Picks among equally good starts. Seeded in InitGame. */
+	FRandomStream SpawnRandom;
+
+	/** Players who have had a pawn on this map (warmup included), for the PIE "Play from Here" start. */
+	TSet<TWeakObjectPtr<AController>> SpawnedControllers;
 };

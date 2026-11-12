@@ -4,6 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Game/EnclaveMatchSettings.h"
+#include "Game/EnclaveSpawnSelection.h"
 #include "Game/EnclaveTeamAssignment.h"
 #include "Game/EnclaveTeamRoster.h"
 #include "Game/EnclaveURLOptions.h"
@@ -314,6 +315,121 @@ bool FEnclaveURLOptionsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Float .5"), EnclaveURLOptions::TryParseStrictFloat(TEXT(".5"), FloatValue) && FloatValue == 0.5f);
 	TestFalse(TEXT("Float ."), EnclaveURLOptions::TryParseStrictFloat(TEXT("."), FloatValue));
 	TestFalse(TEXT("Float 1e3"), EnclaveURLOptions::TryParseStrictFloat(TEXT("1e3"), FloatValue));
+	return true;
+}
+
+
+namespace EnclaveSpawnSelectionTests
+{
+	/** Starts along the X axis, 1000 cm apart: 0, 1000, 2000, ... */
+	TArray<FEnclaveSpawnCandidate> StartsAlongX(int32 Count)
+	{
+		TArray<FEnclaveSpawnCandidate> Candidates;
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			Candidates.Add({ FVector(1000.0 * Index, 0.0, 0.0), false });
+		}
+		return Candidates;
+	}
+
+	/** Which candidates RunCount picks with a fresh seeded stream each run. */
+	TSet<int32> PicksOverSeeds(TConstArrayView<FEnclaveSpawnCandidate> Candidates, TConstArrayView<FVector> Enemies,
+		const FEnclaveSpawnRules& Rules, int32 RunCount = 200)
+	{
+		TSet<int32> Picks;
+		for (int32 Seed = 0; Seed < RunCount; ++Seed)
+		{
+			FRandomStream Random(Seed);
+			Picks.Add(EnclaveSpawnSelection::ChooseStart(Candidates, Enemies, Rules, Random));
+		}
+		return Picks;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnclaveSpawnSelectionTest,
+	"Enclave.Match.SpawnSelection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FEnclaveSpawnSelectionTest::RunTest(const FString& Parameters)
+{
+	using namespace EnclaveSpawnSelectionTests;
+
+	FEnclaveSpawnRules Rules;
+	FRandomStream Random(1);
+
+	// No candidates.
+	TestEqual(TEXT("No candidates: none"), EnclaveSpawnSelection::ChooseStart({}, {}, Rules, Random), INDEX_NONE);
+
+	// Farthest start alone in the margin: with an enemy at 0, starts score 0,
+	// 1000, 2000, 3000, 4000; 80% of 4000 is 3200, so only start 4.
+	{
+		const TArray<FEnclaveSpawnCandidate> Candidates = StartsAlongX(5);
+		const TArray<FVector> Enemies = { FVector::ZeroVector };
+		const TSet<int32> Picks = PicksOverSeeds(Candidates, Enemies, Rules);
+		TestTrue(TEXT("Farthest wins when alone in the margin"), Picks.Num() == 1 && Picks.Contains(4));
+	}
+
+	// The nearest enemy decides: enemies at both ends make the middle best.
+	{
+		const TArray<FEnclaveSpawnCandidate> Candidates = StartsAlongX(5);
+		const TArray<FVector> Enemies = { FVector(0.0, 0.0, 0.0), FVector(4000.0, 0.0, 0.0) };
+		const TSet<int32> Picks = PicksOverSeeds(Candidates, Enemies, Rules);
+		TestTrue(TEXT("Nearest enemy decides: the middle"), Picks.Num() == 1 && Picks.Contains(2));
+	}
+
+	// Random within the margin: at 0.5, starts 2..4 (2000+ of 4000) qualify.
+	{
+		FEnclaveSpawnRules WideRules;
+		WideRules.RandomMarginFraction = 0.5f;
+		const TArray<FEnclaveSpawnCandidate> Candidates = StartsAlongX(5);
+		const TArray<FVector> Enemies = { FVector::ZeroVector };
+		const TSet<int32> Picks = PicksOverSeeds(Candidates, Enemies, WideRules);
+		TestTrue(TEXT("Margin 0.5: picks 2, 3 and 4 only"), Picks.Num() == 3 && Picks.Contains(2) && Picks.Contains(3) && Picks.Contains(4));
+
+		FRandomStream RandomA(42);
+		FRandomStream RandomB(42);
+		TestEqual(TEXT("Same seed, same pick"),
+			EnclaveSpawnSelection::ChooseStart(Candidates, Enemies, WideRules, RandomA),
+			EnclaveSpawnSelection::ChooseStart(Candidates, Enemies, WideRules, RandomB));
+	}
+
+	// No enemies: any start.
+	{
+		const TArray<FEnclaveSpawnCandidate> Candidates = StartsAlongX(4);
+		const TSet<int32> Picks = PicksOverSeeds(Candidates, {}, Rules);
+		TestEqual(TEXT("No enemies: every start can be picked"), Picks.Num(), 4);
+	}
+
+	// Blocked starts are skipped, even when they score best.
+	{
+		TArray<FEnclaveSpawnCandidate> Candidates = StartsAlongX(5);
+		Candidates[4].bBlocked = true;
+		const TArray<FVector> Enemies = { FVector::ZeroVector };
+		const TSet<int32> Picks = PicksOverSeeds(Candidates, Enemies, Rules);
+		TestTrue(TEXT("Blocked best skipped: the next farthest"), Picks.Num() == 1 && Picks.Contains(3));
+	}
+
+	// All blocked: scored among the blocked ones as a last resort.
+	{
+		TArray<FEnclaveSpawnCandidate> Candidates = StartsAlongX(3);
+		for (FEnclaveSpawnCandidate& Candidate : Candidates)
+		{
+			Candidate.bBlocked = true;
+		}
+		const TArray<FVector> Enemies = { FVector::ZeroVector };
+		const TSet<int32> Picks = PicksOverSeeds(Candidates, Enemies, Rules);
+		TestTrue(TEXT("All blocked: the farthest blocked start"), Picks.Num() == 1 && Picks.Contains(2));
+	}
+
+	// Margin 1: always a best start; ties stay random.
+	{
+		FEnclaveSpawnRules StrictRules;
+		StrictRules.RandomMarginFraction = 1.0f;
+		const TArray<FEnclaveSpawnCandidate> Candidates = {
+			{ FVector(-2000.0, 0.0, 0.0), false }, { FVector(500.0, 0.0, 0.0), false }, { FVector(2000.0, 0.0, 0.0), false } };
+		const TArray<FVector> Enemies = { FVector::ZeroVector };
+		const TSet<int32> Picks = PicksOverSeeds(Candidates, Enemies, StrictRules);
+		TestTrue(TEXT("Margin 1: the two tied best starts"), Picks.Num() == 2 && Picks.Contains(0) && Picks.Contains(2));
+	}
 	return true;
 }
 

@@ -31,14 +31,16 @@ void AEnclaveGameMode::RespawnPlayer(AController* Controller)
 		return;
 	}
 
-	// RestartPlayer reuses a pawn the controller still has, so the old one must
-	// be gone first. Unpossess before Destroy: the pawn's UnPossessed does its
-	// teardown while it can still reach the PlayerState's ASC.
-	if (APawn* OldPawn = Controller->GetPawn())
+	// RestartPlayer reuses a pawn the controller still has, so the old one must be gone first.
+	RemovePawn(*Controller);
+	RestartPlayer(Controller);
+}
+
+void AEnclaveGameMode::RemovePawn(AController& Controller)
+{
+	if (APawn* OldPawn = Controller.GetPawn())
 	{
-		Controller->UnPossess();
+		Controller.UnPossess();
 		OldPawn->Destroy();
 	}
-
-	RestartPlayer(Controller);
 }

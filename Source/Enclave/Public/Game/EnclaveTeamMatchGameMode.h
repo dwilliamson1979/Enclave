@@ -99,6 +99,13 @@ protected:
 	virtual uint8 ChooseTeamForPlayer(const AController* Player) const;
 
 	/**
+	 * A team start (AEnclaveTeamPlayerStart) is allowed only for its team's
+	 * players; a plain start is shared by everyone. A player with no team
+	 * yet gets the plain starts only.
+	 */
+	virtual bool IsStartAllowedFor(const APlayerStart& Start, const AController& Player) const override;
+
+	/**
 	 * Players holding a place on a team, not counting spectators or
 	 * ExcludedPlayer: connected players, plus, with Reserved slots, absent
 	 * players whose place is still held.

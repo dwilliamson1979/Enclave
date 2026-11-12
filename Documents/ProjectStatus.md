@@ -42,16 +42,16 @@ times in a row with clean logs.
 | U1 | PlayerState kills, deaths, team | Done; split into match and team PlayerStates in C1 |
 | U2 | GameState scores, phase end, winner, kill event | Done; split into match, solo and team GameStates in C1 |
 | C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
-| U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
+| U3 | Team base rules, then TDM | Done (six moments, below) |
 | U4 | Solo base rules, then DM | Done (three moments, below) |
 | U6 | Kill credit: damage history, last-damager credit, later assists | Done (three moments, below) |
-| C2 | Spawn selection | Not started |
+| C2 | Spawn selection | Done (three steps, below) |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
-| C6 | Graybox arena map | Not started |
-| C7 | Tests and match smoke test | Not started (unit tests so far: `Enclave.Match.Settings`, `.URLOptions`, `.TeamAssignment.*`, `.TeamRoster`) |
+| C6 | Graybox arena map | First pass generated: `TDM_TwinBases`, `DM_Pinwheel` (below) |
+| C7 | Tests and match smoke test | Not started (unit tests so far: `Enclave.Match.Settings`, `.URLOptions`, `.TeamAssignment.*`, `.TeamRoster`, `.SpawnSelection`) |
 
 C1 is built in six moments, with the user sketching each:
 
@@ -264,8 +264,51 @@ Decided in the U6 discussion, built later, not in U6:
   shield-break markers need it to return the damage-taken breakdown; design it
   with armor or with combat feedback, whichever comes first.
 
-**Next:** the shared pieces built on both match branches (C2 spawns with warmup spawning,
-C4 HUD).
+C2 is built in three steps:
+
+1. Spawn selection. Done. `EnclaveSpawnSelection::ChooseStart` is a pure
+   function with unit tests: a start's score is its distance to the nearest
+   living enemy, and the pick is random among starts scoring at least
+   `RandomMarginFraction` (0.8) of the best. Blocked starts are used only when
+   all are. `AEnclaveMatchGameMode::ChoosePlayerStart` gathers the allowed
+   starts (`IsStartAllowedFor`) and living hostile pawns. Fixed on the way:
+   every respawn reused the login start, because `ShouldSpawnAtStartSpot` is
+   true once `StartSpot` is set, and it's set only at login
+   (`GameModeBase.cpp:842-848`, `1168-1176`); the match mode now returns
+   false. A PIE "Play from Here" start is used for each player's first spawn
+   only. Verified in PIE (DM, 3 players).
+2. Team starts. Done. `AEnclaveTeamPlayerStart` is a start that belongs to one
+   team; a plain `APlayerStart` is shared. The team match mode's
+   `IsStartAllowedFor` allows a team start only for its team's players (a
+   player with no team gets the plain starts). Modes without teams use every
+   start, so one map can serve both. A subclass rather than an optional team
+   on every start, so "team" stays out of what DM uses.
+3. Warmup spawning. Done. Players spawn during warmup too:
+   `PlayerCanRestart` skips `AGameMode`'s in-progress check in
+   `WaitingToStart` (`GameMode.cpp:548-556`), and `HandleStartingNewPlayer`
+   spawns arrivals then (`AGameMode` only does once the match is in progress,
+   `GameMode.cpp:529-540`). A warmup death respawns and scores nothing. At
+   match start every warmup pawn is removed before the engine's loop spawns
+   everyone fresh (`GameMode.cpp:208-215`), after a team mode has assigned
+   the teams. `RespawnAfterDeath` skips a player already on a living pawn, so
+   a warmup death's timer firing after the start can't replace the fresh
+   pawn. The warmup hit policy stays Simulate; switching it to Apply (practice
+   fights) is a Blueprint change.
+
+C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
+`CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the
+actors labelled `GB.` and keeps the rest) generates two maps in
+`/Game/Maps/Graybox`:
+
+- `TDM_TwinBases` (80 x 40 m, 4v4): two mirrored bases across a trench, a
+  covered bridge over it, flank ramps out of the trench, and in each base a
+  balcony overlooking the courtyard and a screened spawn room with 8 team
+  starts.
+- `DM_Pinwheel` (50 x 50 m): a raised center with four off-center ramps,
+  raised corner platforms, screen walls that make loops along the sides, and
+  12 starts spread around.
+
+**Next:** C4 HUD, the last shared piece built on both match branches.
 
 Run a match by hand (close the editor first; server, then one line per client):
 `UnrealEditor.exe Enclave.uproject "/Game/Maps/EnclaveMap?game=TDM?ScoreLimit=3?TimeLimit=180?Warmup=5?PostMatch=8" -server -log`
@@ -296,12 +339,6 @@ Fixed only when chosen; none block M4.
 - A player who returns to a reserved place after the engine dropped their
   PlayerState (300 s, or more than 16 leavers) gets their team back but not
   their match stats. Keeping stats would mean storing them in the roster too.
-
-- Players have no pawn during warmup: `AGameMode::PlayerCanRestart` is false
-  until the match is in progress (`GameMode.cpp:548-556`), so the warmup hit
-  policy has nothing to apply to yet. Fortnite-style warmup needs a warmup
-  spawning item: restarts allowed in `WaitingToStart`, and every player reset
-  (fresh pawn at a spawn point) at match start, together with C2.
 
 - The match ends on the first kill the server receives at the score limit, so
   ping can decide a last-kill race (kills in the same frame are a draw). The

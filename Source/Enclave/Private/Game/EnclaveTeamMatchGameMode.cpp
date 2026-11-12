@@ -11,6 +11,7 @@
 
 #include "Debug/EnclaveDebug.h"
 #include "Game/EnclaveTeamGameState.h"
+#include "Game/EnclaveTeamPlayerStart.h"
 #include "Game/EnclaveURLOptions.h"
 #include "Player/EnclaveTeamPlayerState.h"
 
@@ -290,8 +291,8 @@ void AEnclaveTeamMatchGameMode::HandleStartingNewPlayer_Implementation(APlayerCo
 		}
 	}
 
-	// Last: if the match is in progress, Super spawns the pawn, and spawn
-	// selection needs the team.
+	// Last: Super spawns the pawn (in warmup or once the match is in progress),
+	// and spawn selection needs the team.
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
 }
 
@@ -407,4 +408,16 @@ int32 AEnclaveTeamMatchGameMode::CountPlayersOnTeam(uint8 TeamId, const APlayerS
 		Count += Roster.CountAbsentHeld(TeamId, GetWorld()->GetTimeSeconds(), TeamAssignmentRules.ReservedSlotHoldSeconds);
 	}
 	return Count;
+}
+
+bool AEnclaveTeamMatchGameMode::IsStartAllowedFor(const APlayerStart& Start, const AController& Player) const
+{
+	const AEnclaveTeamPlayerStart* TeamStart = Cast<AEnclaveTeamPlayerStart>(&Start);
+	if (!TeamStart)
+	{
+		return true;
+	}
+
+	const AEnclaveTeamPlayerState* TeamPlayer = Player.GetPlayerState<AEnclaveTeamPlayerState>();
+	return TeamPlayer && TeamPlayer->GetTeamId() == TeamStart->GetTeamId();
 }
