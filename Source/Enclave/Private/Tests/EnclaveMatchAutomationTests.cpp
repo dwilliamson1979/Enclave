@@ -33,14 +33,18 @@ bool FEnclaveMatchSettingsOptionsTest::RunTest(const FString& Parameters)
 	Settings.ApplyOptions(TEXT("?SuicideScore=-1"));
 	TestEqual(TEXT("Negative SuicideScore applied"), Settings.SuicideScore, -1);
 
+	Settings.ApplyOptions(TEXT("?AssistScore=1"));
+	TestEqual(TEXT("AssistScore applied"), Settings.AssistScore, 1);
+
 	// Invalid values log a warning and keep the current value.
-	AddExpectedMessage(TEXT("Ignoring invalid"), EAutomationExpectedMessageFlags::Contains, 5);
-	Settings.ApplyOptions(TEXT("?ScoreLimit=abc?TimeLimit=-5?MinPlayers=0?Warmup=2.5?RespawnDelay=3abc"));
+	AddExpectedMessage(TEXT("Ignoring invalid"), EAutomationExpectedMessageFlags::Contains, 6);
+	Settings.ApplyOptions(TEXT("?ScoreLimit=abc?TimeLimit=-5?MinPlayers=0?Warmup=2.5?RespawnDelay=3abc?AssistScore=-1"));
 	TestEqual(TEXT("Non-integer score limit ignored"), Settings.ScoreLimit, 3);
 	TestEqual(TEXT("Trailing junk respawn delay ignored"), Settings.RespawnDelaySeconds, 1);
 	TestEqual(TEXT("Negative time limit ignored"), Settings.TimeLimitSeconds, 0);
 	TestEqual(TEXT("Zero min players ignored"), Settings.MinPlayersToStart, 4);
 	TestEqual(TEXT("Fractional warmup ignored"), Settings.WarmupSeconds, 0);
+	TestEqual(TEXT("Negative AssistScore ignored"), Settings.AssistScore, 1);
 	return true;
 }
 

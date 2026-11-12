@@ -202,7 +202,8 @@ private:
 	 * Gives an assist to every enemy of the victim, other than Killer, whose
 	 * damage to the victim within MatchSettings.AssistWindowSeconds adds up to
 	 * at least MatchSettings.AssistDamagePercent of the victim's max health.
-	 * A fact like kills and deaths; what an assist is worth is each mode's.
+	 * A fact like kills and deaths; MatchSettings.AssistScore is added to the
+	 * assister's player score (never a team score).
 	 */
 	void AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
 		const AEnclaveMatchPlayerState* Killer, double Now) const;

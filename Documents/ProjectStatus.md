@@ -234,15 +234,22 @@ U6 is built in three moments (branch `u6-kill-credit`):
    `?AssistDamagePercent=`) of the victim's max health. A share of max health,
    not of the damage dealt, so the bar doesn't move with how many joined in.
    `Assists` on `AEnclaveMatchPlayerState` (added, reset, copied, replicated
-   like `Kills`). The log adds `  Assists: A (40), B (25).` Both helpers take
-   one `Now` (server time) from `HandleAvatarDied`. Decided: assists are a fact
-   in every mode, DM included (there it means "you nearly had that kill");
-   no mode scores them yet, and the scoring hook (`ScoreAssist`) is added when
-   a mode pays for them; C4 decides per mode whether the scoreboard shows
-   them. An uncredited suicide can still give assists (the damage counted).
+   like `Kills`). The log adds `  Assists: A (40, score 7), B (25, score 3).`
+   Both helpers take one `Now` (server time) from `HandleAvatarDied`. Decided:
+   assists are a fact in every mode, DM included (there it means "you nearly
+   had that kill"); C4 decides per mode whether the scoreboard shows them.
+   What an assist pays is `AssistScore` (`FEnclaveMatchSettings`, 0,
+   `?AssistScore=`, added after U6): player score only, never team score (the
+   team already scored the kill), and it counts toward the score limit, so in
+   DM an assist can win. 0 in both mode Blueprints. A number rather than an
+   on/off flag (0 = counted but unpaid; `AssistWindow=0` turns assists off),
+   and no virtual `ScoreAssist` hook until a mode needs more than a number.
+   An uncredited suicide can still give assists (the damage counted).
    Verified in PIE: 40 damage gives an assist, 20 doesn't, damage outside the
    window doesn't, a credited kill gives no assist to the killer, and a
-   teammate's damage never does. Done.
+   teammate's damage never does. `AssistScore` verified on a dedicated
+   server with `?AssistScore=1`: the assister's score rises by 1 and the team
+   score only by the kill. Done.
 
 Decided in the U6 discussion, built later, not in U6:
 - **History stays separate from the damage receiver.** The receiver
