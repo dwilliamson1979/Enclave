@@ -45,13 +45,13 @@ times in a row with clean logs.
 | U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
 | U4 | Solo base rules, then DM | Done (three moments, below) |
 | U6 | Kill credit: damage history, last-damager credit, later assists | Done (three moments, below) |
-| C2 | Spawn selection | Not started |
+| C2 | Spawn selection | Step 1 done (below); next: team starts, then warmup spawning |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
 | C6 | Graybox arena map | Not started |
-| C7 | Tests and match smoke test | Not started (unit tests so far: `Enclave.Match.Settings`, `.URLOptions`, `.TeamAssignment.*`, `.TeamRoster`) |
+| C7 | Tests and match smoke test | Not started (unit tests so far: `Enclave.Match.Settings`, `.URLOptions`, `.TeamAssignment.*`, `.TeamRoster`, `.SpawnSelection`) |
 
 C1 is built in six moments, with the user sketching each:
 
@@ -263,6 +263,22 @@ Decided in the U6 discussion, built later, not in U6:
   marker in `UEnclaveGA_Fire::NotifyHitConfirmed`). Damage numbers, kill and
   shield-break markers need it to return the damage-taken breakdown; design it
   with armor or with combat feedback, whichever comes first.
+
+C2 is built in three steps:
+
+1. Spawn selection. Done. `EnclaveSpawnSelection::ChooseStart` is a pure
+   function with unit tests: a start's score is its distance to the nearest
+   living enemy, and the pick is random among starts scoring at least
+   `RandomMarginFraction` (0.8) of the best. Blocked starts are used only when
+   all are. `AEnclaveMatchGameMode::ChoosePlayerStart` gathers the allowed
+   starts (`IsStartAllowedFor`) and living hostile pawns. Fixed on the way:
+   every respawn reused the login start, because `ShouldSpawnAtStartSpot` is
+   true once `StartSpot` is set, and it's set only at login
+   (`GameModeBase.cpp:842-848`, `1168-1176`); the match mode now returns
+   false. A PIE "Play from Here" start is used for each player's first spawn
+   only. Verified in PIE (DM, 3 players).
+2. Team starts: TDM narrows `IsStartAllowedFor` to the player's team's starts.
+3. Warmup spawning (see Known issues).
 
 **Next:** the shared pieces built on both match branches (C2 spawns with warmup spawning,
 C4 HUD).

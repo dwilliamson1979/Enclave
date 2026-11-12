@@ -8,6 +8,10 @@
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 #include "Combat/Components/EnclaveDamageHistoryComponent.h"
 #include "Health/Components/EnclaveHealthComponent.h"
+#include "Player/EnclavePlayerState.h"
+#include "Engine/PlayerStartPIE.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerStart.h"
 
 AEnclaveMatchGameMode::AEnclaveMatchGameMode()
 {
@@ -27,6 +31,8 @@ void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Opti
 
 	MatchSettings.ApplyOptions(Options);
 	UE_LOG(LogEnclaveMatch, Log, TEXT("Match settings: %s"), *MatchSettings.ToString());
+
+	SpawnRandom.GenerateNewSeed();
 
 	// Operator input (URL or Blueprint), so warn rather than refuse: an endless
 	// practice server is legitimate. ApplyOptions checks values one at a time;
@@ -249,6 +255,93 @@ void AEnclaveMatchGameMode::SetPlayerDefaults(APawn* Pawn)
 	{
 		LifecycleComponent->OnAvatarDied.AddUniqueDynamic(this, &ThisClass::HandleAvatarDied);
 	}
+
+	// Here, not in ChoosePlayerStart: that also runs at login, before any spawn.
+	SpawnedControllers.Add(Pawn->GetController());
+}
+
+bool AEnclaveMatchGameMode::ShouldSpawnAtStartSpot(AController* Player)
+{
+	return false;
+}
+
+AActor* AEnclaveMatchGameMode::ChoosePlayerStart_Implementation(AController* Player)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(Player) || !World)
+	{
+		return Super::ChoosePlayerStart_Implementation(Player);
+	}
+
+	// The pawn the player will get, to test whether it fits at each start (as the engine does).
+	const UClass* PawnClass = GetDefaultPawnClassForController(Player);
+	const APawn* PawnToFit = PawnClass ? PawnClass->GetDefaultObject<APawn>() : nullptr;
+	const bool bFirstSpawn = !SpawnedControllers.Contains(Player);
+
+	TArray<APlayerStart*, TInlineAllocator<32>> Starts;
+	TArray<FEnclaveSpawnCandidate, TInlineAllocator<32>> Candidates;
+	for (TActorIterator<APlayerStart> It(World); It; ++It)
+	{
+		APlayerStart* Start = *It;
+		if (Start->IsA<APlayerStartPIE>())
+		{
+			if (bFirstSpawn)
+			{
+				return Start;
+			}
+			continue;
+		}
+
+		if (!IsStartAllowedFor(*Start, *Player))
+		{
+			continue;
+		}
+
+		const FRotator Rotation = Start->GetActorRotation();
+		FVector FitLocation = Start->GetActorLocation();
+		const bool bBlocked = PawnToFit && World->EncroachingBlockingGeometry(PawnToFit, FitLocation, Rotation);
+		// A start the pawn can't be nudged clear of isn't a candidate.
+		if (bBlocked && !World->FindTeleportSpot(PawnToFit, FitLocation, Rotation))
+		{
+			continue;
+		}
+
+		Starts.Add(Start);
+		Candidates.Add({ Start->GetActorLocation(), bBlocked });
+	}
+
+	// Living enemies: a dead body stays until its respawn, so a pawn alone isn't enough.
+	TArray<FVector, TInlineAllocator<16>> EnemyLocations;
+	const AEnclavePlayerState* SpawningPlayerState = Player->GetPlayerState<AEnclavePlayerState>();
+	if (SpawningPlayerState && GameState)
+	{
+		for (APlayerState* Other : GameState->PlayerArray)
+		{
+			const APawn* OtherPawn = Other ? Other->GetPawn() : nullptr;
+			if (!OtherPawn || Other == SpawningPlayerState || !SpawningPlayerState->IsHostileTo(Other))
+			{
+				continue;
+			}
+
+			const UEnclaveAvatarLifecycleComponent* Lifecycle = OtherPawn->FindComponentByClass<UEnclaveAvatarLifecycleComponent>();
+			if (!Lifecycle || Lifecycle->GetLifecycleState() == EEnclaveAvatarLifecycleState::Alive)
+			{
+				EnemyLocations.Add(OtherPawn->GetActorLocation());
+			}
+		}
+	}
+
+	const int32 Chosen = EnclaveSpawnSelection::ChooseStart(Candidates, EnemyLocations, SpawnRules, SpawnRandom);
+	if (Chosen == INDEX_NONE)
+	{
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("No start allowed for %s; using the engine's choice."), *GetNameSafe(Player));
+		return Super::ChoosePlayerStart_Implementation(Player);
+	}
+
+	UE_LOG(LogEnclaveMatch, Verbose, TEXT("Spawn start for %s: %s (%d candidates, %d living enemies%s)."),
+		*GetNameSafe(SpawningPlayerState), *GetNameSafe(Starts[Chosen]), Candidates.Num(), EnemyLocations.Num(),
+		Candidates[Chosen].bBlocked ? TEXT(", blocked") : TEXT(""));
+	return Starts[Chosen];
 }
 
 void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* LifecycleComp, FEnclaveDamageRequest DamageRequest)

@@ -6,11 +6,14 @@
 #include "Game/EnclaveGameMode.h"
 #include "Game/EnclaveMatchSettings.h"
 #include "Game/EnclaveHitPolicy.h"
+#include "Game/EnclaveSpawnSelection.h"
+#include "Math/RandomStream.h"
 #include "Combat/EnclaveDamageRequest.h"
 #include "EnclaveMatchGameMode.generated.h"
 
 class AEnclaveMatchGameState;
 class AEnclaveMatchPlayerState;
+class APlayerStart;
 class UEnclaveAvatarLifecycleComponent;
 
 /**
@@ -41,6 +44,14 @@ public:
 
 	/** Binds the match's death handling to every pawn RestartPlayer spawns. */
 	virtual void SetPlayerDefaults(APawn* Pawn) override;
+
+	/**
+	 * Always false, so every spawn chooses a start (ChoosePlayerStart). The
+	 * engine's version is true once the controller has a StartSpot, which is
+	 * set at login and never updated, so every respawn would reuse the login
+	 * start (GameModeBase.cpp:842-848, 1168-1176).
+	 */
+	virtual bool ShouldSpawnAtStartSpot(AController* Player) override;
 
 	/**
 	 * IEnclaveDamagePolicyInterface. Hits on non-players (dummies, destructibles)
@@ -106,6 +117,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Match|Hits")
 	FEnclaveHitPolicy PostMatchHitPolicy = FEnclaveHitPolicy::Simulated();
 
+	/** How spawn starts are chosen. See EnclaveSpawnSelection. */
+	UPROPERTY(EditDefaultsOnly, Category = "Match|Spawning")
+	FEnclaveSpawnRules SpawnRules;
+
+	/**
+	 * The start for a spawn, away from living enemies (EnclaveSpawnSelection).
+	 * A "Play from Here" start in PIE is used for each player's first spawn of
+	 * the match only, so respawns still test the real choice. Falls back to
+	 * the engine's choice if no start is allowed for the player.
+	 */
+	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
+
+	/**
+	 * Whether Player may spawn at Start. Always true here; a mode narrows it
+	 * (a team mode: the player's team's starts).
+	 */
+	virtual bool IsStartAllowedFor(const APlayerStart& Start, const AController& Player) const { return true; }
+
 	/**
 	 * One of the policies above, for the current phase. A pointer, not a copy,
 	 * so a change to a policy (e.g. ?FriendlyFire= in InitGame) is seen at once.
@@ -168,4 +197,10 @@ private:
 
 	/** Server time the warmup ends. Unset while there aren't enough players. */
 	TOptional<double> WarmupEndServerTime;
+
+	/** Picks among equally good starts. Seeded in InitGame. */
+	FRandomStream SpawnRandom;
+
+	/** Players who have had a pawn this match, for the PIE "Play from Here" start. */
+	TSet<TWeakObjectPtr<AController>> SpawnedControllers;
 };
