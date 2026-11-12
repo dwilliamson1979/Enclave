@@ -67,10 +67,20 @@ struct ENCLAVE_API FEnclaveMatchSettings
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
 	int32 KillCreditWindowSeconds = 5;
 
+	/**
+	 * An enemy's damage to the victim counts toward an assist if it landed
+	 * within this many seconds before the death. Keep it at or under the damage
+	 * history's MaxEntryAgeSeconds (30), which prunes older entries.
+	 * 0 = no assists. ?AssistWindow=
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
 	int32 AssistWindowSeconds = 10;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
+	/**
+	 * Damage an enemy must have dealt within AssistWindowSeconds for an assist,
+	 * as a percent of the victim's max health. ?AssistDamagePercent=
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ClampMax = "100"))
 	int32 AssistDamagePercent = 25;
 
 	/** Applies the URL options above. Invalid values are logged and the current value is kept. */

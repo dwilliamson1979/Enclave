@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-12, after U6 moment 2. Work happens on
+Last updated 2026-11-12, after U6. Work happens on
 `main` with a short branch per piece of work.
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
@@ -44,7 +44,7 @@ times in a row with clean logs.
 | C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
 | U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
 | U4 | Solo base rules, then DM | Done (three moments, below) |
-| U6 | Kill credit: damage history, last-damager credit, later assists | Moments 1-2 done (below); moment 3 next |
+| U6 | Kill credit: damage history, last-damager credit, later assists | Done (three moments, below) |
 | C2 | Spawn selection | Not started |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
@@ -227,9 +227,22 @@ U6 is built in three moments (branch `u6-kill-credit`):
    `SuicideScore`), a suicide outside the window costs a point, and in TDM
    (friendly hits applied) a teammate's finish after enemy damage is the
    enemy's kill. Done.
-3. Assists: hostile damagers inside a longer window (about 10-15 s) above a
-   damage threshold (for example 25% of max health), stored on the
-   PlayerState; what an assist is worth is each mode's judgement.
+3. Assists. `AEnclaveMatchGameMode::AwardAssists`, after the death line:
+   every enemy of the victim other than the credited killer whose damage
+   within `AssistWindowSeconds` (10, `?AssistWindow=`, 0 = off; keep it at or
+   under the history's 30 s) adds up to at least `AssistDamagePercent` (25,
+   `?AssistDamagePercent=`) of the victim's max health. A share of max health,
+   not of the damage dealt, so the bar doesn't move with how many joined in.
+   `Assists` on `AEnclaveMatchPlayerState` (added, reset, copied, replicated
+   like `Kills`). The log adds `  Assists: A (40), B (25).` Both helpers take
+   one `Now` (server time) from `HandleAvatarDied`. Decided: assists are a fact
+   in every mode, DM included (there it means "you nearly had that kill");
+   no mode scores them yet, and the scoring hook (`ScoreAssist`) is added when
+   a mode pays for them; C4 decides per mode whether the scoreboard shows
+   them. An uncredited suicide can still give assists (the damage counted).
+   Verified in PIE: 40 damage gives an assist, 20 doesn't, damage outside the
+   window doesn't, a credited kill gives no assist to the killer, and a
+   teammate's damage never does. Done.
 
 Decided in the U6 discussion, built later, not in U6:
 - **History stays separate from the damage receiver.** The receiver
@@ -251,8 +264,7 @@ Decided in the U6 discussion, built later, not in U6:
   shield-break markers need it to return the damage-taken breakdown; design it
   with armor or with combat feedback, whichever comes first.
 
-**Next:** U6 moment 3 (assists), then the
-shared pieces built on both match branches (C2 spawns with warmup spawning,
+**Next:** the shared pieces built on both match branches (C2 spawns with warmup spawning,
 C4 HUD).
 
 Run a match by hand (close the editor first; server, then one line per client):

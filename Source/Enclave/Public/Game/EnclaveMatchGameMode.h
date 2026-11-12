@@ -148,9 +148,17 @@ private:
 	 * history within MatchSettings.KillCreditWindowSeconds; otherwise the
 	 * killing blow's attacker (yourself, a teammate, or null for no player).
 	 */
-	AEnclaveMatchPlayerState* ResolveKillCredit(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState, AEnclaveMatchPlayerState* KillingBlowAttacker) const;
+	AEnclaveMatchPlayerState* ResolveKillCredit(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
+		AEnclaveMatchPlayerState* KillingBlowAttacker, double Now) const;
 
-	void AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState, AEnclaveMatchPlayerState* Attacker);
+	/**
+	 * Gives an assist to every enemy of the victim, other than Killer, whose
+	 * damage to the victim within MatchSettings.AssistWindowSeconds adds up to
+	 * at least MatchSettings.AssistDamagePercent of the victim's max health.
+	 * A fact like kills and deaths; what an assist is worth is each mode's.
+	 */
+	void AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
+		const AEnclaveMatchPlayerState* Killer, double Now) const;
 
 	/** Respawn timer callback: respawns the player if they are still here and the match is still in progress. */
 	void RespawnAfterDeath(TWeakObjectPtr<AController> Controller);

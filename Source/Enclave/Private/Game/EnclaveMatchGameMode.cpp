@@ -7,6 +7,7 @@
 #include "Player/EnclaveMatchPlayerState.h"
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 #include "Combat/Components/EnclaveDamageHistoryComponent.h"
+#include "Health/Components/EnclaveHealthComponent.h"
 
 AEnclaveMatchGameMode::AEnclaveMatchGameMode()
 {
@@ -270,9 +271,11 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	// has a destroyed PlayerState, and counts as no attacker.
 	APlayerState* SourcePlayerState = DamageRequest.SourcePlayerState.Get();
 	AEnclaveMatchPlayerState* KillingBlowPlayerState = IsValid(SourcePlayerState) ? Cast<AEnclaveMatchPlayerState>(SourcePlayerState) : nullptr;
+	// The clock the damage history's entries use.
+	const double Now = GameState ? GameState->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
 	// Everything below uses the credited player, so a credited death is a kill:
 	// the victim's death counts and there is no SuicideScore.
-	AEnclaveMatchPlayerState* AttackerPlayerState = ResolveKillCredit(*Victim, *VictimPlayerState, KillingBlowPlayerState);
+	AEnclaveMatchPlayerState* AttackerPlayerState = ResolveKillCredit(*Victim, *VictimPlayerState, KillingBlowPlayerState, Now);
 	const bool bCredited = AttackerPlayerState != KillingBlowPlayerState;
 	// Only an enemy gets the kill: IsHostileTo is false for yourself, teammates and neutral players.
 	const bool bKill = AttackerPlayerState && AttackerPlayerState->IsHostileTo(VictimPlayerState);
@@ -327,6 +330,9 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 			DeathKind, *VictimPlayerState->GetPlayerName(), VictimPlayerState->GetDeaths(), VictimPlayerState->GetScore());
 	}
 
+	// After the death line, so the log reads in order. Nothing above depends on assists.
+	AwardAssists(*Victim, *VictimPlayerState, AttackerPlayerState, Now);
+
 	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
 	if (IsValid(MatchGameState))
 	{
@@ -356,7 +362,7 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 }
 
 AEnclaveMatchPlayerState* AEnclaveMatchGameMode::ResolveKillCredit(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
-	AEnclaveMatchPlayerState* KillingBlowAttacker) const
+	AEnclaveMatchPlayerState* KillingBlowAttacker, double Now) const
 {
 	if (KillingBlowAttacker && KillingBlowAttacker->IsHostileTo(&VictimPlayerState))
 	{
@@ -364,70 +370,60 @@ AEnclaveMatchPlayerState* AEnclaveMatchGameMode::ResolveKillCredit(const APawn& 
 	}
 
 	const UEnclaveDamageHistoryComponent* DamageHistory = Victim.FindComponentByClass<UEnclaveDamageHistoryComponent>();
-	const AGameStateBase* MatchGameState = GetGameState<AGameStateBase>();
-	if (MatchSettings.KillCreditWindowSeconds <= 0 || !DamageHistory || !MatchGameState)
+	if (MatchSettings.KillCreditWindowSeconds <= 0 || !DamageHistory)
 	{
 		return KillingBlowAttacker;
 	}
 
-	// Same clock as the history's entries.
-	const double Since = MatchGameState->GetServerWorldTimeSeconds() - MatchSettings.KillCreditWindowSeconds;
+	const double Since = Now - MatchSettings.KillCreditWindowSeconds;
 	APlayerState* RecentEnemy = DamageHistory->FindMostRecentAttacker(Since, [&VictimPlayerState](const APlayerState& Attacker)
 	{
 		const AEnclaveMatchPlayerState* MatchAttacker = Cast<AEnclaveMatchPlayerState>(&Attacker);
 		return MatchAttacker && MatchAttacker->IsHostileTo(&VictimPlayerState);
 	});
-	
+
 	return RecentEnemy ? CastChecked<AEnclaveMatchPlayerState>(RecentEnemy) : KillingBlowAttacker;
 }
 
-void AEnclaveMatchGameMode::AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState, AEnclaveMatchPlayerState* Attacker)
+void AEnclaveMatchGameMode::AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
+	const AEnclaveMatchPlayerState* Killer, double Now) const
 {
 	const UEnclaveDamageHistoryComponent* DamageHistory = Victim.FindComponentByClass<UEnclaveDamageHistoryComponent>();
-	if (!DamageHistory)
+	const UEnclaveHealthComponent* VictimHealth = Victim.FindComponentByClass<UEnclaveHealthComponent>();
+	if (MatchSettings.AssistWindowSeconds <= 0 || !DamageHistory || !VictimHealth)
 	{
 		return;
 	}
 
-	//a.Read GetEntriesSince(Now - AssistWindowSeconds).It already exists and returns the matching entries without copying them, so the history needs no new query.
-	//	b.Add up HealthDamage per attacker.A TMap<APlayerState*, float> is fine for at most 64 entries.
-	//	c.Skip entries with no attacker or one who has left, the killer(they have the kill), and anyone not hostile to the victim(yourself, teammates).
-	//	d.Give an assist to each attacker at or above the threshold.
-	//How do I iterate over this and get the player state of the damager? I want to call AddAssist() on the damager's player state if they are hostile to the victim and not the attacker.
-	auto Attackers =DamageHistory->GetEntriesSince(GetWorld()->GetTimeSeconds() - MatchSettings.KillCreditWindowSeconds);
-
-	if(Attackers.Num() == 0)
+	// Each enemy's damage in the window, added up. Entries with no attacker or
+	// one who has left (a stale weak pointer gives null), the killer, and
+	// anyone who isn't an enemy (yourself, teammates) don't count.
+	TMap<AEnclaveMatchPlayerState*, float> DamageByEnemy;
+	for (const FEnclaveDamageHistoryEntry& Entry : DamageHistory->GetEntriesSince(Now - MatchSettings.AssistWindowSeconds))
 	{
-		return;
-	}
-
-	TMap<AEnclaveMatchPlayerState*, float> DamagePerAttacker;
-	float TotalDamage = 0.0f;
-	for (auto AttackerEntry : Attackers)
-	{
-		if(AttackerEntry.Attacker == nullptr || AttackerEntry.Attacker == Attacker || !AttackerEntry.Attacker.IsValid())
+		AEnclaveMatchPlayerState* Damager = Cast<AEnclaveMatchPlayerState>(Entry.Attacker.Get());
+		if (Damager && Damager != Killer && Damager->IsHostileTo(&VictimPlayerState))
 		{
-			continue;
-		}
-
-		const APlayerState* Damager = AttackerEntry.Attacker.Get();
-		const AEnclaveMatchPlayerState* EnclaveDamager = Cast<AEnclaveMatchPlayerState>(Damager);
-		if (EnclaveDamager && EnclaveDamager->IsHostileTo(&VictimPlayerState))
-		{
-			DamagePerAttacker.FindOrAdd(EnclaveDamager) += AttackerEntry.HealthDamage;
-			TotalDamage += AttackerEntry.HealthDamage; //Are we certain healing (negative damage) is not recorded in the history? If so, this is fine. If not, we need to check if HealthDamage is negative before adding it to TotalDamage.
+			DamageByEnemy.FindOrAdd(Damager) += Entry.HealthDamage;
 		}
 	}
 
-	for (auto& Pair : DamagePerAttacker)
+	// A share of max health, not of the damage dealt, so the bar doesn't move
+	// with how many others joined in.
+	const float RequiredDamage = VictimHealth->GetMaxHealth() * MatchSettings.AssistDamagePercent / 100.0f;
+	FString AssistList;
+	for (const TPair<AEnclaveMatchPlayerState*, float>& Pair : DamageByEnemy)
 	{
-		AEnclaveMatchPlayerState* AssistingPlayer = Pair.Key;
-		float AttackerTotalDamage = Pair.Value;
-		if (AttackerTotalDamage / TotalDamage >= MatchSettings.AssistDamagePercent)
+		if (Pair.Value >= RequiredDamage)
 		{
-			AssistingPlayer->AddAssist();
-			UE_LOG(LogEnclaveMatch, Log, TEXT("Assist awarded to %s for dealing %.2f damage to %s."), *AssistingPlayer->GetPlayerName(), TotalDamage, *VictimPlayerState.GetPlayerName());
+			Pair.Key->AddAssist();
+			AssistList += FString::Printf(TEXT("%s%s (%.0f)"), AssistList.IsEmpty() ? TEXT("") : TEXT(", "), *Pair.Key->GetPlayerName(), Pair.Value);
 		}
+	}
+
+	if (!AssistList.IsEmpty())
+	{
+		UE_LOG(LogEnclaveMatch, Log, TEXT("  Assists: %s."), *AssistList);
 	}
 }
 
