@@ -30,6 +30,7 @@ class UAbilitySystemComponent;
 class UEnclaveGASHealthComponent;
 class UEnclaveAvatarLifecycleComponent;
 class UEnclaveTargetHistoryComponent;
+class UEnclaveDamageHistoryComponent;
 
 /** Author-defined starting inventory entry with an explicit equipment slot. */
 USTRUCT(BlueprintType)
@@ -213,6 +214,10 @@ private:
 	/** Applies the match's hit detection mode to this character and publishes SSR timing stamps. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Lag Compensation", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UEnclaveHitTargetComponent> HitTargetComp = nullptr;
+
+	/** Server-only record of the damage this life took, for kill credit and assists. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UEnclaveDamageHistoryComponent> DamageHistoryComp = nullptr;
 
 	/** Non-owning cache of the PlayerState-owned ASC currently initialized for this avatar. */
 	TWeakObjectPtr<UAbilitySystemComponent> CachedAbilitySystemComponent;

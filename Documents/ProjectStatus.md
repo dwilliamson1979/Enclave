@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-11, after U4 and the U6 moment 1 design. Work happens on
+Last updated 2026-11-12, after U6 moment 1. Work happens on
 `main` with a short branch per piece of work.
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
@@ -44,7 +44,7 @@ times in a row with clean logs.
 | C1 | Match GameMode skeleton | Done (six moments, below); its hooks `ScoreKill` and `CheckWinCondition` are implemented in U3 and U4 |
 | U3 | Team base rules, then TDM | Done (six moments, below); warmup spawning is a known issue |
 | U4 | Solo base rules, then DM | Done (three moments, below) |
-| U6 | Kill credit: damage history, last-damager credit, later assists | Moment 1 designed, ready to sketch (below) |
+| U6 | Kill credit: damage history, last-damager credit, later assists | Moment 1 done (below); moment 2 next |
 | C2 | Spawn selection | Not started |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
 | C4 | HUD C++ base | Not started |
@@ -188,31 +188,26 @@ saves only values that differ from its parent.
 
 U6 is built in three moments (branch `u6-kill-credit`):
 
-1. The damage history. Designed, ready for the user to sketch:
-   - **Why the recording point matters:** death fires synchronously inside
-     `ReceiveDamage` (`EnclaveDamageStatics.cpp:52`, the GAS attribute
-     delegate in `EnclaveGASHealthComponent.cpp:156-159`,
-     `EnclaveHealthComponent.cpp:52-55`, `OnAvatarDied` in
-     `EnclaveAvatarLifecycleComponent.cpp:156`), so anything recorded after
-     `ReceiveDamage` returns misses the killing blow.
-   - **Recording (option B):** `UEnclaveHealthComponent::NotifyHealthChanged`
-     broadcasts a new `OnDamageTaken(FEnclaveDamageTaken)` before
-     `OnHealthDepleted`, only when health dropped. The struct holds the
-     request and `HealthDamage` (actual health lost, so no overkill and
-     correct once armor exists); `ShieldDamage` is added when shields exist.
-     Both health components get it through the base.
-   - **Storage:** a new server-only, unreplicated
-     `UEnclaveDamageHistoryComponent` on the character (a new pawn per life
-     resets it). One entry per hit: `TWeakObjectPtr<APlayerState> Attacker`,
-     the damage, `double ServerTime` (`GetServerWorldTimeSeconds`), a weak
-     `DamageCauser` and `DamageTags`. Records every hit that took health
-     (hostile, friendly, self, environment); moments 2 and 3 filter by
-     attitude when they query. Pruned by `MaxEntryAgeSeconds = 30` plus a
-     64-entry cap (oldest dropped first); limited by time, not by attacker
-     count. The recording function doesn't know about health; a query such
-     as `GetEntriesSince(Time)`.
-   - **Check:** a temporary `Verbose` log of the victim's history in
-     `HandleAvatarDied`, tested in PIE with `EnclaveDebugDamage` and shots.
+1. The damage history. `UEnclaveHealthComponent::NotifyHealthChanged`
+   broadcasts `OnDamageTaken(FEnclaveDamageTaken)` (`Combat/EnclaveDamageTaken.h`:
+   the request plus `HealthDamage`, the health actually lost) after
+   `OnHealthChanged` and before `OnHealthDepleted`, only when a damage request
+   was passed and health dropped (so server-only and damage-only; RepNotifies
+   pass no request). This matters because death fires synchronously inside
+   `ReceiveDamage`, so anything recorded after it returns misses the killing
+   blow. `UEnclaveDamageHistoryComponent` (server-only, unreplicated, on the
+   character, so a new pawn per life resets it) binds to it and records one
+   entry per hit: weak `Attacker` (the request's `SourcePlayerState`), weak
+   `DamageCauser`, `HealthDamage`, `ServerTime` (`GetServerWorldTimeSeconds`),
+   `DamageTags`. Every hit is recorded (hostile, friendly, self, environment);
+   queries filter by attitude. Pruned on record by `MaxEntryAgeSeconds` (30)
+   and `MaxEntries` (64, oldest first). `RecordDamage` doesn't know about
+   health; `GetEntries()` and `GetEntriesSince(Time)` return views of the tail.
+   A temporary `Verbose` dump of the victim's history in `HandleAvatarDied`
+   (remove in moment 2). Verified in PIE: a 5-hit kill lists all hits with the
+   killing blow at 0.00 s; `EnclaveDebugDamage 1000` records 100 (no
+   overkill). A fall below the kill Z adds no entry (it bypasses
+   `ApplyDamage`); moment 2 must test shoot-then-fall. Done.
 2. Kill credit: the killing blow, or the most recent hostile damager inside a
    short window (about 5 s, a match setting) for suicides and environment
    deaths; a credited death is not a suicide (no `SuicideScore`).
@@ -221,6 +216,12 @@ U6 is built in three moments (branch `u6-kill-credit`):
    PlayerState; what an assist is worth is each mode's judgement.
 
 Decided in the U6 discussion, built later, not in U6:
+- **History stays separate from the damage receiver.** The receiver
+  (`IEnclaveDamageReceiverInterface`, later the pool router) is on every
+  damageable thing; the history only on things whose death earns credit, and
+  it serves match rules, not combat mechanics. When the router exists, the
+  history binds to its `FEnclaveDamageTaken` event instead of the health
+  component's.
 - **Damage pools:** shield and health damage both count toward credit (as in
   Apex's damage stat). Pools (health, shield, temporary shields) become GAS
   attributes drained in a fixed order where `Damage` is consumed
@@ -234,7 +235,7 @@ Decided in the U6 discussion, built later, not in U6:
   shield-break markers need it to return the damage-taken breakdown; design it
   with armor or with combat feedback, whichever comes first.
 
-**Next:** U6 moment 1 (the user sketches), then moments 2 and 3, then the
+**Next:** U6 moment 2 (kill credit), then moment 3, then the
 shared pieces built on both match branches (C2 spawns with warmup spawning,
 C4 HUD).
 

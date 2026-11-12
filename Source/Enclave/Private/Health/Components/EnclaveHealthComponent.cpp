@@ -49,6 +49,13 @@ void UEnclaveHealthComponent::NotifyHealthChanged(float OldHealth, float NewHeal
 
 	OnHealthChanged.Broadcast(this, OldHealth, NewHealth);
 
+	// Before depletion: death is announced synchronously from OnHealthDepleted,
+	// so a listener recording damage must see the killing blow first.
+	if (DamageRequest && NewHealth < OldHealth)
+	{
+		OnDamageTaken.Broadcast(this, FEnclaveDamageTaken(*DamageRequest, OldHealth - NewHealth));
+	}
+
 	if (OldHealth > 0.0f && NewHealth <= 0.0f)
 	{
 		OnHealthDepleted.Broadcast(this, DamageRequest ? *DamageRequest : FEnclaveDamageRequest());

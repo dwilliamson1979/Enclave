@@ -6,6 +6,7 @@
 #include "Game/EnclaveMatchGameState.h"
 #include "Player/EnclaveMatchPlayerState.h"
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
+#include "Combat/Components/EnclaveDamageHistoryComponent.h"
 
 AEnclaveMatchGameMode::AEnclaveMatchGameMode()
 {
@@ -263,6 +264,15 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	{
 		return;
 	}
+
+	// TEMPORARY (U6 moment 1 check): the victim's damage history, which must
+	// include the killing blow. Removed when moment 2 uses the history.
+	ENCLAVE_DEBUG_CODE(
+		if (const UEnclaveDamageHistoryComponent* DamageHistory = Victim->FindComponentByClass<UEnclaveDamageHistoryComponent>())
+		{
+			UE_LOG(LogEnclaveMatch, Verbose, TEXT("%s died. Damage history:%s"), *VictimPlayerState->GetPlayerName(), *DamageHistory->DescribeEntries());
+		}
+	);
 
 	// From the request, not the attacker's pawn: the pawn may have died (and
 	// lost its PlayerState) before the damage landed. A player who has left

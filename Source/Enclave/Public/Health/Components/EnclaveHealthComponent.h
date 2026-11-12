@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Combat/EnclaveDamageRequest.h"
+#include "Combat/EnclaveDamageTaken.h"
 #include "EnclaveHealthComponent.generated.h"
 
 class AActor;
@@ -12,6 +13,13 @@ class UEnclaveHealthComponent;
 
 /** Fired whenever the authoritative health value changes. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnclaveHealthChangedSignature, UEnclaveHealthComponent*, HealthComponent, float, OldHealth, float, NewHealth);
+
+/**
+ * Server only: fired when a damage request lowered health, after
+ * OnHealthChanged and before OnHealthDepleted, so the killing blow is seen
+ * before death is announced.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnclaveDamageTakenSignature, UEnclaveHealthComponent*, HealthComponent, const FEnclaveDamageTaken&, DamageTaken);
 
 /** Fired once for each transition from positive health to zero health. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnclaveHealthDepletedSignature, UEnclaveHealthComponent*, HealthComponent, FEnclaveDamageRequest, DamageRequest);
@@ -71,6 +79,9 @@ public:
 	FEnclaveHealthChangedSignature OnHealthChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "Health")
+	FEnclaveDamageTakenSignature OnDamageTaken;
+
+	UPROPERTY(BlueprintAssignable, Category = "Health")
 	FEnclaveHealthDepletedSignature OnHealthDepleted;
 
 	UPROPERTY(BlueprintAssignable, Category = "Health")
@@ -83,7 +94,12 @@ protected:
 	/** Storage hook implemented by each concrete health model. */
 	virtual float GetMaxHealthValue() const PURE_VIRTUAL(UEnclaveHealthComponent::GetMaxHealthValue, return 0.0f;);
 
-	/** Shared notification path used by concrete implementations on authority and from RepNotifies. */
+	/**
+	 * Shared notification path used by concrete implementations on authority and from RepNotifies.
+	 * Pass DamageRequest only for a change made by that request on the server
+	 * (never from a RepNotify, a heal or another effect): its presence is what
+	 * makes OnDamageTaken server-only and damage-only.
+	 */
 	void NotifyHealthChanged(float OldHealth, float NewHealth, const FEnclaveDamageRequest* DamageRequest = nullptr);
 
 	/** Shared notification path used by concrete implementations on authority and from RepNotifies. */

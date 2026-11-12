@@ -23,6 +23,7 @@
 #include "Health/Components/EnclaveGASHealthComponent.h"
 #include "Lifecycle/Components/EnclaveAvatarLifecycleComponent.h"
 #include "Combat/Components/EnclaveTargetHistoryComponent.h"
+#include "Combat/Components/EnclaveDamageHistoryComponent.h"
 
 #include "Inventory/Components/EnclaveInventoryComponent.h"
 
@@ -103,6 +104,7 @@ AEnclaveCharacter::AEnclaveCharacter(const FObjectInitializer& ObjectInitializer
 	LifecycleComp = CreateDefaultSubobject<UEnclaveAvatarLifecycleComponent>(TEXT("LifecycleComp"));
 	TargetHistoryComp = CreateDefaultSubobject<UEnclaveTargetHistoryComponent>(TEXT("TargetHistoryComp"));
 	HitTargetComp = CreateDefaultSubobject<UEnclaveHitTargetComponent>(TEXT("HitTargetComp"));
+	DamageHistoryComp = CreateDefaultSubobject<UEnclaveDamageHistoryComponent>(TEXT("DamageHistoryComp"));
 }
 
 FVector AEnclaveCharacter::GetPawnViewLocation() const
