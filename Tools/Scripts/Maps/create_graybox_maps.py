@@ -93,8 +93,12 @@ def lighting():
     spawn(unreal.SkyAtmosphere, (0.0, 0.0, 0.0), label="SkyAtmosphere")
 
 
-def build_map(map_path, game_mode, build):
-    """Opens or creates map_path, replaces its generated actors with build(), sets the mode and saves."""
+def build_map(map_path, game_mode, kill_z, build):
+    """Opens or creates map_path, replaces its generated actors with build(), sets the mode and Kill Z, and saves.
+
+    Kill Z: actors below it fall out of the world (AActor::CheckStillInWorld), which for a
+    player is a death. The engine default is about -10.5 km, minutes of falling.
+    """
     if assets.does_asset_exist(map_path):
         if not levels.load_level(map_path):
             raise RuntimeError(f"Could not open {map_path}")
@@ -104,8 +108,9 @@ def build_map(map_path, game_mode, build):
         raise RuntimeError(f"Could not create {map_path}")
 
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
-    world.get_world_settings().set_editor_property(
-        "default_game_mode", unreal.load_class(None, f"{GAME_MODES}/{game_mode}.{game_mode}_C"))
+    settings = world.get_world_settings()
+    settings.set_editor_property("default_game_mode", unreal.load_class(None, f"{GAME_MODES}/{game_mode}.{game_mode}_C"))
+    settings.set_editor_property("kill_z", kill_z)
 
     lighting()
     build()
@@ -282,6 +287,7 @@ def build_dm():
 
 # ---------------------------------------------------------------------------
 
-build_map("/Game/Maps/Graybox/TDM_TwinBases", "BP_TDMGameMode", build_tdm)
-build_map("/Game/Maps/Graybox/DM_Pinwheel", "BP_DMGameMode", build_dm)
+# Kill Z a few meters below the lowest floor: the trench (-400) in TDM, the arena floor (0) in DM.
+build_map("/Game/Maps/Graybox/TDM_TwinBases", "BP_TDMGameMode", -1500.0, build_tdm)
+build_map("/Game/Maps/Graybox/DM_Pinwheel", "BP_DMGameMode", -1000.0, build_dm)
 unreal.SystemLibrary.quit_editor()

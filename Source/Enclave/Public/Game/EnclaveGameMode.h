@@ -32,6 +32,13 @@ public:
 	virtual void RespawnPlayer(AController* Controller);
 
 protected:
+	/**
+	 * Server: unpossesses and destroys the controller's pawn, if any. Unpossess
+	 * first: the pawn's UnPossessed does its teardown while it can still reach
+	 * the PlayerState's ASC.
+	 */
+	void RemovePawn(AController& Controller);
+
 	/** Passes the server travel/startup options to the combat policy. */
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 

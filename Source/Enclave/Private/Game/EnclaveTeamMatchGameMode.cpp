@@ -291,8 +291,8 @@ void AEnclaveTeamMatchGameMode::HandleStartingNewPlayer_Implementation(APlayerCo
 		}
 	}
 
-	// Last: if the match is in progress, Super spawns the pawn, and spawn
-	// selection needs the team.
+	// Last: Super spawns the pawn (in warmup or once the match is in progress),
+	// and spawn selection needs the team.
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
 }
 
