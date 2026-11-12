@@ -47,3 +47,10 @@ float EnclaveFocusBlend::ProgressForWeight(float InWeight, bool bEntering, const
 	}
 	return 0.5f * (Low + High);
 }
+
+float EnclaveFocusBlend::LookScaleForFOV(float FOV, float BaseFOV)
+{
+	const float BaseTan = FMath::Tan(FMath::DegreesToRadians(FMath::Clamp(BaseFOV, 1.0f, 179.0f) * 0.5f));
+	const float Tan = FMath::Tan(FMath::DegreesToRadians(FMath::Clamp(FOV, 1.0f, 179.0f) * 0.5f));
+	return Tan / BaseTan;
+}

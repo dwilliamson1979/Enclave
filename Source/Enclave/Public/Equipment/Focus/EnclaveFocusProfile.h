@@ -71,9 +71,16 @@ struct ENCLAVE_API FEnclaveFocusViewSettings
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "1.0"))
 	float TransitionEasingExponent = 2.0f;
 
-	/** Multiplies the normal locally configured look input while focused. */
+	/**
+	 * Look sensitivity already follows the zoom: it is scaled by
+	 * tan(FOV / 2) / tan(hip FOV / 2), so the view turns at the same on-screen
+	 * speed at any magnification and hip sensitivity is never changed. This
+	 * multiplies on top of that while focused (1 = pure zoom matching; below 1
+	 * slower). Replaces LookSensitivityMultiplier, which was the whole scale
+	 * (0.65 then is about 1.0 now), so it is deliberately not redirected.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "0.01"))
-	float LookSensitivityMultiplier = 0.65f;
+	float LookSensitivityAdjustment = 1.0f;
 
 	/** Optional camera-space alignment of the physical weapon sights. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|Sight")

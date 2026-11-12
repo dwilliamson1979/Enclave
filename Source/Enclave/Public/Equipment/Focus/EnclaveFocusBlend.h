@@ -25,4 +25,12 @@ namespace EnclaveFocusBlend
 	 * differently, so Progress is re-solved and the view doesn't jump.
 	 */
 	ENCLAVE_API float ProgressForWeight(float InWeight, bool bEntering, const FEnclaveFocusViewSettings& Settings);
+
+	/**
+	 * Look scale that keeps on-screen turn speed constant across zoom:
+	 * tan(FOV / 2) / tan(BaseFOV / 2). 1 at BaseFOV, so hip sensitivity is
+	 * untouched. The same idea as Enhanced Input's FOV Scaling modifier, but
+	 * relative to the player's hip FOV instead of a fixed 80 degrees.
+	 */
+	ENCLAVE_API float LookScaleForFOV(float FOV, float BaseFOV);
 }
