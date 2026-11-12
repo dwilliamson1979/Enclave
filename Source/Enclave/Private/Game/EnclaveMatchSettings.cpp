@@ -16,11 +16,12 @@ void FEnclaveMatchSettings::ApplyOptions(const FString& Options)
 	EnclaveURLOptions::ApplyInt(Options, TEXT("KillCreditWindow"), 0, KillCreditWindowSeconds);
 	EnclaveURLOptions::ApplyInt(Options, TEXT("AssistWindow"), 0, AssistWindowSeconds);
 	EnclaveURLOptions::ApplyInt(Options, TEXT("AssistDamagePercent"), 0, AssistDamagePercent);
+	EnclaveURLOptions::ApplyInt(Options, TEXT("AssistScore"), 0, AssistScore);
 }
 
 FString FEnclaveMatchSettings::ToString() const
 {
-	return FString::Printf(TEXT("ScoreLimit=%d TimeLimit=%ds RespawnDelay=%ds Warmup=%ds MinPlayers=%d PostMatch=%ds SuicideScore=%d KillCreditWindow=%ds AssistWindow=%ds AssistDamagePercent=%d"),
+	return FString::Printf(TEXT("ScoreLimit=%d TimeLimit=%ds RespawnDelay=%ds Warmup=%ds MinPlayers=%d PostMatch=%ds SuicideScore=%d KillCreditWindow=%ds AssistWindow=%ds AssistDamagePercent=%d AssistScore=%d"),
 		ScoreLimit, TimeLimitSeconds, RespawnDelaySeconds, WarmupSeconds, MinPlayersToStart, PostMatchSeconds, SuicideScore,
-		KillCreditWindowSeconds, AssistWindowSeconds, AssistDamagePercent);
+		KillCreditWindowSeconds, AssistWindowSeconds, AssistDamagePercent, AssistScore);
 }

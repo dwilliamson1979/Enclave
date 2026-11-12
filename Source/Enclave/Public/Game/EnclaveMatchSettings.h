@@ -83,6 +83,15 @@ struct ENCLAVE_API FEnclaveMatchSettings
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ClampMax = "100"))
 	int32 AssistDamagePercent = 25;
 
+	/**
+	 * Added to the player's own score for each assist. Never touches a team
+	 * score: the team already scored the kill. Counts toward the score limit
+	 * like any score. 0 = assists are counted but pay nothing (to turn assists
+	 * off entirely, set AssistWindowSeconds to 0). ?AssistScore=
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0"))
+	int32 AssistScore = 0;
+
 	/** Applies the URL options above. Invalid values are logged and the current value is kept. */
 	void ApplyOptions(const FString& Options);
 

@@ -532,9 +532,14 @@ AEnclaveMatchPlayerState* AEnclaveMatchGameMode::ResolveKillCredit(const APawn& 
 void AEnclaveMatchGameMode::AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
 	const AEnclaveMatchPlayerState* Killer, double Now) const
 {
+	if (MatchSettings.AssistWindowSeconds <= 0)
+	{
+		return;
+	}
+
 	const UEnclaveDamageHistoryComponent* DamageHistory = Victim.FindComponentByClass<UEnclaveDamageHistoryComponent>();
 	const UEnclaveHealthComponent* VictimHealth = Victim.FindComponentByClass<UEnclaveHealthComponent>();
-	if (MatchSettings.AssistWindowSeconds <= 0 || !DamageHistory || !VictimHealth)
+	if (!DamageHistory || !VictimHealth)
 	{
 		return;
 	}
@@ -561,7 +566,13 @@ void AEnclaveMatchGameMode::AwardAssists(const APawn& Victim, const AEnclaveMatc
 		if (Pair.Value >= RequiredDamage)
 		{
 			Pair.Key->AddAssist();
-			AssistList += FString::Printf(TEXT("%s%s (%.0f)"), AssistList.IsEmpty() ? TEXT("") : TEXT(", "), *Pair.Key->GetPlayerName(), Pair.Value);
+			// Player score only: the team already scored the kill.
+			if (MatchSettings.AssistScore != 0)
+			{
+				Pair.Key->SetScore(Pair.Key->GetScore() + static_cast<float>(MatchSettings.AssistScore));
+			}
+			AssistList += FString::Printf(TEXT("%s%s (%.0f, score %.0f)"), AssistList.IsEmpty() ? TEXT("") : TEXT(", "),
+				*Pair.Key->GetPlayerName(), Pair.Value, Pair.Key->GetScore());
 		}
 	}
 
