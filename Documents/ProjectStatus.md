@@ -24,6 +24,7 @@ grouped here by area, oldest first.
 | Health, damage, lifecycle | GAS-backed health; one damage entry point (`UEnclaveDamageStatics::ApplyDamage`); alive/dead avatar lifecycle with `OnAvatarDied`; avatar-scoped effects | `500eebd`, `13e1c65`, `8e3ccb7` |
 | Hit registration and SSR (milestone 3) | Validated client shot intent; server-side rewind of capsules with ServerAnchor timing; dedicated-server validation, abuse tests and a scripted test range | `b2ab923`, `9e81e45` |
 | Combat refactors after M3 | SSR settings in `UEnclaveCombatPolicyComponent`; `UEnclaveHitTargetComponent`; lifecycle-to-history event | `1a990e7`, `2c59604`, `3f397b9` |
+| Focus (ADS) transition | One eased weight drives FOV, look sensitivity and sight alignment (`EnclaveFocusBlend`, `UEnclaveViewComponent`); per-profile `EnterDuration`, `ExitDuration` and `TransitionEasing` (the exit mirrors the entry); a reversal mid-blend continues from the current view and takes only the time spent. Test: `Enclave.Focus.Blend` | branch `focus-blend` |
 
 SSR docs: [SSR_Walkthrough.md](SSR_Walkthrough.md) (start here),
 [SSR_M3_NetworkValidation.md](SSR_M3_NetworkValidation.md) (results),
