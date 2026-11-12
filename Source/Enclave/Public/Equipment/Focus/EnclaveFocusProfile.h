@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "EnclaveFocusProfile.generated.h"
 
 /**
@@ -43,9 +44,32 @@ struct ENCLAVE_API FEnclaveFocusViewSettings
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "5.0", ClampMax = "170.0", Units = "deg"))
 	float FocusFOV = 65.0f;
 
-	/** Seconds for the view and sensitivity transition in either direction. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "0.0", Units = "s"))
-	float TransitionDuration = 0.2f;
+	/**
+	 * Seconds for a full transition into Focus (FOV, sensitivity and sight
+	 * alignment move together). 0 = instant. Was TransitionDuration.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float EnterDuration = 0.2f;
+
+	/**
+	 * Seconds for a full transition out of Focus. 0 = instant. A reversal part
+	 * way covers only the distance already travelled: release at half way and
+	 * the way out takes half of this.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float ExitDuration = 0.2f;
+
+	/**
+	 * Shape of the transition into Focus. The way out mirrors it in time, so
+	 * both directions feel the same: EaseOut (or ExpoOut, CircularOut) starts
+	 * fast and settles, the feel of an interp-speed zoom, both in and out.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View")
+	TEnumAsByte<EEasingFunc::Type> TransitionEasing = EEasingFunc::Linear;
+
+	/** Strength of EaseIn, EaseOut and EaseInOut (2 = quadratic); the other shapes ignore it. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "1.0"))
+	float TransitionEasingExponent = 2.0f;
 
 	/** Multiplies the normal locally configured look input while focused. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Focus|View", meta = (ClampMin = "0.01"))

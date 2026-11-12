@@ -6,6 +6,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Debug/EnclaveDebug.h"
 #include "GameFramework/Character.h"
+#include "Equipment/Focus/EnclaveFocusBlend.h"
 #include "Equipment/Items/EnclaveItem.h"
 
 UEnclaveViewComponent::UEnclaveViewComponent()
@@ -102,12 +103,31 @@ void UEnclaveViewComponent::BeginFocus(AEnclaveItem* SourceItem, const FEnclaveF
 		bHasBaseFOV = true;
 	}
 
+	const float CurrentFOV = ViewCamera->FieldOfView;
+	ActiveViewSettings = Settings;
+	ActiveViewSettings.FocusFOV = FMath::Clamp(Settings.FocusFOV, 5.0f, 170.0f);
+	ActiveViewSettings.LookSensitivityMultiplier = FMath::Max(0.01f, Settings.LookSensitivityMultiplier);
+	ActiveViewSettings.EnterDuration = FMath::Max(0.0f, Settings.EnterDuration);
+	ActiveViewSettings.ExitDuration = FMath::Max(0.0f, Settings.ExitDuration);
+
+	// Still partly zoomed (a quick re-press, or another item while the last
+	// one blends out): start from the weight that gives the current FOV under
+	// the new settings, so the FOV doesn't jump. For the same item it's the
+	// same weight. A new item's sight alignment does start at this weight,
+	// so its arms move part way at once; rare (a swap is slower than the
+	// blend-out) and accepted.
+	if (FocusWeight > 0.0f && !FMath::IsNearlyEqual(ActiveViewSettings.FocusFOV, BaseFOV))
+	{
+		FocusWeight = FMath::Clamp((CurrentFOV - BaseFOV) / (ActiveViewSettings.FocusFOV - BaseFOV), 0.0f, 1.0f);
+	}
+
 	bFocusActive = true;
 	FocusSourceItem = SourceItem;
-	ConfigureSightAlignment(SourceItem, Settings.SightAlignment);
-	FocusTransitionDuration = FMath::Max(0.0f, Settings.TransitionDuration);
-	BeginViewBlend(FMath::Clamp(Settings.FocusFOV, 5.0f, 170.0f),
-		FMath::Max(0.01f, Settings.LookSensitivityMultiplier), FocusTransitionDuration);
+	ConfigureSightAlignment(SourceItem, ActiveViewSettings.SightAlignment);
+	// Entering maps Progress to Weight differently from leaving: re-solve so a
+	// reversal continues from the current view and takes only the time spent.
+	FocusProgress = EnclaveFocusBlend::ProgressForWeight(FocusWeight, /*bEntering=*/true, ActiveViewSettings);
+	StartFocusBlend();
 }
 
 void UEnclaveViewComponent::EndFocus(AEnclaveItem* SourceItem, bool bSourcePresentationRemoved)
@@ -140,13 +160,15 @@ void UEnclaveViewComponent::ResetFocus(bool bImmediate)
 		}
 		CurrentSensitivityMultiplier = 1.0f;
 		bHasBaseFOV = false;
-		bViewBlendInProgress = false;
+		FocusProgress = 0.0f;
+		FocusWeight = 0.0f;
 		RestoreSightAlignment();
 		UpdateTickEnabled();
 		return;
 	}
 
-	BeginViewBlend(BaseFOV, 1.0f, FocusTransitionDuration);
+	FocusProgress = EnclaveFocusBlend::ProgressForWeight(FocusWeight, /*bEntering=*/false, ActiveViewSettings);
+	StartFocusBlend();
 }
 
 void UEnclaveViewComponent::ConfigureSightAlignment(AEnclaveItem* SourceItem, const FEnclaveFocusSightAlignmentSettings& Settings)
@@ -196,12 +218,9 @@ void UEnclaveViewComponent::RestoreSightAlignment()
 	bSightAlignmentBound = false;
 	bHasSightCalibration = false;
 	AlignmentSourceItem.Reset();
-	CurrentSightAlignmentAlpha = 0.0f;
-	BlendStartSightAlignmentAlpha = 0.0f;
-	BlendTargetSightAlignmentAlpha = 0.0f;
 }
 
-void UEnclaveViewComponent::ApplySightAlignment()
+void UEnclaveViewComponent::ApplySightAlignment(bool bEnteringAim)
 {
 	if (!bSightAlignmentBound)
 	{
@@ -221,7 +240,7 @@ void UEnclaveViewComponent::ApplySightAlignment()
 		return;
 	}
 
-	if (CurrentSightAlignmentAlpha <= KINDA_SMALL_NUMBER)
+	if (FocusWeight <= KINDA_SMALL_NUMBER)
 	{
 		FirstPersonMesh->SetRelativeTransform(BaseFirstPersonMeshRelativeTransform);
 		return;
@@ -231,8 +250,6 @@ void UEnclaveViewComponent::ApplySightAlignment()
 	// aim). Once aimed, hold the calibrated root offset fixed: otherwise
 	// tracking the animated sight every frame would cancel visible recoil and
 	// authored weapon sway by moving the entire arms mesh in opposition.
-	const bool bEnteringAim = bViewBlendInProgress && bFocusActive &&
-		BlendTargetSightAlignmentAlpha > BlendStartSightAlignmentAlpha;
 	if (!bHasSightCalibration || bEnteringAim)
 	{
 		// Weapon FP mesh -> hand socket -> arms mesh -> camera. Solve the
@@ -252,7 +269,7 @@ void UEnclaveViewComponent::ApplySightAlignment()
 
 	FTransform BlendedArmsInCamera;
 	BlendedArmsInCamera.Blend(BaseFirstPersonMeshRelativeTransform, CalibratedFirstPersonMeshRelativeTransform,
-		FMath::Clamp(CurrentSightAlignmentAlpha, 0.0f, 1.0f));
+		FMath::Clamp(FocusWeight, 0.0f, 1.0f));
 	FirstPersonMesh->SetRelativeTransform(BlendedArmsInCamera);
 }
 
@@ -260,40 +277,48 @@ void UEnclaveViewComponent::UpdateTickEnabled()
 {
 	// Keep a lightweight validity check during Focus. The calibrated ADS
 	// offset stays fixed at full aim so recoil/sway animation is not negated.
-	SetComponentTickEnabled(bViewBlendInProgress || bSightAlignmentBound);
+	SetComponentTickEnabled(IsFocusBlending() || bSightAlignmentBound);
 }
 
-void UEnclaveViewComponent::BeginViewBlend(float InFOV, float InSensitivity, float Duration)
+void UEnclaveViewComponent::StartFocusBlend()
 {
 	if (!IsValid(ViewCamera))
 	{
 		return;
 	}
 
-	BlendStartFOV = ViewCamera->FieldOfView;
-	BlendStartSensitivity = CurrentSensitivityMultiplier;
-	BlendTargetFOV = InFOV;
-	BlendTargetSensitivity = InSensitivity;
-	BlendStartSightAlignmentAlpha = CurrentSightAlignmentAlpha;
-	BlendTargetSightAlignmentAlpha = bFocusActive && bSightAlignmentBound ? 1.0f : 0.0f;
-	BlendDuration = Duration;
-	BlendElapsed = 0.0f;
-	bViewBlendInProgress = Duration > KINDA_SMALL_NUMBER;
-
-	if (!bViewBlendInProgress)
+	const float Duration = bFocusActive ? ActiveViewSettings.EnterDuration : ActiveViewSettings.ExitDuration;
+	if (Duration <= KINDA_SMALL_NUMBER)
 	{
-		ViewCamera->SetFieldOfView(BlendTargetFOV);
-		CurrentSensitivityMultiplier = BlendTargetSensitivity;
-		CurrentSightAlignmentAlpha = BlendTargetSightAlignmentAlpha;
-		ApplySightAlignment();
-		if (!bFocusActive)
-		{
-			bHasBaseFOV = false;
-			RestoreSightAlignment();
-		}
+		// Instant: arrive now rather than on the next tick.
+		AdvanceFocus(0.0f);
+		ApplySightAlignment(/*bEnteringAim=*/false);
+		FinishFocusIfOut();
 	}
 
 	UpdateTickEnabled();
+}
+
+void UEnclaveViewComponent::AdvanceFocus(float DeltaTime)
+{
+	const float Target = bFocusActive ? 1.0f : 0.0f;
+	const float Duration = bFocusActive ? ActiveViewSettings.EnterDuration : ActiveViewSettings.ExitDuration;
+	FocusProgress = Duration > KINDA_SMALL_NUMBER
+		? FMath::FInterpConstantTo(FocusProgress, Target, DeltaTime, 1.0f / Duration)
+		: Target;
+	FocusWeight = EnclaveFocusBlend::Weight(FocusProgress, bFocusActive, ActiveViewSettings);
+
+	ViewCamera->SetFieldOfView(FMath::Lerp(BaseFOV, ActiveViewSettings.FocusFOV, FocusWeight));
+	CurrentSensitivityMultiplier = FMath::Lerp(1.0f, ActiveViewSettings.LookSensitivityMultiplier, FocusWeight);
+}
+
+void UEnclaveViewComponent::FinishFocusIfOut()
+{
+	if (!bFocusActive && FocusProgress <= 0.0f)
+	{
+		bHasBaseFOV = false;
+		RestoreSightAlignment();
+	}
 }
 
 void UEnclaveViewComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -305,34 +330,15 @@ void UEnclaveViewComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		return;
 	}
 
-	bool bCompletedBlendThisTick = false;
-	if (bViewBlendInProgress)
+	// Read before advancing, so the frame that arrives at full aim still
+	// samples the animated sight before the calibration is frozen.
+	const bool bEnteringAim = bFocusActive && FocusProgress < 1.0f;
+	if (IsFocusBlending())
 	{
-		BlendElapsed += DeltaTime;
-		const float Alpha = FMath::Clamp(BlendElapsed / BlendDuration, 0.0f, 1.0f);
-		ViewCamera->SetFieldOfView(FMath::Lerp(BlendStartFOV, BlendTargetFOV, Alpha));
-		CurrentSensitivityMultiplier = FMath::Lerp(BlendStartSensitivity, BlendTargetSensitivity, Alpha);
-		CurrentSightAlignmentAlpha = FMath::Lerp(BlendStartSightAlignmentAlpha, BlendTargetSightAlignmentAlpha, Alpha);
-
-		if (Alpha >= 1.0f)
-		{
-			bCompletedBlendThisTick = true;
-			if (!bFocusActive)
-			{
-				bHasBaseFOV = false;
-			}
-		}
+		AdvanceFocus(DeltaTime);
 	}
 
-	// Sample the last entering frame before freezing the root calibration.
-	ApplySightAlignment();
-	if (bCompletedBlendThisTick)
-	{
-		bViewBlendInProgress = false;
-	}
-	if (!bFocusActive && !bViewBlendInProgress)
-	{
-		RestoreSightAlignment();
-	}
+	ApplySightAlignment(bEnteringAim);
+	FinishFocusIfOut();
 	UpdateTickEnabled();
 }

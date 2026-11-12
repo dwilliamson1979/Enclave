@@ -50,9 +50,16 @@ public:
 private:
 	void RebuildInputFilters();
 	bool HandleLookInput(const FEnclaveInputEvent& InputEvent);
-	void BeginViewBlend(float InFOV, float InSensitivity, float Duration);
+	/** Starts moving toward bFocusActive's end from the current weight; instant when the duration is 0. */
+	void StartFocusBlend();
+	/** Moves Progress by DeltaTime and applies the eased weight to the FOV and look sensitivity. */
+	void AdvanceFocus(float DeltaTime);
+	/** Once fully out of Focus, forgets the base FOV and restores the arms. */
+	void FinishFocusIfOut();
+	bool IsFocusBlending() const { return bFocusActive ? FocusProgress < 1.0f : FocusProgress > 0.0f; }
 	void ConfigureSightAlignment(AEnclaveItem* SourceItem, const FEnclaveFocusSightAlignmentSettings& Settings);
-	void ApplySightAlignment();
+	/** bEnteringAim: this frame is part of the blend into Focus, so the sight calibration follows the animated pose. */
+	void ApplySightAlignment(bool bEnteringAim);
 	void RestoreSightAlignment();
 	void UpdateTickEnabled();
 
@@ -79,20 +86,16 @@ private:
 	FTransform CalibratedFirstPersonMeshRelativeTransform = FTransform::Identity;
 	bool bSightAlignmentBound = false;
 	bool bHasSightCalibration = false;
-	float CurrentSightAlignmentAlpha = 0.0f;
-	float BlendStartSightAlignmentAlpha = 0.0f;
-	float BlendTargetSightAlignmentAlpha = 0.0f;
 
-	bool bViewBlendInProgress = false;
+	// One transition drives FOV, look sensitivity and sight alignment (see
+	// EnclaveFocusBlend). bFocusActive is the direction: true blends in.
+	// ActiveViewSettings is the Focus being blended in or out; it is kept
+	// after Focus ends so the way out uses the same FOV and easing.
+	FEnclaveFocusViewSettings ActiveViewSettings;
+	float FocusProgress = 0.0f;
+	float FocusWeight = 0.0f;
 	bool bFocusActive = false;
 	bool bHasBaseFOV = false;
 	float BaseFOV = 90.0f;
-	float FocusTransitionDuration = 0.2f;
 	float CurrentSensitivityMultiplier = 1.0f;
-	float BlendStartSensitivity = 1.0f;
-	float BlendTargetSensitivity = 1.0f;
-	float BlendStartFOV = 90.0f;
-	float BlendTargetFOV = 90.0f;
-	float BlendDuration = 0.0f;
-	float BlendElapsed = 0.0f;
 };
