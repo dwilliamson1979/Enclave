@@ -148,8 +148,9 @@ private:
 	 * history within MatchSettings.KillCreditWindowSeconds; otherwise the
 	 * killing blow's attacker (yourself, a teammate, or null for no player).
 	 */
-	AEnclaveMatchPlayerState* ResolveKillCredit(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState,
-		AEnclaveMatchPlayerState* KillingBlowAttacker) const;
+	AEnclaveMatchPlayerState* ResolveKillCredit(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState, AEnclaveMatchPlayerState* KillingBlowAttacker) const;
+
+	void AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState, AEnclaveMatchPlayerState* Attacker);
 
 	/** Respawn timer callback: respawns the player if they are still here and the match is still in progress. */
 	void RespawnAfterDeath(TWeakObjectPtr<AController> Controller);

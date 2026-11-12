@@ -67,6 +67,12 @@ struct ENCLAVE_API FEnclaveMatchSettings
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
 	int32 KillCreditWindowSeconds = 5;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
+	int32 AssistWindowSeconds = 10;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0", ForceUnits = "s"))
+	int32 AssistDamagePercent = 25;
+
 	/** Applies the URL options above. Invalid values are logged and the current value is kept. */
 	void ApplyOptions(const FString& Options);
 

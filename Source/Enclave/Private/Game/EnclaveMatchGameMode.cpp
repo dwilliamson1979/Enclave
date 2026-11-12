@@ -377,8 +377,58 @@ AEnclaveMatchPlayerState* AEnclaveMatchGameMode::ResolveKillCredit(const APawn& 
 		const AEnclaveMatchPlayerState* MatchAttacker = Cast<AEnclaveMatchPlayerState>(&Attacker);
 		return MatchAttacker && MatchAttacker->IsHostileTo(&VictimPlayerState);
 	});
-
+	
 	return RecentEnemy ? CastChecked<AEnclaveMatchPlayerState>(RecentEnemy) : KillingBlowAttacker;
+}
+
+void AEnclaveMatchGameMode::AwardAssists(const APawn& Victim, const AEnclaveMatchPlayerState& VictimPlayerState, AEnclaveMatchPlayerState* Attacker)
+{
+	const UEnclaveDamageHistoryComponent* DamageHistory = Victim.FindComponentByClass<UEnclaveDamageHistoryComponent>();
+	if (!DamageHistory)
+	{
+		return;
+	}
+
+	//a.Read GetEntriesSince(Now - AssistWindowSeconds).It already exists and returns the matching entries without copying them, so the history needs no new query.
+	//	b.Add up HealthDamage per attacker.A TMap<APlayerState*, float> is fine for at most 64 entries.
+	//	c.Skip entries with no attacker or one who has left, the killer(they have the kill), and anyone not hostile to the victim(yourself, teammates).
+	//	d.Give an assist to each attacker at or above the threshold.
+	//How do I iterate over this and get the player state of the damager? I want to call AddAssist() on the damager's player state if they are hostile to the victim and not the attacker.
+	auto Attackers =DamageHistory->GetEntriesSince(GetWorld()->GetTimeSeconds() - MatchSettings.KillCreditWindowSeconds);
+
+	if(Attackers.Num() == 0)
+	{
+		return;
+	}
+
+	TMap<AEnclaveMatchPlayerState*, float> DamagePerAttacker;
+	float TotalDamage = 0.0f;
+	for (auto AttackerEntry : Attackers)
+	{
+		if(AttackerEntry.Attacker == nullptr || AttackerEntry.Attacker == Attacker || !AttackerEntry.Attacker.IsValid())
+		{
+			continue;
+		}
+
+		const APlayerState* Damager = AttackerEntry.Attacker.Get();
+		const AEnclaveMatchPlayerState* EnclaveDamager = Cast<AEnclaveMatchPlayerState>(Damager);
+		if (EnclaveDamager && EnclaveDamager->IsHostileTo(&VictimPlayerState))
+		{
+			DamagePerAttacker.FindOrAdd(EnclaveDamager) += AttackerEntry.HealthDamage;
+			TotalDamage += AttackerEntry.HealthDamage; //Are we certain healing (negative damage) is not recorded in the history? If so, this is fine. If not, we need to check if HealthDamage is negative before adding it to TotalDamage.
+		}
+	}
+
+	for (auto& Pair : DamagePerAttacker)
+	{
+		AEnclaveMatchPlayerState* AssistingPlayer = Pair.Key;
+		float AttackerTotalDamage = Pair.Value;
+		if (AttackerTotalDamage / TotalDamage >= MatchSettings.AssistDamagePercent)
+		{
+			AssistingPlayer->AddAssist();
+			UE_LOG(LogEnclaveMatch, Log, TEXT("Assist awarded to %s for dealing %.2f damage to %s."), *AssistingPlayer->GetPlayerName(), TotalDamage, *VictimPlayerState.GetPlayerName());
+		}
+	}
 }
 
 void AEnclaveMatchGameMode::RespawnAfterDeath(TWeakObjectPtr<AController> Controller)

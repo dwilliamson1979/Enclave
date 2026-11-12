@@ -27,6 +27,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Match")
 	int32 GetKills() const { return Kills; }
 
+	void AddAssist();
+	UFUNCTION(BlueprintPure, Category = "Match")
+	int32 GetAssists() const { return Assists; }
+
 	void AddDeath();
 	UFUNCTION(BlueprintPure, Category = "Match")
 	int32 GetDeaths() const { return Deaths; }
@@ -45,6 +49,9 @@ private:
 
 	UPROPERTY(Replicated)
 	int32 Kills = 0;
+
+	UPROPERTY(Replicated)
+	int32 Assists = 0;
 
 	UPROPERTY(Replicated)
 	int32 Deaths = 0;

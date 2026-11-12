@@ -17,6 +17,17 @@ void AEnclaveMatchPlayerState::AddKill()
 	Kills++;
 }
 
+void AEnclaveMatchPlayerState::AddAssist()
+{
+	if(!HasAuthority())
+	{
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("AddAssist called on non-authority PlayerState. This should only be called on the server."));
+		return;
+	}
+
+	Assists++;
+}
+
 void AEnclaveMatchPlayerState::AddDeath()
 {
 	if(!HasAuthority())
@@ -37,6 +48,7 @@ void AEnclaveMatchPlayerState::ResetMatchStats()
 	}
 
 	Kills = 0;
+	Assists = 0;
 	Deaths = 0;
 	SetScore(0.0f);
 }
@@ -57,6 +69,7 @@ void AEnclaveMatchPlayerState::CopyProperties(APlayerState* PlayerState)
 	if(AEnclaveMatchPlayerState* MatchPlayerState = Cast<AEnclaveMatchPlayerState>(PlayerState))
 	{
 		MatchPlayerState->Kills = Kills;
+		MatchPlayerState->Assists = Assists;
 		MatchPlayerState->Deaths = Deaths;
 	}
 }
@@ -66,5 +79,6 @@ void AEnclaveMatchPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProper
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AEnclaveMatchPlayerState, Kills);
+	DOREPLIFETIME(AEnclaveMatchPlayerState, Assists);
 	DOREPLIFETIME(AEnclaveMatchPlayerState, Deaths);
 }
