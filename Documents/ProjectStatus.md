@@ -302,6 +302,11 @@ C2 is built in three steps:
    a warmup death's timer firing after the start can't replace the fresh
    pawn. The warmup hit policy stays Simulate; switching it to Apply (practice
    fights) is a Blueprint change.
+   Fixed later: a listen host (and anyone kept over a seamless restart)
+   logs in before the world's BeginPlay, while still `EnteringMap`, so it
+   stayed a spectator through warmup; `HandleMatchIsWaitingToStart` now
+   spawns those players (one check, `ShouldSpawnForWarmup`, shared with
+   `HandleStartingNewPlayer`). Verified in PIE (listen host, restart, Warmup=0).
 
 C4 is built in seven steps (branch `c4-hud`): foundation, status bar (phase,
 timer, scores), health and ammo, kill feed, death/respawn countdown, Tab

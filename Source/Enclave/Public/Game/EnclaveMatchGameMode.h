@@ -107,6 +107,15 @@ protected:
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 
 	/**
+	 * Spawns the players who logged in before warmup began. A listen host (and
+	 * every player kept over a seamless restart) is started before the world's
+	 * BeginPlay (GameInstance.cpp:538 then 566), while the match is still
+	 * EnteringMap, so HandleStartingNewPlayer had nothing to do for them;
+	 * StartPlay moves to WaitingToStart only afterwards (GameMode.cpp:136-139).
+	 */
+	virtual void HandleMatchIsWaitingToStart() override;
+
+	/**
 	 * Polled every frame while InProgress, so a match has one way to end, whatever
 	 * changed (a kill, an objective, a player leaving, added time). Works out
 	 * whether the time limit is reached and asks the mode's CheckWinCondition.
@@ -221,6 +230,9 @@ private:
 
 	/** Warmup or in progress: the phases where players spawn and respawn. */
 	bool IsSpawningPhase() const { return GetMatchState() == MatchState::WaitingToStart || IsMatchInProgress(); }
+
+	/** During warmup: a player with no pawn who may play (not a spectator) and may restart. */
+	bool ShouldSpawnForWarmup(APlayerController* Player);
 
 	/** Cancels a running warmup countdown, if any. */
 	void CancelWarmup(AEnclaveMatchGameState& MatchGameState);
