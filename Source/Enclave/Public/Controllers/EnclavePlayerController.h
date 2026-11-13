@@ -16,6 +16,10 @@ class UEnclaveCombatFeedbackComponent;
 class AEnclaveCharacter;
 class UEnclaveSSRTestSubsystem;
 class UEnclaveSSRTestComponent;
+class APlayerState;
+
+/** The owning client's PlayerState replicated or was replaced. Local only. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnEnclavePlayerStateChangedSignature, APlayerState* /*NewPlayerState*/);
 
 UCLASS()
 class ENCLAVE_API AEnclavePlayerController : public APlayerController
@@ -28,6 +32,14 @@ class ENCLAVE_API AEnclavePlayerController : public APlayerController
 public:
 
 	AEnclavePlayerController();
+
+	/**
+	 * Fired on the owning client when PlayerState replicates (the engine has
+	 * only the OnRep_PlayerState virtual, Controller.cpp). Not fired on the
+	 * server: there the PlayerState is created in PostInitializeComponents
+	 * (PlayerController.cpp), before the HUD or anything else can listen.
+	 */
+	FOnEnclavePlayerStateChangedSignature OnPlayerStateChanged;
 	UEnclaveSSRTestComponent* GetSSRTestComponent() const { return SSRTestComponent; }
 
 	/**
@@ -135,6 +147,7 @@ protected:
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void AcknowledgePossession(APawn* P) override;
 	virtual void OnUnPossess() override;
+	virtual void OnRep_PlayerState() override;
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;

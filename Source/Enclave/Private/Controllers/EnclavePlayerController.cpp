@@ -856,6 +856,13 @@ void AEnclavePlayerController::AcknowledgePossession(APawn* P)
 	RefreshPossessedPawnInputState();
 }
 
+void AEnclavePlayerController::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	OnPlayerStateChanged.Broadcast(PlayerState);
+}
+
 void AEnclavePlayerController::OnUnPossess()
 {
 #if ENCLAVE_INCLUDE_DEBUG_CODE

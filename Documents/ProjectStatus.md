@@ -48,7 +48,7 @@ times in a row with clean logs.
 | U6 | Kill credit: damage history, last-damager credit, later assists | Done (three moments, below) |
 | C2 | Spawn selection | Done (three steps, below) |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
-| C4 | HUD C++ base | Not started |
+| C4 | HUD C++ base | In progress (step 1 of 7, below) |
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
 | C6 | Graybox arena map | First pass generated: `TDM_TwinBases`, `DM_Pinwheel` (below) |
@@ -302,6 +302,23 @@ C2 is built in three steps:
    a warmup death's timer firing after the start can't replace the fresh
    pawn. The warmup hit policy stays Simulate; switching it to Apply (practice
    fights) is a Blueprint change.
+
+C4 is built in seven steps (branch `c4-hud`): foundation, status bar (phase,
+timer, scores), health and ammo, kill feed, death/respawn countdown, Tab
+scoreboard, end screen (with the freeze and the camera on the winner).
+
+1. Foundation. Done. `AEnclaveHUD` (one per local player, recreated each
+   match by `ClientSetHUD`) creates the root layout from its `LayoutClass`
+   (`BP_EnclaveHUD` in `Content/Enclave/UI`, layout widgets in `UI/HUD`) and
+   is the one place that watches match data arrive: the world's
+   `GameStateSetEvent`, the controller's new `OnPlayerStateChanged` (fired
+   from `OnRep_PlayerState`; the engine has no delegate) and
+   `OnPossessedPawnChanged`. It pushes each into the layout, and every
+   `UEnclaveHUDWidget` passes the context down its tree and reacts in
+   `OnGameStateChanged`, `OnPlayerStateChanged` and `OnPawnChanged` (null
+   pawn while dead). Widgets never bind to engine hooks themselves. All
+   player-facing UI is UMG; the canvas keeps only the temporary reticle.
+   Verified in PIE (two clients, death and respawn, match restart).
 
 C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
 `CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the
