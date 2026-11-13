@@ -44,6 +44,23 @@ void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Opti
 	}
 }
 
+void AEnclaveMatchGameMode::InitGameState()
+{
+	Super::InitGameState();
+
+	// The GameState doesn't exist yet in InitGame: on a map load the GameMode
+	// is spawned before actors are initialized (World.cpp:5931), so its
+	// PreInitializeComponents, which spawns the GameState and then calls this
+	// (GameModeBase.cpp:132-144), is deferred to RouteActorInitialize
+	// (Actor.cpp:4436-4440, World.cpp:6041), after InitGame (World.cpp:6034).
+	// The settings are parsed by now.
+	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
+	if (ensureMsgf(MatchGameState, TEXT("AEnclaveMatchGameMode needs an AEnclaveMatchGameState; the score limit was not published.")))
+	{
+		MatchGameState->SetScoreLimit(MatchSettings.ScoreLimit);
+	}
+}
+
 bool AEnclaveMatchGameMode::ReadyToStartMatch_Implementation()
 {
 	AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>();
@@ -459,7 +476,7 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	const bool bSuicide = !AttackerPlayerState || AttackerPlayerState == VictimPlayerState;
 	if (bSuicide && MatchSettings.SuicideScore != 0)
 	{
-		VictimPlayerState->SetScore(VictimPlayerState->GetScore() + static_cast<float>(MatchSettings.SuicideScore));
+		VictimPlayerState->AddScore(MatchSettings.SuicideScore);
 	}
 
 	// The mode sees every death, so it can also penalize team kills.
@@ -591,7 +608,7 @@ void AEnclaveMatchGameMode::AwardAssists(const APawn& Victim, const AEnclaveMatc
 			// Player score only: the team already scored the kill.
 			if (MatchSettings.AssistScore != 0)
 			{
-				Pair.Key->SetScore(Pair.Key->GetScore() + static_cast<float>(MatchSettings.AssistScore));
+				Pair.Key->AddScore(MatchSettings.AssistScore);
 			}
 			AssistList += FString::Printf(TEXT("%s%s (%.0f, score %.0f)"), AssistList.IsEmpty() ? TEXT("") : TEXT(", "),
 				*Pair.Key->GetPlayerName(), Pair.Value, Pair.Key->GetScore());

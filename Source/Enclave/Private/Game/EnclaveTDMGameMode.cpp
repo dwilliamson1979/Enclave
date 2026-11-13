@@ -27,5 +27,5 @@ void AEnclaveTDMGameMode::ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclave
 	// scoreboard. APlayerState's Score is already replicated (a float, exact
 	// for whole numbers far beyond any match).
 	TeamGameState->AddTeamScore(TeamAttacker->GetTeamId(), 1);
-	Attacker->SetScore(Attacker->GetScore() + 1.0f);
+	Attacker->AddScore(1);
 }

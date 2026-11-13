@@ -13,6 +13,10 @@
  * APlayerState::Score.
  *
  * The match GameMode is the only writer (the setters are authority-only).
+ * Change the score only through AddScore (or ResetMatchStats), never
+ * APlayerState::SetScore: SetScore is not virtual (PlayerState.h), so this
+ * class can't see it, and every change must reach the GameState's
+ * OnPlayerScoreChanged. Clients report it from OnRep_Score.
  */
 UCLASS()
 class ENCLAVE_API AEnclaveMatchPlayerState : public AEnclavePlayerState
@@ -35,6 +39,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Match")
 	int32 GetDeaths() const { return Deaths; }
 
+	/** Adds Points (negative to take away) to the score. Authority only. */
+	void AddScore(int32 Points);
+
+	virtual void OnRep_Score() override;
+
 	/** Zeroes this match's stats: kills, deaths and score. Authority only. */
 	void ResetMatchStats();
 
@@ -46,6 +55,9 @@ protected:
 	virtual void CopyProperties(APlayerState* PlayerState) override;
 
 private:
+
+	/** Sets the score and reports it, as OnRep_Score does on clients. */
+	void SetMatchScore(float NewScore);
 
 	UPROPERTY(Replicated)
 	int32 Kills = 0;

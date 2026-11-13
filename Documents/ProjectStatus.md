@@ -324,6 +324,37 @@ scoreboard, end screen (with the freeze and the camera on the winner).
    pawn while dead). Widgets never bind to engine hooks themselves. All
    player-facing UI is UMG; the canvas keeps only the temporary reticle.
    Verified in PIE (two clients, death and respawn, match restart).
+2. Status bar, in three parts. (a) Timer done: `AEnclaveMatchGameState`
+   fires `OnPhaseChanged` when `MatchState` or `PhaseEndServerTime` changes
+   (OnReps on clients; on the server `SetMatchState` and
+   `SetPhaseEndServerTime` call the OnReps themselves).
+   `UEnclaveMatchTimerWidget` (`WBP_MatchTimer`) sets the phase label on it
+   and computes the countdown each tick from the server clock, setting the
+   text only when the second changes. HUD widgets don't tick unless they
+   need to (`DisableNativeTick` on the base). Verified in PIE: warmup, time
+   limit, post-match, restart, listen host, and a late join (Play
+   Standalone with Launch Separate Server, then `open 127.0.0.1:17777`).
+   (b) Team scores done: `AEnclaveMatchGameState` replicates `ScoreLimit`
+   (set in `InitGameState`: on a map load the GameState is spawned after
+   `InitGame`, not before) with `OnScoreLimitChanged`; `AEnclaveTeamGameState`
+   fires `OnTeamScoresChanged`. `UEnclaveTeamScoreWidget` (`WBP_TeamScore`)
+   makes one `WBP_TeamScoreEntry` per team and marks the local team (again
+   on the PlayerState's `OnTeamChanged`). One layout per mode:
+   `WBP_HUDLayout` has a Named Slot `ScoreSlot` that the child layout
+   `WBP_HUDLayout_TDM` fills, chosen by `BP_EnclaveHUD_TDM`. Bound widgets
+   are `BlueprintReadOnly` so Blueprints can style them (the compiler uses
+   the C++ property and makes no variable). Verified in PIE (listen host,
+   kills, score limit, late join, DM unchanged).
+   (c) Solo scores done: scores change only through
+   `AEnclaveMatchPlayerState::AddScore` (`SetScore` is not virtual), which
+   reports to the GameState's `OnPlayerScoreChanged` (clients from
+   `OnRep_Score`); the GameState also fires `OnPlayersChanged` from its
+   `AddPlayerState`/`RemovePlayerState` overrides. `UEnclaveSoloScoreWidget`
+   (`WBP_SoloScore`, in `WBP_HUDLayout_DM` via `BP_EnclaveHUD_DM`) shows your
+   score beside the best other player's ("Leader", or "2nd" while you lead).
+   The score limit moved to its own `UEnclaveScoreLimitWidget` in the shared
+   layout, since every mode has one. Verified in PIE (lead changes, suicide
+   score, a leaver, restart, late join, TDM unchanged). Step 2 done.
 
 C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
 `CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the

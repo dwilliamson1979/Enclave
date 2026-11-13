@@ -16,5 +16,5 @@ void AEnclaveDMGameMode::ScoreKill(AEnclaveMatchPlayerState* Attacker, AEnclaveM
 
 	// APlayerState's Score is replicated, and it is what the solo win check
 	// reads, so the result can't disagree with the scoreboard.
-	Attacker->SetScore(Attacker->GetScore() + 1.0f);
+	Attacker->AddScore(1);
 }

@@ -91,6 +91,13 @@ in [ProjectStatus.md](ProjectStatus.md).
 
 ## Gotchas
 
+- **The GameState doesn't exist in `InitGame`** on a map load: the GameMode is
+  spawned before actors are initialized (`World.cpp:5931`), so its
+  `PreInitializeComponents`, which spawns the GameState and calls
+  `InitGameState` (`GameModeBase.cpp:132-144`), is deferred until after
+  `InitGame` (`World.cpp:6034`, then `:6041`). Parse options in `InitGame`;
+  write anything to the GameState in `InitGameState`.
+
 - **Headless editor Python checks** need `UnrealEditor.exe` (not `-Cmd`), for
   example in PowerShell:
   `Start-Process -FilePath "D:\UnrealEngine\Versions\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe" -ArgumentList "`"D:\Repos\Unreal\Enclave\Enclave.uproject`"", "-ExecutePythonScript=`"<script.py>`"", "-unattended", "-nosplash", "-nullrhi", "-log=X.log" -Wait`,

@@ -7,6 +7,8 @@
 #include "Player/EnclaveTeamPlayerState.h"
 #include "EnclaveTeamGameState.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclaveTeamScoresChangedSignature);
+
 /**
  * Replicated state for team modes (used with AEnclaveTeamMatchGameMode): one
  * score per team and the winning team.
@@ -14,6 +16,9 @@
  * Team IDs are sequential from 0, so TeamScores is indexed by team ID (a TMap
  * can't replicate). WinningTeam == NoTeam while the match state is
  * WaitingPostMatch is a draw; before that it means "no result yet".
+ *
+ * OnTeamScoresChanged fires when any score or the number of teams changes, on
+ * clients (OnRep) and on the server (InitTeams and AddTeamScore call it).
  */
 UCLASS()
 class ENCLAVE_API AEnclaveTeamGameState : public AEnclaveMatchGameState
@@ -40,9 +45,15 @@ public:
 	/** NoTeam = no winner (a draw). Authority only. */
 	void SetWinningTeam(uint8 TeamId);
 
+	UPROPERTY(BlueprintAssignable, Category = "Match")
+	FOnEnclaveTeamScoresChangedSignature OnTeamScoresChanged;
+
 private:
 
-	UPROPERTY(Replicated)
+	UFUNCTION()
+	void OnRep_TeamScores();
+
+	UPROPERTY(ReplicatedUsing = OnRep_TeamScores)
 	TArray<int32> TeamScores;
 
 	UPROPERTY(Replicated)
