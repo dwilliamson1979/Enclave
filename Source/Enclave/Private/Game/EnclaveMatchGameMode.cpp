@@ -150,11 +150,33 @@ void AEnclaveMatchGameMode::HandleStartingNewPlayer_Implementation(APlayerContro
 	// check the phase after it. The same spectator checks as AGameMode's.
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
 
-	if (GetMatchState() == MatchState::WaitingToStart && IsValid(NewPlayer) && !NewPlayer->GetPawn()
-		&& !bStartPlayersAsSpectators && !MustSpectate(NewPlayer) && PlayerCanRestart(NewPlayer))
+	if (ShouldSpawnForWarmup(NewPlayer))
 	{
 		RestartPlayer(NewPlayer);
 	}
+}
+
+void AEnclaveMatchGameMode::HandleMatchIsWaitingToStart()
+{
+	Super::HandleMatchIsWaitingToStart();
+
+	// With no warmup, StartPlay starts the match right after this and that
+	// spawns everyone (removing any warmup pawn), so spawning here is harmless.
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* Player = It->Get();
+		if (ShouldSpawnForWarmup(Player))
+		{
+			RestartPlayer(Player);
+		}
+	}
+}
+
+bool AEnclaveMatchGameMode::ShouldSpawnForWarmup(APlayerController* Player)
+{
+	// The same spectator checks as AGameMode::HandleStartingNewPlayer.
+	return GetMatchState() == MatchState::WaitingToStart && IsValid(Player) && !Player->GetPawn()
+		&& !bStartPlayersAsSpectators && !MustSpectate(Player) && PlayerCanRestart(Player);
 }
 
 bool AEnclaveMatchGameMode::ReadyToEndMatch_Implementation()
