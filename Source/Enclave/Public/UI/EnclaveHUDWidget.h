@@ -25,8 +25,12 @@ class UWidgetTree;
  *
  * GetOwningPlayerPawn / GetOwningPlayerState (UUserWidget) read the controller
  * directly and give no notification; prefer the Context getters here.
+ *
+ * Not ticked: DisableNativeTick is read only from the nearest native class
+ * (WidgetBlueprint.cpp, bClassRequiresNativeTick), so a subclass that needs
+ * NativeTick (a countdown) simply leaves the flag off.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class ENCLAVE_API UEnclaveHUDWidget : public UUserWidget
 {
 	GENERATED_BODY()

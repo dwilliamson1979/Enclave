@@ -14,7 +14,24 @@ void AEnclaveMatchGameState::SetPhaseEndServerTime(double ServerTime)
 		return;
 	}
 
-	PhaseEndServerTime = ServerTime;
+	if (PhaseEndServerTime != ServerTime)
+	{
+		PhaseEndServerTime = ServerTime;
+		// The server gets no OnRep; call it so the listen host's HUD hears it.
+		OnRep_PhaseEndServerTime();
+	}
+}
+
+void AEnclaveMatchGameState::OnRep_MatchState()
+{
+	Super::OnRep_MatchState();
+
+	OnPhaseChanged.Broadcast();
+}
+
+void AEnclaveMatchGameState::OnRep_PhaseEndServerTime()
+{
+	OnPhaseChanged.Broadcast();
 }
 
 void AEnclaveMatchGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

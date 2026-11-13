@@ -319,6 +319,17 @@ scoreboard, end screen (with the freeze and the camera on the winner).
    pawn while dead). Widgets never bind to engine hooks themselves. All
    player-facing UI is UMG; the canvas keeps only the temporary reticle.
    Verified in PIE (two clients, death and respawn, match restart).
+2. Status bar, in three parts. (a) Timer done: `AEnclaveMatchGameState`
+   fires `OnPhaseChanged` when `MatchState` or `PhaseEndServerTime` changes
+   (OnReps on clients; on the server `SetMatchState` and
+   `SetPhaseEndServerTime` call the OnReps themselves).
+   `UEnclaveMatchTimerWidget` (`WBP_MatchTimer`) sets the phase label on it
+   and computes the countdown each tick from the server clock, setting the
+   text only when the second changes. HUD widgets don't tick unless they
+   need to (`DisableNativeTick` on the base). Verified in PIE: warmup, time
+   limit, post-match, restart, listen host, and a late join (Play
+   Standalone with Launch Separate Server, then `open 127.0.0.1:17777`).
+   Next: (b) team scores with a replicated `ScoreLimit`, (c) solo scores.
 
 C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
 `CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the

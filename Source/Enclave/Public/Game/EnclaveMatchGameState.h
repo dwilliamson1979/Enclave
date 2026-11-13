@@ -7,6 +7,7 @@
 #include "EnclaveMatchGameState.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveKillSignature, APlayerState*, Killer, APlayerState*, Victim);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclavePhaseChangedSignature);
 
 /**
  * Replicated facts every match has, whatever the mode: when the current phase
@@ -24,6 +25,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveKillSignature, APlayerSta
  * HUD reads MatchState to choose its label and computes the remaining time as
  * GetPhaseEndServerTime() - GetServerWorldTimeSeconds(), so the timer
  * replicates once per phase rather than every second.
+ *
+ * OnPhaseChanged fires when either MatchState or PhaseEndServerTime changes,
+ * on clients (OnReps) and on the server (SetMatchState calls OnRep_MatchState
+ * itself, GameState.cpp; SetPhaseEndServerTime does the same), so a listen
+ * host's HUD hears it too. The two can arrive in either order; read both.
  */
 UCLASS()
 class ENCLAVE_API AEnclaveMatchGameState : public AEnclaveGameState
@@ -44,8 +50,19 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Match")
 	FOnEnclaveKillSignature OnKill;
 
+	/** MatchState or PhaseEndServerTime changed. */
+	UPROPERTY(BlueprintAssignable, Category = "Match")
+	FOnEnclavePhaseChangedSignature OnPhaseChanged;
+
+protected:
+
+	virtual void OnRep_MatchState() override;
+
 private:
 
-	UPROPERTY(Replicated)
+	UFUNCTION()
+	void OnRep_PhaseEndServerTime();
+
+	UPROPERTY(ReplicatedUsing = OnRep_PhaseEndServerTime)
 	double PhaseEndServerTime = 0.0;
 };
