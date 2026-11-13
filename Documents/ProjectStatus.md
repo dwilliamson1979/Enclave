@@ -335,8 +335,8 @@ scoreboard, end screen (with the freeze and the camera on the winner).
    limit, post-match, restart, listen host, and a late join (Play
    Standalone with Launch Separate Server, then `open 127.0.0.1:17777`).
    (b) Team scores done: `AEnclaveMatchGameState` replicates `ScoreLimit`
-   (set at the end of `InitGame`, which parses the settings after the
-   GameState exists) with `OnScoreLimitChanged`; `AEnclaveTeamGameState`
+   (set in `InitGameState`: on a map load the GameState is spawned after
+   `InitGame`, not before) with `OnScoreLimitChanged`; `AEnclaveTeamGameState`
    fires `OnTeamScoresChanged`. `UEnclaveTeamScoreWidget` (`WBP_TeamScore`)
    makes one `WBP_TeamScoreEntry` per team and marks the local team (again
    on the PlayerState's `OnTeamChanged`). One layout per mode:

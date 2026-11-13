@@ -85,6 +85,9 @@ protected:
 	/** Applies match URL options on top of the defaults. See FEnclaveMatchSettings. */
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
+	/** Publishes the match settings clients show (the score limit). Runs after InitGame. */
+	virtual void InitGameState() override;
+
 	/**
 	 * Polled every frame while WaitingToStart. Runs the warmup countdown once
 	 * MinPlayersToStart are in, cancels it if the count drops below that, and
