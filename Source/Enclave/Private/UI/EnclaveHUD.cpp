@@ -2,9 +2,100 @@
 
 #include "UI/EnclaveHUD.h"
 
+#include "Controllers/EnclavePlayerController.h"
 #include "Engine/Canvas.h"
+#include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "UI/EnclaveHUDWidget.h"
+
+void AEnclaveHUD::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (!PlayerOwner || !PlayerOwner->IsLocalController() || !LayoutClass)
+	{
+		return;
+	}
+
+	Layout = CreateWidget<UEnclaveHUDWidget>(PlayerOwner, LayoutClass);
+	if (!Layout)
+	{
+		return;
+	}
+	// The owning player's part of the screen (all of it outside split screen).
+	Layout->AddToPlayerScreen();
+
+	// Watch for each piece arriving or changing. On a client any of them may
+	// still be on its way; the pawn also changes on every death and respawn.
+	// OnPossessedPawnChanged fires on the server from Possess/UnPossess and on
+	// the owning client from OnRep_Pawn (Controller.cpp, OnRep_Pawn).
+	UWorld* World = GetWorld();
+	GameStateSetHandle = World->GameStateSetEvent.AddUObject(this, &AEnclaveHUD::HandleGameStateSet);
+	if (AEnclavePlayerController* EnclaveController = Cast<AEnclavePlayerController>(PlayerOwner))
+	{
+		PlayerStateChangedHandle = EnclaveController->OnPlayerStateChanged.AddUObject(this, &AEnclaveHUD::HandlePlayerStateChanged);
+	}
+	PlayerOwner->OnPossessedPawnChanged.AddDynamic(this, &AEnclaveHUD::HandlePossessedPawnChanged);
+
+	// Then push what is already here: match, then player, then pawn, so a
+	// widget reacting to the pawn can already read the match.
+	Layout->SetContextGameState(World->GetGameState());
+	Layout->SetContextPlayerState(PlayerOwner->PlayerState);
+	Layout->SetContextPawn(PlayerOwner->GetPawn());
+}
+
+void AEnclaveHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GameStateSetEvent.Remove(GameStateSetHandle);
+	}
+	GameStateSetHandle.Reset();
+
+	if (PlayerOwner)
+	{
+		if (AEnclavePlayerController* EnclaveController = Cast<AEnclavePlayerController>(PlayerOwner))
+		{
+			EnclaveController->OnPlayerStateChanged.Remove(PlayerStateChangedHandle);
+		}
+		PlayerOwner->OnPossessedPawnChanged.RemoveDynamic(this, &AEnclaveHUD::HandlePossessedPawnChanged);
+	}
+	PlayerStateChangedHandle.Reset();
+
+	if (Layout)
+	{
+		Layout->RemoveFromParent();
+		Layout = nullptr;
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AEnclaveHUD::HandleGameStateSet(AGameStateBase* NewGameState)
+{
+	if (Layout)
+	{
+		Layout->SetContextGameState(NewGameState);
+	}
+}
+
+void AEnclaveHUD::HandlePlayerStateChanged(APlayerState* NewPlayerState)
+{
+	if (Layout)
+	{
+		Layout->SetContextPlayerState(NewPlayerState);
+	}
+}
+
+void AEnclaveHUD::HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
+{
+	if (Layout)
+	{
+		Layout->SetContextPawn(NewPawn);
+	}
+}
 
 void AEnclaveHUD::DrawHUD()
 {
