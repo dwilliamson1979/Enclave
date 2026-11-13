@@ -54,7 +54,6 @@ void UEnclaveTeamScoreWidget::OnGameStateChanged(AGameStateBase* OldGameState, A
 
 	// Show what is already there; the change events only cover what follows.
 	RefreshScores();
-	HandleScoreLimitChanged();
 
 	Super::OnGameStateChanged(OldGameState, NewGameState);
 }
@@ -75,7 +74,6 @@ void UEnclaveTeamScoreWidget::BindGameState(AEnclaveTeamGameState* GameState)
 	if (GameState)
 	{
 		GameState->OnTeamScoresChanged.AddUniqueDynamic(this, &UEnclaveTeamScoreWidget::HandleTeamScoresChanged);
-		GameState->OnScoreLimitChanged.AddUniqueDynamic(this, &UEnclaveTeamScoreWidget::HandleScoreLimitChanged);
 	}
 }
 
@@ -84,7 +82,6 @@ void UEnclaveTeamScoreWidget::UnbindGameState()
 	if (AEnclaveTeamGameState* GameState = TeamGameState.Get())
 	{
 		GameState->OnTeamScoresChanged.RemoveDynamic(this, &UEnclaveTeamScoreWidget::HandleTeamScoresChanged);
-		GameState->OnScoreLimitChanged.RemoveDynamic(this, &UEnclaveTeamScoreWidget::HandleScoreLimitChanged);
 	}
 	TeamGameState.Reset();
 }
@@ -110,26 +107,6 @@ void UEnclaveTeamScoreWidget::UnbindPlayerState()
 void UEnclaveTeamScoreWidget::HandleTeamScoresChanged()
 {
 	RefreshScores();
-}
-
-void UEnclaveTeamScoreWidget::HandleScoreLimitChanged()
-{
-	if (!ScoreLimitText)
-	{
-		return;
-	}
-
-	const AEnclaveTeamGameState* GameState = TeamGameState.Get();
-	const int32 ScoreLimit = GameState ? GameState->GetScoreLimit() : 0;
-	if (ScoreLimit > 0)
-	{
-		ScoreLimitText->SetText(FText::Format(ScoreLimitFormat, FText::AsNumber(ScoreLimit)));
-		ScoreLimitText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-	else
-	{
-		ScoreLimitText->SetVisibility(ESlateVisibility::Collapsed);
-	}
 }
 
 void UEnclaveTeamScoreWidget::HandleTeamChanged(AEnclaveTeamPlayerState* PlayerState, uint8 NewTeamId)

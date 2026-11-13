@@ -52,18 +52,17 @@ private:
 };
 
 /**
- * Team modes' scores: one entry per team, in team order, and the score limit.
- * Used only by team-mode layouts; solo modes have UEnclaveSoloScoreWidget, so
- * neither carries the other's concepts.
+ * Team modes' scores: one entry per team, in team order. Used only by
+ * team-mode layouts; solo modes have UEnclaveSoloScoreWidget, so neither
+ * carries the other's concepts. The score limit, which every mode has, is
+ * UEnclaveScoreLimitWidget in the shared layout.
  *
- * Updates on AEnclaveTeamGameState::OnTeamScoresChanged and
- * AEnclaveMatchGameState::OnScoreLimitChanged, and re-marks the local team on
- * the local PlayerState's OnTeamChanged (teams are assigned, and can be
- * rebalanced, after the HUD exists).
+ * Updates on AEnclaveTeamGameState::OnTeamScoresChanged, and re-marks the
+ * local team on the local PlayerState's OnTeamChanged (teams are assigned, and
+ * can be rebalanced, after the HUD exists).
  *
  * The Widget Blueprint must contain a panel named TeamList (a Horizontal Box,
- * say) and may contain a TextBlock named ScoreLimitText, hidden when there is
- * no score limit. Set EntryClass to a UEnclaveTeamScoreEntryWidget Blueprint.
+ * say). Set EntryClass to a UEnclaveTeamScoreEntryWidget Blueprint.
  */
 UCLASS(Abstract)
 class ENCLAVE_API UEnclaveTeamScoreWidget : public UEnclaveHUDWidget
@@ -78,22 +77,12 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD", meta = (BindWidget))
 	TObjectPtr<UPanelWidget> TeamList;
 
-	UPROPERTY(BlueprintReadOnly, Category = "HUD", meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> ScoreLimitText;
-
 	UPROPERTY(EditAnywhere, Category = "Score")
 	TSubclassOf<UEnclaveTeamScoreEntryWidget> EntryClass;
-
-	/** {0} is the score limit. */
-	UPROPERTY(EditAnywhere, Category = "Score")
-	FText ScoreLimitFormat = NSLOCTEXT("EnclaveHUD", "ScoreLimit", "First to {0}");
 
 private:
 	UFUNCTION()
 	void HandleTeamScoresChanged();
-
-	UFUNCTION()
-	void HandleScoreLimitChanged();
 
 	UFUNCTION()
 	void HandleTeamChanged(AEnclaveTeamPlayerState* PlayerState, uint8 NewTeamId);

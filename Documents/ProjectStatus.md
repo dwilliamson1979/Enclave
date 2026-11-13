@@ -345,7 +345,16 @@ scoreboard, end screen (with the freeze and the camera on the winner).
    are `BlueprintReadOnly` so Blueprints can style them (the compiler uses
    the C++ property and makes no variable). Verified in PIE (listen host,
    kills, score limit, late join, DM unchanged).
-   Next: (c) solo scores (your score, the leader's, the limit).
+   (c) Solo scores done: scores change only through
+   `AEnclaveMatchPlayerState::AddScore` (`SetScore` is not virtual), which
+   reports to the GameState's `OnPlayerScoreChanged` (clients from
+   `OnRep_Score`); the GameState also fires `OnPlayersChanged` from its
+   `AddPlayerState`/`RemovePlayerState` overrides. `UEnclaveSoloScoreWidget`
+   (`WBP_SoloScore`, in `WBP_HUDLayout_DM` via `BP_EnclaveHUD_DM`) shows your
+   score beside the best other player's ("Leader", or "2nd" while you lead).
+   The score limit moved to its own `UEnclaveScoreLimitWidget` in the shared
+   layout, since every mode has one. Verified in PIE (lead changes, suicide
+   score, a leaver, restart, late join, TDM unchanged). Step 2 done.
 
 C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
 `CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the

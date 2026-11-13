@@ -5,6 +5,7 @@
 #include "Net/UnrealNetwork.h"
 
 #include "Debug/EnclaveDebug.h"
+#include "Game/EnclaveMatchGameState.h"
 
 void AEnclaveMatchPlayerState::AddKill()
 {
@@ -39,6 +40,43 @@ void AEnclaveMatchPlayerState::AddDeath()
 	Deaths++;
 }
 
+void AEnclaveMatchPlayerState::AddScore(int32 Points)
+{
+	if(!HasAuthority())
+	{
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("AddScore called on non-authority PlayerState. This should only be called on the server."));
+		return;
+	}
+
+	if (Points != 0)
+	{
+		SetMatchScore(GetScore() + static_cast<float>(Points));
+	}
+}
+
+void AEnclaveMatchPlayerState::SetMatchScore(float NewScore)
+{
+	if (GetScore() != NewScore)
+	{
+		SetScore(NewScore);
+		// The server gets no OnRep; call it so the listen host's HUD hears it.
+		OnRep_Score();
+	}
+}
+
+void AEnclaveMatchPlayerState::OnRep_Score()
+{
+	Super::OnRep_Score();
+
+	// No GameState yet (it replicates separately): nothing is listening, and
+	// the HUD reads every score when the GameState arrives.
+	const UWorld* World = GetWorld();
+	if (AEnclaveMatchGameState* GameState = World ? World->GetGameState<AEnclaveMatchGameState>() : nullptr)
+	{
+		GameState->NotifyPlayerScoreChanged(this);
+	}
+}
+
 void AEnclaveMatchPlayerState::ResetMatchStats()
 {
 	if(!HasAuthority())
@@ -50,7 +88,7 @@ void AEnclaveMatchPlayerState::ResetMatchStats()
 	Kills = 0;
 	Assists = 0;
 	Deaths = 0;
-	SetScore(0.0f);
+	SetMatchScore(0.0f);
 }
 
 void AEnclaveMatchPlayerState::Reset()

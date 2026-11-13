@@ -476,7 +476,7 @@ void AEnclaveMatchGameMode::HandleAvatarDied(UEnclaveAvatarLifecycleComponent* L
 	const bool bSuicide = !AttackerPlayerState || AttackerPlayerState == VictimPlayerState;
 	if (bSuicide && MatchSettings.SuicideScore != 0)
 	{
-		VictimPlayerState->SetScore(VictimPlayerState->GetScore() + static_cast<float>(MatchSettings.SuicideScore));
+		VictimPlayerState->AddScore(MatchSettings.SuicideScore);
 	}
 
 	// The mode sees every death, so it can also penalize team kills.
@@ -608,7 +608,7 @@ void AEnclaveMatchGameMode::AwardAssists(const APawn& Victim, const AEnclaveMatc
 			// Player score only: the team already scored the kill.
 			if (MatchSettings.AssistScore != 0)
 			{
-				Pair.Key->SetScore(Pair.Key->GetScore() + static_cast<float>(MatchSettings.AssistScore));
+				Pair.Key->AddScore(MatchSettings.AssistScore);
 			}
 			AssistList += FString::Printf(TEXT("%s%s (%.0f, score %.0f)"), AssistList.IsEmpty() ? TEXT("") : TEXT(", "),
 				*Pair.Key->GetPlayerName(), Pair.Value, Pair.Key->GetScore());

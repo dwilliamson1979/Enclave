@@ -9,6 +9,8 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveKillSignature, APlayerState*, Killer, APlayerState*, Victim);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclavePhaseChangedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclaveScoreLimitChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclavePlayersChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnclavePlayerScoreChangedSignature, APlayerState*, PlayerState);
 
 /**
  * Replicated facts every match has, whatever the mode: when the current phase
@@ -36,6 +38,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclaveScoreLimitChangedSignature);
  * settings so clients can show it; every mode has one. It is set once per
  * match but still has an OnRep and OnScoreLimitChanged: the HUD may see this
  * GameState before its first properties arrive.
+ *
+ * OnPlayersChanged fires when a PlayerState joins or leaves PlayerArray, on
+ * every machine: the engine registers each PlayerState through the virtual
+ * AddPlayerState and RemovePlayerState (PlayerState.cpp: PostInitializeComponents,
+ * Destroyed, OnRep_bIsInactive), which this class overrides.
+ * OnPlayerScoreChanged fires when any player's score changes; the match
+ * PlayerState reports it (NotifyPlayerScoreChanged), so a HUD that ranks
+ * players binds here once instead of to every PlayerState.
  */
 UCLASS()
 class ENCLAVE_API AEnclaveMatchGameState : public AEnclaveGameState
@@ -67,6 +77,19 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Match")
 	FOnEnclaveScoreLimitChangedSignature OnScoreLimitChanged;
+
+	/** A PlayerState joined or left PlayerArray. */
+	UPROPERTY(BlueprintAssignable, Category = "Match")
+	FOnEnclavePlayersChangedSignature OnPlayersChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Match")
+	FOnEnclavePlayerScoreChangedSignature OnPlayerScoreChanged;
+
+	/** Called by AEnclaveMatchPlayerState when its score changes, on every machine. */
+	void NotifyPlayerScoreChanged(APlayerState* PlayerState);
+
+	virtual void AddPlayerState(APlayerState* PlayerState) override;
+	virtual void RemovePlayerState(APlayerState* PlayerState) override;
 
 protected:
 

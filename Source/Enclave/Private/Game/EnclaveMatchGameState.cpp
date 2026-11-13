@@ -42,6 +42,25 @@ void AEnclaveMatchGameState::OnRep_ScoreLimit()
 	OnScoreLimitChanged.Broadcast();
 }
 
+void AEnclaveMatchGameState::NotifyPlayerScoreChanged(APlayerState* PlayerState)
+{
+	OnPlayerScoreChanged.Broadcast(PlayerState);
+}
+
+void AEnclaveMatchGameState::AddPlayerState(APlayerState* PlayerState)
+{
+	Super::AddPlayerState(PlayerState);
+
+	OnPlayersChanged.Broadcast();
+}
+
+void AEnclaveMatchGameState::RemovePlayerState(APlayerState* PlayerState)
+{
+	Super::RemovePlayerState(PlayerState);
+
+	OnPlayersChanged.Broadcast();
+}
+
 void AEnclaveMatchGameState::OnRep_MatchState()
 {
 	Super::OnRep_MatchState();
