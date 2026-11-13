@@ -8,6 +8,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnclaveKillSignature, APlayerState*, Killer, APlayerState*, Victim);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclavePhaseChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclaveScoreLimitChangedSignature);
 
 /**
  * Replicated facts every match has, whatever the mode: when the current phase
@@ -30,6 +31,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnclavePhaseChangedSignature);
  * on clients (OnReps) and on the server (SetMatchState calls OnRep_MatchState
  * itself, GameState.cpp; SetPhaseEndServerTime does the same), so a listen
  * host's HUD hears it too. The two can arrive in either order; read both.
+ *
+ * ScoreLimit is the match's score limit (0 = none), copied from the match
+ * settings so clients can show it; every mode has one. It is set once per
+ * match but still has an OnRep and OnScoreLimitChanged: the HUD may see this
+ * GameState before its first properties arrive.
  */
 UCLASS()
 class ENCLAVE_API AEnclaveMatchGameState : public AEnclaveGameState
@@ -44,6 +50,11 @@ public:
 	double GetPhaseEndServerTime() const { return PhaseEndServerTime; }
 	void SetPhaseEndServerTime(double ServerTime);
 
+	UFUNCTION(BlueprintPure, Category = "Match")
+	int32 GetScoreLimit() const { return ScoreLimit; }
+	/** Authority only. */
+	void SetScoreLimit(int32 NewScoreLimit);
+
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastKill(APlayerState* Killer, APlayerState* Victim);
 
@@ -53,6 +64,9 @@ public:
 	/** MatchState or PhaseEndServerTime changed. */
 	UPROPERTY(BlueprintAssignable, Category = "Match")
 	FOnEnclavePhaseChangedSignature OnPhaseChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Match")
+	FOnEnclaveScoreLimitChangedSignature OnScoreLimitChanged;
 
 protected:
 
@@ -65,4 +79,10 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_PhaseEndServerTime)
 	double PhaseEndServerTime = 0.0;
+
+	UFUNCTION()
+	void OnRep_ScoreLimit();
+
+	UPROPERTY(ReplicatedUsing = OnRep_ScoreLimit)
+	int32 ScoreLimit = 0;
 };

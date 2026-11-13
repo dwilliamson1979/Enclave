@@ -334,7 +334,18 @@ scoreboard, end screen (with the freeze and the camera on the winner).
    need to (`DisableNativeTick` on the base). Verified in PIE: warmup, time
    limit, post-match, restart, listen host, and a late join (Play
    Standalone with Launch Separate Server, then `open 127.0.0.1:17777`).
-   Next: (b) team scores with a replicated `ScoreLimit`, (c) solo scores.
+   (b) Team scores done: `AEnclaveMatchGameState` replicates `ScoreLimit`
+   (set at the end of `InitGame`, which parses the settings after the
+   GameState exists) with `OnScoreLimitChanged`; `AEnclaveTeamGameState`
+   fires `OnTeamScoresChanged`. `UEnclaveTeamScoreWidget` (`WBP_TeamScore`)
+   makes one `WBP_TeamScoreEntry` per team and marks the local team (again
+   on the PlayerState's `OnTeamChanged`). One layout per mode:
+   `WBP_HUDLayout` has a Named Slot `ScoreSlot` that the child layout
+   `WBP_HUDLayout_TDM` fills, chosen by `BP_EnclaveHUD_TDM`. Bound widgets
+   are `BlueprintReadOnly` so Blueprints can style them (the compiler uses
+   the C++ property and makes no variable). Verified in PIE (listen host,
+   kills, score limit, late join, DM unchanged).
+   Next: (c) solo scores (your score, the leader's, the limit).
 
 C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
 `CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the

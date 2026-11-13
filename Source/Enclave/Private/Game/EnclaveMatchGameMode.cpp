@@ -34,6 +34,14 @@ void AEnclaveMatchGameMode::InitGame(const FString& MapName, const FString& Opti
 
 	SpawnRandom.GenerateNewSeed();
 
+	// For the HUD. Here rather than in InitGameState, which runs first: the
+	// GameState is spawned with the GameMode (GameModeBase.cpp:143, from
+	// World.cpp:5931), and InitGame only later (World.cpp:6034).
+	if (AEnclaveMatchGameState* MatchGameState = GetGameState<AEnclaveMatchGameState>())
+	{
+		MatchGameState->SetScoreLimit(MatchSettings.ScoreLimit);
+	}
+
 	// Operator input (URL or Blueprint), so warn rather than refuse: an endless
 	// practice server is legitimate. ApplyOptions checks values one at a time;
 	// this is a combination.

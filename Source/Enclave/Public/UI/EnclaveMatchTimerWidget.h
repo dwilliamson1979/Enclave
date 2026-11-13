@@ -31,10 +31,10 @@ protected:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void OnGameStateChanged(AGameStateBase* OldGameState, AGameStateBase* NewGameState) override;
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(BlueprintReadOnly, Category = "HUD", meta = (BindWidget))
 	TObjectPtr<UTextBlock> PhaseText;
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(BlueprintReadOnly, Category = "HUD", meta = (BindWidget))
 	TObjectPtr<UTextBlock> TimeText;
 
 	/** WaitingToStart with no countdown (not enough players yet). */

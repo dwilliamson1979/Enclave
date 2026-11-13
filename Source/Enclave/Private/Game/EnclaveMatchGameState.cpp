@@ -22,6 +22,26 @@ void AEnclaveMatchGameState::SetPhaseEndServerTime(double ServerTime)
 	}
 }
 
+void AEnclaveMatchGameState::SetScoreLimit(int32 NewScoreLimit)
+{
+	if (!HasAuthority())
+	{
+		UE_LOG(LogEnclaveMatch, Warning, TEXT("SetScoreLimit called on non-authority GameState. This should only be called on the server."));
+		return;
+	}
+
+	if (ScoreLimit != NewScoreLimit)
+	{
+		ScoreLimit = NewScoreLimit;
+		OnRep_ScoreLimit();
+	}
+}
+
+void AEnclaveMatchGameState::OnRep_ScoreLimit()
+{
+	OnScoreLimitChanged.Broadcast();
+}
+
 void AEnclaveMatchGameState::OnRep_MatchState()
 {
 	Super::OnRep_MatchState();
@@ -39,6 +59,7 @@ void AEnclaveMatchGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AEnclaveMatchGameState, PhaseEndServerTime);
+	DOREPLIFETIME(AEnclaveMatchGameState, ScoreLimit);
 }
 
 void AEnclaveMatchGameState::MulticastKill_Implementation(APlayerState* Killer, APlayerState* Victim)
