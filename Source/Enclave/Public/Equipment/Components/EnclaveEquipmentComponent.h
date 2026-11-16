@@ -15,6 +15,14 @@ class AEnclaveItem;
 class UAbilitySystemComponent;
 class IEnclaveAvatarPresentationInterface;
 class UGameplayEffect;
+class UEnclaveEquipmentComponent;
+
+/**
+ * Fired on every machine when the wielded item this machine knows about
+ * changes (server: WieldItem/ClearCurrentWieldedItem; clients: the replicated
+ * CurrentWieldedItem). New is null when nothing is wielded.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnclaveWieldedItemChangedSignature, UEnclaveEquipmentComponent*, EquipmentComponent, AEnclaveItem*, OldItem, AEnclaveItem*, NewItem);
 
 /** Describes an assignable position; bCanWield and bInWieldCycle are separate policies. */
 USTRUCT(BlueprintType)
@@ -145,6 +153,9 @@ public:
 	void ClearCurrentWieldedItem();
 	AEnclaveItem* GetCurrentWieldedItem() const { return CurrentWieldedItem; }
 
+	UPROPERTY(BlueprintAssignable, Category = "Equipment|Wield")
+	FEnclaveWieldedItemChangedSignature OnWieldedItemChanged;
+
 	/** GAS is the readiness source of truth: State.Item.Equipping blocks item actions. */
 	bool IsCurrentWieldedItemReadyForActions() const;
 
@@ -204,6 +215,9 @@ private:
 	IEnclaveAvatarPresentationInterface* GetAvatarPresentation() const;
 	void UpdateWieldedItemActorVisibility(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
 	void UpdateWieldedItemPresentation(AEnclaveItem* PreviousItem, AEnclaveItem* NewItem);
+
+	/** The one write of WieldState.LocallyWieldedItem; fires OnWieldedItemChanged when it changes. */
+	void SetLocallyWieldedItem(AEnclaveItem* NewItem);
 	void BeginCurrentWieldedItemEquipWindow(AEnclaveItem* Item);
 	void ClearCurrentWieldedItemEquipWindow();
 	void CancelActiveItemAbilities();

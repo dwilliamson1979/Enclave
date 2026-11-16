@@ -55,6 +55,10 @@ struct FEnclavePendingAmmoPrediction
 };
 class UNiagaraComponent;
 class USkeletalMeshComponent;
+class AEnclaveFirearmWeapon;
+
+/** Fired when GetCurrentMagazineAmmo changes on this machine: a shot, a reload, a server correction, or (on the owning client) a prediction. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnclaveMagazineAmmoChangedSignature, AEnclaveFirearmWeapon*, Weapon, int32, OldRounds, int32, NewRounds);
 class UGameplayEffect;
 class UAnimMontage;
 class USoundBase;
@@ -141,6 +145,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon|Ammo")
 	int32 GetCurrentMagazineAmmo() const;
 
+	/** Rounds a full magazine holds. 0 = no magazine (never runs dry, nothing to show). */
+	UFUNCTION(BlueprintPure, Category = "Weapon|Ammo")
+	int32 GetMagazineCapacity() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "Weapon|Ammo")
+	FEnclaveMagazineAmmoChangedSignature OnMagazineAmmoChanged;
+
 protected:
 
 	/** Server fills the magazine from the definition's MagazineCapacity - a freshly spawned weapon (loadout, respawn) starts full. */
@@ -203,6 +214,16 @@ private:
 	UFUNCTION()
 	void OnRep_MagazineState();
 
+	/**
+	 * Call after anything that may change GetCurrentMagazineAmmo (MagazineState
+	 * or PendingAmmoPredictions): fires OnMagazineAmmoChanged if the count
+	 * differs from the last one announced. Comparing with the last announced
+	 * count, not with a "before" taken at each site, means a replication that
+	 * changes Rounds and drops the matching prediction together (net zero)
+	 * announces nothing.
+	 */
+	void NotifyMagazineAmmoChangedIfNeeded();
+
 	/** Logs/prints the magazine count when Enclave.Debug.Ammo is on - lets PIE verify ammo flow before any HUD exists (same pattern as Enclave.Debug.HitMarker). */
 	void DebugLogAmmo(const TCHAR* Context) const;
 
@@ -217,6 +238,9 @@ private:
 
 	/** Owning client only, never replicated: predicted changes awaiting the server's acknowledgement, oldest first. Always empty on the server and on other clients. */
 	TArray<FEnclavePendingAmmoPrediction> PendingAmmoPredictions;
+
+	/** The count last announced by OnMagazineAmmoChanged on this machine. */
+	int32 LastNotifiedMagazineAmmo = 0;
 
 	/**
 	 * Persistent, pre-attached muzzle flash components (Phase 3.b). Dormant

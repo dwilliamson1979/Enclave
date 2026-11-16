@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-14, during C4 step 3. Work happens on
+Last updated 2026-11-16, after C4 step 3. Work happens on
 `main` with a short branch per piece of work.
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
@@ -48,7 +48,7 @@ times in a row with clean logs.
 | U6 | Kill credit: damage history, last-damager credit, later assists | Done (three moments, below) |
 | C2 | Spawn selection | Done (three steps, below) |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
-| C4 | HUD C++ base | In progress (step 3 of 7, below) |
+| C4 | HUD C++ base | In progress (step 4 of 7, below) |
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
 | C6 | Graybox arena map | First pass generated: `TDM_TwinBases`, `DM_Pinwheel` (below) |
@@ -366,9 +366,22 @@ scoreboard, end screen (with the freeze and the camera on the winner).
    `IsHealthAvailable()` and `OnHealthAvailable`, fired by the GAS component
    at the end of `InitializeWithAbilitySystem` (after the server's refill).
    `OnHealthChanged` keeps meaning only "the value moved". Verified in PIE
-   (damage, death, respawn, late join, restart). (b) Ammo next: a wielded
-   item change event on the equipment component, a magazine change event on
-   the firearm (predicted count), and the ammo widget.
+   (damage, death, respawn, late join, restart). (b) Ammo done:
+   `UEnclaveEquipmentComponent::OnWieldedItemChanged` fires from
+   `SetLocallyWieldedItem`, the one write of the locally known wielded item
+   (server `WieldItem` and `ClearCurrentWieldedItem`, client
+   `OnRep_CurrentWieldedItem`). `AEnclaveFirearmWeapon::OnMagazineAmmoChanged`
+   fires from `NotifyMagazineAmmoChangedIfNeeded`, called after every change
+   to the magazine or the pending predictions; it compares with the last
+   announced count, so a replication that confirms a prediction (net zero)
+   announces nothing. `UEnclaveAmmoWidget` (`WBP_Ammo`, in `WBP_HUDLayout`)
+   follows pawn, then equipment, then the wielded firearm, and shows the
+   predicted magazine count and optionally the capacity; hidden with no
+   firearm or no magazine. It casts to the firearm (the only item with a
+   count; a read-side interface comes with a second kind) and shows no
+   reserve (unlimited until the per-ammo-type pool exists). Verified in PIE
+   (fire, reload, dry fire, weapon switch, respawn, `net PktLag=150`).
+   Step 3 done.
 
 C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
 `CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the
