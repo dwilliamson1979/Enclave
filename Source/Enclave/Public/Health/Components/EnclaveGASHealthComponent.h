@@ -43,6 +43,9 @@ public:
 	// IEnclaveDamageReceiverInterface
 	virtual bool ReceiveDamage(const FEnclaveDamageRequest& DamageRequest) override;
 
+	/** True while bound to an ASC that has the attribute set. */
+	virtual bool IsHealthAvailable() const override;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 

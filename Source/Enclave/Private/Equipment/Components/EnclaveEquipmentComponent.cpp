@@ -486,7 +486,7 @@ bool UEnclaveEquipmentComponent::WieldItem(AEnclaveItem* Item)
 	ApplyWieldedEffects(CurrentWieldedItem);
 
 	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
-	WieldState.LocallyWieldedItem = CurrentWieldedItem;
+	SetLocallyWieldedItem(CurrentWieldedItem);
 
 	return true;
 }
@@ -513,7 +513,7 @@ void UEnclaveEquipmentComponent::ClearCurrentWieldedItem()
 	WieldState.ReturnSlotTag = FGameplayTag();
 	UpdateWieldedItemActorVisibility(PreviousItem, nullptr);
 	UpdateWieldedItemPresentation(PreviousItem, nullptr);
-	WieldState.LocallyWieldedItem.Reset();
+	SetLocallyWieldedItem(nullptr);
 	// Do not reset ManagedAbilitySystem here: equipped armor may still have
 	// passive GE handles on this same (PlayerState-owned) ASC. They outlive wielding.
 }
@@ -1376,10 +1376,22 @@ void UEnclaveEquipmentComponent::RefreshEquippedEffects()
 	}
 }
 
+void UEnclaveEquipmentComponent::SetLocallyWieldedItem(AEnclaveItem* NewItem)
+{
+	AEnclaveItem* OldItem = WieldState.LocallyWieldedItem.Get();
+	if (OldItem == NewItem)
+	{
+		return;
+	}
+
+	WieldState.LocallyWieldedItem = NewItem;
+	OnWieldedItemChanged.Broadcast(this, OldItem, NewItem);
+}
+
 void UEnclaveEquipmentComponent::OnRep_CurrentWieldedItem()
 {
 	AEnclaveItem* PreviousItem = WieldState.LocallyWieldedItem.Get();
 
 	UpdateWieldedItemPresentation(PreviousItem, CurrentWieldedItem);
-	WieldState.LocallyWieldedItem = CurrentWieldedItem;
+	SetLocallyWieldedItem(CurrentWieldedItem);
 }

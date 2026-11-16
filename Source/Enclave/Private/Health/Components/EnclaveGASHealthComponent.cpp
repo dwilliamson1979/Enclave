@@ -52,6 +52,15 @@ void UEnclaveGASHealthComponent::InitializeWithAbilitySystem(UAbilitySystemCompo
 		.AddUObject(this, &UEnclaveGASHealthComponent::HandleMaxHealthChanged);
 
 	InitializeAvatarHealthIfNeeded(InAbilitySystemComponent, AttributeSet);
+
+	// After the server's initialization above, so listeners read the avatar's
+	// starting health, not the previous avatar's 0.
+	OnHealthAvailable.Broadcast(this);
+}
+
+bool UEnclaveGASHealthComponent::IsHealthAvailable() const
+{
+	return AbilitySystemComponent.IsValid();
 }
 
 void UEnclaveGASHealthComponent::InitializeAvatarHealthIfNeeded(UAbilitySystemComponent* InAbilitySystemComponent, const UEnclaveAttributeSet* AttributeSet)

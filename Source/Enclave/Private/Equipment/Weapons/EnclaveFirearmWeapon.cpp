@@ -85,6 +85,7 @@ void AEnclaveFirearmWeapon::BeginPlay()
 		const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
 		MagazineState.Rounds = FirearmWeaponDefinition ? FirearmWeaponDefinition->GetMagazineCapacity() : 0;
 		MagazineState.LastAcknowledgedPredictionKey = 0;
+		NotifyMagazineAmmoChangedIfNeeded();
 	}
 }
 
@@ -409,6 +410,12 @@ int32 AEnclaveFirearmWeapon::GetCurrentMagazineAmmo() const
 	return Capacity > 0 ? FMath::Clamp(Rounds, 0, Capacity) : FMath::Max(0, Rounds);
 }
 
+int32 AEnclaveFirearmWeapon::GetMagazineCapacity() const
+{
+	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
+	return FirearmWeaponDefinition ? FirearmWeaponDefinition->GetMagazineCapacity() : 0;
+}
+
 bool AEnclaveFirearmWeapon::CanConsumeAmmo() const
 {
 	const UEnclaveFirearmWeaponDefinition* FirearmWeaponDefinition = GetFirearmWeaponDefinition();
@@ -448,6 +455,7 @@ void AEnclaveFirearmWeapon::ConsumeAmmo(const FPredictionKey& PredictionKey)
 		// replication update that delivers the new count.
 		MagazineState.Rounds = FMath::Max(0, MagazineState.Rounds - AmmoPerShot);
 		AcknowledgePredictionKey(PredictionKey);
+		NotifyMagazineAmmoChangedIfNeeded();
 		DebugLogAmmo(TEXT("Fire"));
 		return;
 	}
@@ -517,6 +525,7 @@ void AEnclaveFirearmWeapon::CompleteReload(const FPredictionKey& PredictionKey)
 	// every shot fired before it, so this also sweeps up any older shot
 	// prediction still pending on the client.
 	AcknowledgePredictionKey(PredictionKey);
+	NotifyMagazineAmmoChangedIfNeeded();
 	DebugLogAmmo(TEXT("Reload"));
 }
 
@@ -583,6 +592,7 @@ void AEnclaveFirearmWeapon::AddPendingAmmoPrediction(const FPredictionKey& Predi
 	}
 
 	PendingAmmoPredictions.Add({ PredictionKey.Current, RoundsDelta });
+	NotifyMagazineAmmoChangedIfNeeded();
 
 	if (bSettleOnRejection)
 	{
@@ -603,6 +613,7 @@ void AEnclaveFirearmWeapon::HandleAmmoPredictionRejected(FPredictionKey::KeyType
 
 	if (NumRemoved > 0)
 	{
+		NotifyMagazineAmmoChangedIfNeeded();
 		DebugLogAmmo(TEXT("Prediction rejected"));
 	}
 }
@@ -653,7 +664,21 @@ void AEnclaveFirearmWeapon::OnRep_MagazineState()
 		return IsPredictionKeyAcknowledged(Pending.PredictionKey, AcknowledgedKey);
 	});
 
+	NotifyMagazineAmmoChangedIfNeeded();
 	DebugLogAmmo(TEXT("Replicated"));
+}
+
+void AEnclaveFirearmWeapon::NotifyMagazineAmmoChangedIfNeeded()
+{
+	const int32 NewRounds = GetCurrentMagazineAmmo();
+	if (NewRounds == LastNotifiedMagazineAmmo)
+	{
+		return;
+	}
+
+	const int32 OldRounds = LastNotifiedMagazineAmmo;
+	LastNotifiedMagazineAmmo = NewRounds;
+	OnMagazineAmmoChanged.Broadcast(this, OldRounds, NewRounds);
 }
 
 void AEnclaveFirearmWeapon::DebugLogAmmo(const TCHAR* Context) const

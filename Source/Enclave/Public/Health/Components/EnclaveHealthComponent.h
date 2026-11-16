@@ -27,6 +27,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FEnclaveHealthDepletedSignature, UE
 /** Fired whenever the maximum-health value changes. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEnclaveMaxHealthChangedSignature, UEnclaveHealthComponent*, HealthComponent, float, OldMaxHealth, float, NewMaxHealth);
 
+/** Fired when the values become readable (see IsHealthAvailable). Not a change: read the current values. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FEnclaveHealthAvailableSignature, UEnclaveHealthComponent*, HealthComponent);
+
 /**
  * Storage-agnostic health semantics shared by simple world actors and
  * GAS-backed combatants.
@@ -74,6 +77,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Health")
 	bool IsHealthDepleted() const;
 
+	/**
+	 * True once GetHealth and GetMaxHealth return real values. A model whose
+	 * values live elsewhere (the GAS one, until it is bound to an ASC) reads
+	 * 0 before that, and becoming available is not a health change, so
+	 * OnHealthChanged does not fire for it: OnHealthAvailable does.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Health")
+	virtual bool IsHealthAvailable() const { return true; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Health")
 	FEnclaveHealthChangedSignature OnHealthChanged;
 
@@ -85,6 +97,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Health")
 	FEnclaveMaxHealthChangedSignature OnMaxHealthChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Health")
+	FEnclaveHealthAvailableSignature OnHealthAvailable;
 
 protected:
 	/** Storage hook implemented by each concrete health model. */
