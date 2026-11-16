@@ -65,7 +65,13 @@ public:
 	/** Authority only. */
 	void SetScoreLimit(int32 NewScoreLimit);
 
-	UFUNCTION(NetMulticast, Unreliable)
+	/**
+	 * Every death, to every machine (fires OnKill). Killer is null or equal to
+	 * Victim for a suicide or a death with no player behind it. Reliable: the
+	 * kill feed shows each one, a dropped call is a visible hole, and deaths
+	 * are rare enough that reliability costs nothing.
+	 */
+	UFUNCTION(NetMulticast, Reliable)
 	void MulticastKill(APlayerState* Killer, APlayerState* Victim);
 
 	UPROPERTY(BlueprintAssignable, Category = "Match")
