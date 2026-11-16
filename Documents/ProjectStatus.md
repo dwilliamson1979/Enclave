@@ -1,6 +1,6 @@
 # Enclave Project Status
 
-Last updated 2026-11-16, after C4 step 3. Work happens on
+Last updated 2026-11-16, after C4 step 4. Work happens on
 `main` with a short branch per piece of work.
 
 Enclave is a UE 5.8 C++ multiplayer FPS. This is the one-page overview: what
@@ -48,7 +48,7 @@ times in a row with clean logs.
 | U6 | Kill credit: damage history, last-damager credit, later assists | Done (three moments, below) |
 | C2 | Spawn selection | Done (three steps, below) |
 | C3 | Damage policy: `ApplyDamage` asks the game mode's `ResolveDamage` (hit policy per phase) | Done with U3 moment 6 |
-| C4 | HUD C++ base | In progress (step 4 of 7, below) |
+| C4 | HUD C++ base | In progress (step 5 of 7, below) |
 | U5 | HUD layouts (UMG) | Not started |
 | C5 | Team colors | Not started |
 | C6 | Graybox arena map | First pass generated: `TDM_TwinBases`, `DM_Pinwheel` (below) |
@@ -382,6 +382,20 @@ scoreboard, end screen (with the freeze and the camera on the winner).
    reserve (unlimited until the per-ammo-type pool exists). Verified in PIE
    (fire, reload, dry fire, weapon switch, respawn, `net PktLag=150`).
    Step 3 done.
+4. Kill feed. Done. `AEnclaveMatchGameState::MulticastKill` is now
+   Reliable (a dropped call is a visible hole; deaths are rare). A player
+   not yet replicated to a client arrives as null (`net.DelayUnmappedRPCs`
+   is off by default, `DataReplication.cpp`), shown as "Unknown".
+   `UEnclaveKillFeedWidget` (`WBP_KillFeed`, in `WBP_HUDLayout`) adds a
+   `UEnclaveKillFeedEntryWidget` (`WBP_KillFeedEntry`) per `OnKill`, newest
+   first, dropping the oldest past `MaxEntries`; it starts empty for a late
+   joiner or a new match. An entry shows "Killer ▸ Victim", or the victim
+   alone for a suicide or a death with no player (the game mode's test),
+   colors the local player's name, and removes itself after
+   `DisplaySeconds` on a timer (optional `FadeOut` animation first). Names
+   only for now: a weapon icon needs the kill event to carry what made the
+   kill; team colors come with C5. Verified in PIE (kill, suicide, fall,
+   credited kill, fade, cap, restart, late join, packet loss).
 
 C6, first pass: `Tools/Scripts/Maps/create_graybox_maps.py` (run
 `CreateGrayboxMaps.ps1` with the editor closed; re-running rebuilds the
